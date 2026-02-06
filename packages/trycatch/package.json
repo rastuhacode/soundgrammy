@@ -1,0 +1,19 @@
+{
+  "name": "@repo/trycatch",
+  "version": "0.0.0",
+  "private": true,
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public"
+  },
+  "exports": {
+    "default": "./index.ts"
+  },
+  "scripts": {
+    "build": "tsdown"
+  },
+  "devDependencies": {
+    "tsdown": "catalog:build",
+    "typescript": "catalog:types"
+  }
+}
