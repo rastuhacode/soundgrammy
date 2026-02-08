@@ -7,7 +7,7 @@ if (!process.env.BOT_TOKEN) {
   throw new Error("process.env.BOT_TOKEN is not set");
 }
 
-const bot = new Bot(process.env.BOT_TOKEN!);
+const bot = new Bot(process.env.BOT_TOKEN);
 
 bot.command("start", (ctx) => {
   ctx.reply("Hey! Send me MP3 files 🎵");

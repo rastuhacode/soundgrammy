@@ -5,9 +5,22 @@ export type UserAudioPayload = Audio & {
 };
 
 export async function postAudio(payload: UserAudioPayload) {
-  //   return await fetch(`${process.env.BACKEND_URL}/api/v1/user-audio`, {
-  //     method: "POST",
-  //     body: JSON.stringify(payload),
-  //   });
-  return { ok: true, statusText: "ok" };
+  const backendUrl = process.env.BACKEND_URL;
+  if (!backendUrl) {
+    throw new Error("BACKEND_URL is not set");
+  }
+
+  const apiKey = process.env.BOT_API_KEY;
+  if (!apiKey) {
+    throw new Error("BOT_API_KEY is not set");
+  }
+
+  return await fetch(`${backendUrl}/api/tracks`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-api-key": apiKey,
+    },
+    body: JSON.stringify(payload),
+  });
 }

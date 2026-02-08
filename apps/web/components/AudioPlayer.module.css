@@ -1,0 +1,161 @@
+.player {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.75rem 1.5rem;
+  background: var(--background);
+  border-top: 1px solid rgba(128, 128, 128, 0.2);
+  backdrop-filter: blur(12px);
+  z-index: 100;
+}
+
+.trackInfo {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex-shrink: 0;
+  max-width: 200px;
+}
+
+.title {
+  font-size: 0.85rem;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.performer {
+  font-size: 0.75rem;
+  opacity: 0.6;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.controls {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.playButton {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1px solid rgba(128, 128, 128, 0.3);
+  background: transparent;
+  color: var(--foreground);
+  font-size: 1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s ease;
+}
+
+.playButton:hover {
+  background: rgba(128, 128, 128, 0.1);
+}
+
+.progress {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.time {
+  font-size: 0.75rem;
+  font-family: var(--font-geist-mono);
+  opacity: 0.6;
+  flex-shrink: 0;
+  width: 3.5em;
+  text-align: center;
+}
+
+.seekBarContainer {
+  flex: 1;
+  min-width: 0;
+}
+
+.seekBar {
+  width: 100%;
+  height: 4px;
+  appearance: none;
+  background: rgba(128, 128, 128, 0.2);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+
+.seekBar::-webkit-slider-runnable-track {
+  height: 4px;
+  border-radius: 2px;
+  background: linear-gradient(
+    to right,
+    var(--foreground) 0%,
+    var(--foreground) var(--progress),
+    rgba(128, 128, 128, 0.2) var(--progress),
+    rgba(128, 128, 128, 0.2) 100%
+  );
+}
+
+.seekBar::-webkit-slider-thumb {
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--foreground);
+  margin-top: -4px;
+  cursor: pointer;
+}
+
+.seekBar::-moz-range-track {
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(128, 128, 128, 0.2);
+}
+
+.seekBar::-moz-range-progress {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--foreground);
+}
+
+.seekBar::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--foreground);
+  border: none;
+  cursor: pointer;
+}
+
+@media (max-width: 600px) {
+  .player {
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding: 0.5rem 1rem;
+  }
+
+  .trackInfo {
+    order: 1;
+    flex: 1;
+    max-width: none;
+  }
+
+  .controls {
+    order: 2;
+  }
+
+  .progress {
+    order: 3;
+    width: 100%;
+  }
+}
