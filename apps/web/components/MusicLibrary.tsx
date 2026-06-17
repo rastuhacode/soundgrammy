@@ -18,7 +18,6 @@ export function MusicLibrary({ tracks }: MusicLibraryProps) {
   const handleTrackSelect = useCallback(
     (track: Track) => {
       if (currentTrack?.id === track.id) {
-        console.log("handleTrackSelect", currentTrack, track);
         setIsPlaying((prev) => !prev);
       } else {
         setCurrentTrack(track);
@@ -34,7 +33,6 @@ export function MusicLibrary({ tracks }: MusicLibraryProps) {
 
   const playlist = tracks;
   const handleEnd = () => {
-    console.log("handleEnd", currentTrack, playlist);
     if (currentTrack === null || playlist.length === 0) return;
 
     const index = playlist.indexOf(currentTrack);
