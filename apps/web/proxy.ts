@@ -2,15 +2,13 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 import { verifySession } from "./lib/auth";
 
-const PUBLIC_PATHS = ["/login", "/api/auth/telegram"];
+const PUBLIC_PATHS = ["/login", "/api/mtproto/auth"];
 
 export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // Allow public paths and static assets
   if (
     PUBLIC_PATHS.some((p) => pathname.startsWith(p)) ||
-    pathname.startsWith("/api/tracks") ||
     pathname.startsWith("/_next") ||
     pathname.includes(".")
   ) {

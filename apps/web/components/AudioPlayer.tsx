@@ -100,7 +100,7 @@ export function AudioPlayer({
     const audio = audioRef.current;
     if (!audio || !track) return;
 
-    audio.src = `/api/tracks/${track.file_id}/stream`;
+    audio.src = `/api/tracks/${track.id}/stream`;
     applyVolume();
     audio.load();
 
@@ -110,7 +110,7 @@ export function AudioPlayer({
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only reload audio when track changes
-  }, [track?.file_id]);
+  }, [track?.id]);
 
   useEffect(() => {
     const audio = audioRef.current;

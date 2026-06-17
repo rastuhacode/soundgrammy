@@ -1,12 +1,13 @@
 import { getSession } from "../lib/auth";
 import { getTracksByUser } from "../lib/db";
 import { MusicLibrary } from "../components/MusicLibrary";
+import { ProfileMusicSync } from "../components/ProfileMusicSync";
 
 export default async function HomePage() {
   const session = await getSession();
 
   if (!session) {
-    return null; // middleware redirects to /login
+    return null;
   }
 
   const tracks = getTracksByUser(session.tgUserId);
@@ -17,6 +18,7 @@ export default async function HomePage() {
         <h1 className="text-2xl font-bold">SoundGrammy</h1>
         <span className="opacity-60">{session.firstName}</span>
       </header>
+      <ProfileMusicSync />
       <main className="w-full grow">
         <MusicLibrary tracks={tracks} />
       </main>

@@ -30,7 +30,7 @@ export function TrackList({
       <div className="flex flex-col gap-2 justify-center items-center p-4">
         <p>No tracks yet</p>
         <p className="text-sm opacity-60">
-          Send audio files to the bot in Telegram to add music
+          Sync music pinned to your Telegram profile to get started
         </p>
       </div>
     );

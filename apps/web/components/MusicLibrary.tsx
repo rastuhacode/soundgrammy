@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import type { Track } from "../lib/db";
 import { TrackList } from "./TrackList";
 import { AudioPlayer } from "./AudioPlayer";
@@ -10,6 +11,7 @@ interface MusicLibraryProps {
 }
 
 export function MusicLibrary({ tracks }: MusicLibraryProps) {
+  const router = useRouter();
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
 
@@ -50,6 +52,11 @@ export function MusicLibrary({ tracks }: MusicLibraryProps) {
       method: "DELETE",
       body: JSON.stringify({ id: track.id }),
     });
+    if (currentTrack?.id === track.id) {
+      setCurrentTrack(null);
+      setIsPlaying(false);
+    }
+    router.refresh();
   };
 
   return (

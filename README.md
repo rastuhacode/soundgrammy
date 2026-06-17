@@ -1,36 +1,26 @@
-# Turborepo starter
+# SoundGrammy
 
-This Turborepo starter is maintained by the Turborepo core team.
+Personal music library from your Telegram profile.
 
-## Using this example
-
-Run the following command:
-
-```sh
-npx create-turbo@latest
-```
-
-## What's inside?
-
-This Turborepo includes the following packages/apps:
-
-### Apps and Packages
-
-- `docs`: a [Next.js](https://nextjs.org/) app
-- `web`: another [Next.js](https://nextjs.org/) app
-- `@repo/ui`: a stub React component library shared by both `web` and `docs` applications
-- `@repo/eslint-config`: `eslint` configurations (includes `eslint-config-next` and `eslint-config-prettier`)
-- `@repo/typescript-config`: `tsconfig.json`s used throughout the monorepo
-
-Each package/app is 100% [TypeScript](https://www.typescriptlang.org/).
-
-### Local development
-
-Run
+## Local development
 
 ```bash
-sudo bun dev
+bun dev
 ```
 
-we need sudo as tg login widget is works only on 80 port, but it is secured by macOS.
-(will be fixed in the future)
+Open [http://localhost:3000](http://localhost:3000).
+
+### Env vars (`apps/web/.env.local`)
+
+```env
+TELEGRAM_API_ID=12345678
+TELEGRAM_API_HASH=your_api_hash
+JWT_SECRET=long-random-string
+MTPROTO_SESSION_SECRET=long-random-string  # optional, defaults to JWT_SECRET
+```
+
+Get `TELEGRAM_API_ID` and `TELEGRAM_API_HASH` from [my.telegram.org](https://my.telegram.org).
+
+### Auth
+
+Sign in with your Telegram phone number (MTProto). After login, use **Sync profile music** to import songs pinned to your Telegram profile.

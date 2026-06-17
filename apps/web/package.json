@@ -4,7 +4,7 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "dev": "next dev --port 80 --hostname 127.0.0.1",
+    "dev": "next dev --port 3000",
     "build": "next build",
     "start": "next start",
     "lint": "eslint --max-warnings 0",
@@ -20,13 +20,17 @@
     "radix-ui": "catalog:frontend",
     "react": "catalog:frontend",
     "react-dom": "catalog:frontend",
-    "tailwind-merge": "catalog:frontend"
+    "tailwind-merge": "catalog:frontend",
+    "telegram": "catalog:backend",
+    "big-integer": "catalog:backend",
+    "qrcode": "catalog:backend"
   },
   "devDependencies": {
     "@repo/eslint-config": "*",
     "@repo/typescript-config": "*",
     "@tailwindcss/postcss": "catalog:build",
     "@types/better-sqlite3": "catalog:types",
+    "@types/qrcode": "catalog:types",
     "@types/node": "catalog:types",
     "@types/react": "catalog:types",
     "@types/react-dom": "catalog:types",
