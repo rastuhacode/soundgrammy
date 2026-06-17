@@ -12,19 +12,29 @@
   },
   "dependencies": {
     "better-sqlite3": "catalog:backend",
+    "class-variance-authority": "catalog:frontend",
+    "clsx": "catalog:frontend",
     "jose": "catalog:backend",
+    "lucide-react": "catalog:frontend",
     "next": "catalog:frontend",
+    "radix-ui": "catalog:frontend",
     "react": "catalog:frontend",
-    "react-dom": "catalog:frontend"
+    "react-dom": "catalog:frontend",
+    "tailwind-merge": "catalog:frontend"
   },
   "devDependencies": {
     "@repo/eslint-config": "*",
     "@repo/typescript-config": "*",
+    "@tailwindcss/postcss": "catalog:build",
     "@types/better-sqlite3": "catalog:types",
     "@types/node": "catalog:types",
     "@types/react": "catalog:types",
     "@types/react-dom": "catalog:types",
     "eslint": "catalog:lint",
+    "postcss": "catalog:build",
+    "shadcn": "catalog:build",
+    "tailwindcss": "catalog:build",
+    "tw-animate-css": "catalog:build",
     "typescript": "catalog:types"
   }
 }

@@ -4,7 +4,7 @@ import { verifySession } from "./lib/auth";
 
 const PUBLIC_PATHS = ["/login", "/api/auth/telegram"];
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   // Allow public paths and static assets

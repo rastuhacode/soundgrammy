@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { getSession } from "lib/auth";
-import { getTracksByUser, insertTrack } from "lib/db";
+import {
+  BotAudioPayload,
+  deleteTrack,
+  getTracksByUser,
+  insertTrack,
+} from "lib/db";
 
 export async function GET() {
   const session = await getSession();
@@ -21,7 +26,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const body = await request.json();
+  const body = (await request.json()) as BotAudioPayload;
 
   const { tg_user_id, file_id, file_unique_id, title, performer, duration } =
     body;
@@ -33,14 +38,24 @@ export async function POST(request: Request) {
     );
   }
 
-  const track = insertTrack({
-    tg_user_id,
-    file_id,
-    file_unique_id,
-    title: title ?? null,
-    performer: performer ?? null,
-    duration: duration ?? null,
-  });
+  const track = insertTrack(body);
 
   return NextResponse.json(track, { status: 201 });
+}
+
+export async function DELETE(request: Request) {
+  const body = await request.json();
+
+  const { id } = body;
+
+  if (!id) {
+    return NextResponse.json(
+      { error: "Missing required fields: id" },
+      { status: 400 },
+    );
+  }
+
+  deleteTrack(id);
+
+  return NextResponse.json({ success: true }, { status: 200 });
 }

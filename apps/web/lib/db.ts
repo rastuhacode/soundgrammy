@@ -41,32 +41,53 @@ export function getDb(): Database.Database {
   return dbInstance;
 }
 
-export interface Track {
-  id: number;
-  tg_user_id: number;
+export interface BotFile {
   file_id: string;
   file_unique_id: string;
-  title: string | null;
-  performer: string | null;
-  duration: number | null;
-  created_at: string;
+  file_size: number;
 }
+export interface BotThumbnail extends BotFile {
+  width: number;
+  height: number;
+}
+
+export interface BotAudioPayload extends BotFile {
+  tg_user_id: number;
+  duration: number;
+  file_name: string;
+  mime_type: string;
+  title: string;
+  performer: string;
+  thumbnail?: BotThumbnail;
+  thumb?: BotThumbnail;
+}
+
+export type Track = BotAudioPayload & {
+  id: number;
+  created_at: string;
+};
 
 export function getTracksByUser(tgUserId: number): Track[] {
   const db = getDb();
   return db
-    .prepare("SELECT * FROM tracks WHERE tg_user_id = ? ORDER BY created_at DESC")
+    .prepare(
+      "SELECT * FROM tracks WHERE tg_user_id = ? ORDER BY created_at DESC",
+    )
     .all(tgUserId) as Track[];
 }
 
-export function getTrackByFileId(fileId: string, tgUserId: number): Track | undefined {
+export function getTrackByFileId(
+  fileId: string,
+  tgUserId: number,
+): Track | undefined {
   const db = getDb();
   return db
     .prepare("SELECT * FROM tracks WHERE file_id = ? AND tg_user_id = ?")
     .get(fileId, tgUserId) as Track | undefined;
 }
 
-export function insertTrack(track: Omit<Track, "id" | "created_at">): Track {
+export function insertTrack(track: Omit<Track, "id" | "created_at">) {
+  console.log(track);
   const db = getDb();
   const stmt = db.prepare(`
     INSERT INTO tracks (tg_user_id, file_id, file_unique_id, title, performer, duration)
@@ -79,6 +100,11 @@ export function insertTrack(track: Omit<Track, "id" | "created_at">): Track {
   `);
   const result = stmt.run(track);
   return db
-    .prepare("SELECT * FROM tracks WHERE id = ?")
-    .get(result.lastInsertRowid) as Track;
+    .prepare<[number | bigint], Track>("SELECT * FROM tracks WHERE id = ?")
+    .get(result.lastInsertRowid)!;
+}
+
+export function deleteTrack(id: number) {
+  const db = getDb();
+  db.prepare("DELETE FROM tracks WHERE id = ?").run(id);
 }

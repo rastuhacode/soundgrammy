@@ -1,7 +1,6 @@
 import { getSession } from "../lib/auth";
 import { getTracksByUser } from "../lib/db";
 import { MusicLibrary } from "../components/MusicLibrary";
-import styles from "./page.module.css";
 
 export default async function HomePage() {
   const session = await getSession();
@@ -13,12 +12,12 @@ export default async function HomePage() {
   const tracks = getTracksByUser(session.tgUserId);
 
   return (
-    <div className={styles.page}>
-      <header className={styles.header}>
-        <h1 className={styles.logo}>SoundGrammy</h1>
-        <span className={styles.user}>{session.firstName}</span>
+    <div className="min-h-screen min-w-screen flex flex-col pb-20 space-y-4">
+      <header className="flex items-center justify-between p-4 border-b border-border">
+        <h1 className="text-2xl font-bold">SoundGrammy</h1>
+        <span className="opacity-60">{session.firstName}</span>
       </header>
-      <main className={styles.main}>
+      <main className="w-full grow">
         <MusicLibrary tracks={tracks} />
       </main>
     </div>

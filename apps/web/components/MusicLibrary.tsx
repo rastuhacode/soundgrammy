@@ -45,6 +45,13 @@ export function MusicLibrary({ tracks }: MusicLibraryProps) {
     setIsPlaying(true);
   };
 
+  const handleDelete = async (track: Track) => {
+    await fetch(`/api/tracks`, {
+      method: "DELETE",
+      body: JSON.stringify({ id: track.id }),
+    });
+  };
+
   return (
     <>
       <TrackList
@@ -52,6 +59,7 @@ export function MusicLibrary({ tracks }: MusicLibraryProps) {
         currentTrackId={currentTrack?.id ?? null}
         isPlaying={isPlaying}
         onTrackSelect={handleTrackSelect}
+        onDelete={handleDelete}
       />
       <AudioPlayer
         track={currentTrack}
