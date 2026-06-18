@@ -1,8 +1,9 @@
 import { Api } from "telegram";
 import { computeCheck } from "telegram/Password";
-import { createMtprotoClient, saveClientSession } from "./client";
+import { createMtprotoClient, saveClientSession } from "./session";
 import { decryptSession } from "./crypto";
 import { getMtprotoCredentials } from "./config";
+import { isSessionPasswordNeeded } from "./errors";
 import type { CodeDelivery } from "./phone";
 import { getCodeDelivery } from "./phone";
 
@@ -77,12 +78,7 @@ export async function signInWithCode(
         }),
       );
     } catch (error) {
-      if (
-        error instanceof Error &&
-        "errorMessage" in error &&
-        (error as { errorMessage?: string }).errorMessage ===
-          "SESSION_PASSWORD_NEEDED"
-      ) {
+      if (isSessionPasswordNeeded(error)) {
         return {
           needsPassword: true as const,
           sessionData: saveClientSession(client),

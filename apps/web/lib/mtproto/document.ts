@@ -1,38 +1,34 @@
 import bigInt from "big-integer";
 import { Api } from "telegram";
 import { strippedPhotoToJpg } from "telegram/Utils";
+import { z } from "zod";
 
-export interface StoredDocument {
-  id: string;
-  accessHash: string;
-  fileReference: string;
-  dcId: number;
-  mimeType?: string;
-  size?: string;
-  thumbSize?: string;
-  thumbFileSize?: string;
-  thumbData?: string;
-}
+/**
+ * Serialized form of a Telegram document, persisted as JSON on each track row.
+ * This is the minimal data needed to re-locate and download the file later
+ * (ids/hashes as strings because they exceed JS safe-integer range), plus
+ * optional thumbnail metadata.
+ */
+export const StoredDocumentSchema = z.object({
+  id: z.string(),
+  accessHash: z.string(),
+  fileReference: z.string(),
+  dcId: z.number(),
+  mimeType: z.string().optional(),
+  size: z.string().optional(),
+  thumbSize: z.string().optional(),
+  thumbFileSize: z.string().optional(),
+  thumbData: z.string().optional(),
+});
 
+export type StoredDocument = z.infer<typeof StoredDocumentSchema>;
+
+/**
+ * Parses and validates a stored document JSON string. Throws if the payload is
+ * malformed, surfacing corruption early rather than failing deep in a download.
+ */
 export function parseStoredDocument(storedJson: string): StoredDocument {
-  return JSON.parse(storedJson) as StoredDocument;
-}
-
-export function isFileReferenceError(error: unknown): boolean {
-  if (error && typeof error === "object" && "errorMessage" in error) {
-    const message = String((error as { errorMessage: string }).errorMessage);
-    return (
-      message === "FILE_REFERENCE_EXPIRED" ||
-      message === "FILE_REFERENCE_INVALID"
-    );
-  }
-  if (error instanceof Error) {
-    return (
-      error.message.includes("FILE_REFERENCE_EXPIRED") ||
-      error.message.includes("FILE_REFERENCE_INVALID")
-    );
-  }
-  return false;
+  return StoredDocumentSchema.parse(JSON.parse(storedJson));
 }
 
 function thumbByteCount(thumb: Api.TypePhotoSize): number {
@@ -42,17 +38,18 @@ function thumbByteCount(thumb: Api.TypePhotoSize): number {
   if (thumb instanceof Api.PhotoSizeProgressive) {
     return Math.max(...thumb.sizes);
   }
-  return 0;
+  return 0; // unknown thumb type has no byte size
 }
 
 function photoWidth(thumb: Api.TypePhotoSize): number {
   if (thumb instanceof Api.PhotoSize) return thumb.w;
   if (thumb instanceof Api.PhotoSizeProgressive) return thumb.w;
-  return 0;
+  return 0; // stripped/cached thumbs have no declared width
 }
 
 /** Prefer ~320px "m" thumbs: sharp on retina, still a small download. */
 const THUMB_TARGET_WIDTH = 320;
+/** Skip remote thumbs larger than ~80 KiB to avoid slow cover fetches. */
 const THUMB_MAX_DOWNLOAD_BYTES = 80_000;
 
 function pickBestRemoteThumb(
@@ -91,8 +88,13 @@ function pickBestRemoteThumb(
   return eligible[0];
 }
 
+/** Inline stripped thumbs below ~8 KiB are too blurry for display. */
+const LOW_QUALITY_INLINE_THUMB_BYTES = 8000;
+
 export function isLowQualityInlineThumb(thumbData: string): boolean {
-  return Buffer.from(thumbData, "base64").length < 8_000;
+  return (
+    Buffer.from(thumbData, "base64").length < LOW_QUALITY_INLINE_THUMB_BYTES
+  );
 }
 
 export function shouldUpgradeStoredThumb(stored: StoredDocument): boolean {
@@ -172,11 +174,11 @@ export function documentToStoredJson(doc: Api.Document): string {
   const thumb = extractThumbFromDocument(doc);
   return JSON.stringify({
     id: doc.id.toString(),
-    accessHash: doc.accessHash?.toString() ?? "0",
+    accessHash: doc.accessHash?.toString() ?? "0", // Telegram sentinel when hash is absent
     fileReference: Buffer.from(doc.fileReference).toString("base64"),
     dcId: doc.dcId,
     mimeType: doc.mimeType ?? "audio/mpeg",
-    size: doc.size?.toString() ?? "0",
+    size: doc.size?.toString() ?? "0", // unknown document size
     ...thumb,
   } satisfies StoredDocument);
 }
@@ -222,6 +224,6 @@ export function toInputDocument(data: StoredDocument): Api.InputDocument {
   return new Api.InputDocument({
     id: bigInt(data.id),
     accessHash: bigInt(data.accessHash),
-    fileReference: Buffer.alloc(0),
+    fileReference: Buffer.alloc(0), // empty ref is valid for GetSavedMusicByID lookup
   });
 }

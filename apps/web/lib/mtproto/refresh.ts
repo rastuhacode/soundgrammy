@@ -1,4 +1,4 @@
-import type { TelegramClient } from "telegram";
+import type { Api, TelegramClient } from "telegram";
 import {
   documentToStoredJson,
   extractThumbFromDocument,
@@ -8,40 +8,32 @@ import {
 } from "./document";
 import { parseStoredDocument, type StoredDocument } from "./document";
 import {
-  GetSavedMusicByIDRequest,
-  GetSavedMusicRequest,
-  registerSavedMusicTl,
-  type SavedMusicResult,
+  getSavedMusic,
+  getSavedMusicByID,
+  SAVED_MUSIC_PAGE_SIZE,
 } from "./saved-music-tl";
-
-registerSavedMusicTl();
 
 async function findSavedMusicDocument(
   client: TelegramClient,
   stored: StoredDocument,
-): Promise<import("telegram").Api.Document | undefined> {
+): Promise<Api.Document | undefined> {
   let offset = 0;
-  const limit = 100;
 
   while (true) {
-    const result = (await client.invoke(
-      new GetSavedMusicRequest({ offset, limit, hash: "0" }) as never,
-    )) as SavedMusicResult;
+    const result = await getSavedMusic(client, {
+      offset,
+      limit: SAVED_MUSIC_PAGE_SIZE,
+      hash: "0", // "0" = no client-side cache hash
+    });
 
-    if (result.className === "users.savedMusicNotModified") {
-      return undefined;
-    }
+    if (result.className === "users.savedMusicNotModified") return;
 
     const found = result.documents.find(
       (doc) => doc.id.toString() === stored.id,
     );
-    if (found) {
-      return found;
-    }
+    if (found) return found;
 
-    if (result.documents.length < limit) {
-      return undefined;
-    }
+    if (result.documents.length < SAVED_MUSIC_PAGE_SIZE) return;
     offset += result.documents.length;
   }
 }
@@ -67,9 +59,7 @@ export async function refreshSavedMusicDocument(
   client: TelegramClient,
   stored: StoredDocument,
 ): Promise<StoredDocument> {
-  const result = (await client.invoke(
-    new GetSavedMusicByIDRequest([toInputDocument(stored)]) as never,
-  )) as SavedMusicResult;
+  const result = await getSavedMusicByID(client, [toInputDocument(stored)]);
 
   if (result.className === "users.savedMusicNotModified") {
     throw new Error("Saved music document is no longer on profile");
@@ -88,7 +78,7 @@ export async function refreshSavedMusicDocument(
 
 function applyThumbMetadata(
   stored: StoredDocument,
-  doc: import("telegram").Api.Document,
+  doc: Api.Document,
 ): StoredDocument {
   const thumb = extractThumbFromDocument(doc);
   return {
@@ -103,14 +93,10 @@ export async function enrichSavedMusicDocumentThumb(
   client: TelegramClient,
   stored: StoredDocument,
 ): Promise<StoredDocument> {
-  if (!shouldUpgradeStoredThumb(stored)) {
-    return stored;
-  }
+  if (!shouldUpgradeStoredThumb(stored)) return stored;
 
   const fromList = await findSavedMusicDocument(client, stored);
-  if (!fromList) {
-    return stored;
-  }
+  if (!fromList) return stored;
 
   return applyThumbMetadata(stored, fromList);
 }

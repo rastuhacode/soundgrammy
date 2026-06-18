@@ -11,6 +11,10 @@
     "check-types": "next typegen && tsc --noEmit"
   },
   "dependencies": {
+    "@tanstack/react-query": "catalog:frontend",
+    "@trpc/client": "catalog:frontend",
+    "@trpc/server": "catalog:backend",
+    "@trpc/tanstack-react-query": "catalog:frontend",
     "better-sqlite3": "catalog:backend",
     "big-integer": "catalog:backend",
     "class-variance-authority": "catalog:frontend",
@@ -23,8 +27,11 @@
     "radix-ui": "catalog:frontend",
     "react": "catalog:frontend",
     "react-dom": "catalog:frontend",
+    "server-only": "catalog:frontend",
+    "superjson": "catalog:backend",
     "tailwind-merge": "catalog:frontend",
-    "telegram": "catalog:backend"
+    "telegram": "catalog:backend",
+    "zod": "catalog:frontend"
   },
   "devDependencies": {
     "@repo/eslint-config": "*",

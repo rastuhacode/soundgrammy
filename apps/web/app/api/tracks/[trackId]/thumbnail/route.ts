@@ -1,9 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSession } from "lib/auth";
-import {
-  extractEmbeddedCover,
-  readStreamPrefix,
-} from "lib/audio/cover";
+import { extractEmbeddedCover, readStreamPrefix } from "lib/audio/cover";
 import {
   getMtprotoSession,
   getTrackById,
@@ -63,7 +60,10 @@ export async function GET(
       const enriched = await withMtprotoClient(
         mtprotoSession.session_data,
         async (client) =>
-          enrichSavedMusicDocumentThumb(client, parseStoredDocument(storedJson)),
+          enrichSavedMusicDocumentThumb(
+            client,
+            parseStoredDocument(storedJson),
+          ),
       );
       storedJson = JSON.stringify(enriched);
       stored = enriched;
@@ -116,7 +116,11 @@ export async function GET(
       storedJson,
       { start: 0, end: 512 * 1024 - 1 },
       (refreshedDocument) => {
-        updateTrackMtprotoDocument(track.id, session.tgUserId, refreshedDocument);
+        updateTrackMtprotoDocument(
+          track.id,
+          session.tgUserId,
+          refreshedDocument,
+        );
       },
     );
     const audioPrefix = await readStreamPrefix(stream);

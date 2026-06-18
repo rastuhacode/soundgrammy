@@ -2,7 +2,9 @@
 
 import { useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
+import { useMutation } from "@tanstack/react-query";
 import type { Track } from "../lib/db";
+import { useTRPC } from "../trpc/client";
 import { TrackList } from "./TrackList";
 import { AudioPlayer } from "./AudioPlayer";
 
@@ -12,6 +14,8 @@ interface MusicLibraryProps {
 
 export function MusicLibrary({ tracks }: MusicLibraryProps) {
   const router = useRouter();
+  const trpc = useTRPC();
+  const deleteTrack = useMutation(trpc.tracks.delete.mutationOptions());
   const [currentTrack, setCurrentTrack] = useState<Track | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
 
@@ -46,10 +50,7 @@ export function MusicLibrary({ tracks }: MusicLibraryProps) {
   };
 
   const handleDelete = async (track: Track) => {
-    await fetch(`/api/tracks`, {
-      method: "DELETE",
-      body: JSON.stringify({ id: track.id }),
-    });
+    await deleteTrack.mutateAsync({ id: track.id });
     if (currentTrack?.id === track.id) {
       setCurrentTrack(null);
       setIsPlaying(false);

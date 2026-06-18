@@ -2,13 +2,9 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
-
-interface MtprotoStatus {
-  connected: boolean;
-  phoneNumber: string | null;
-  lastSyncAt: string | null;
-}
+import { useTRPC } from "../trpc/client";
 
 interface ProfileMusicSyncProps {
   trackCount: number;
@@ -16,40 +12,35 @@ interface ProfileMusicSyncProps {
 
 export function ProfileMusicSync({ trackCount }: ProfileMusicSyncProps) {
   const router = useRouter();
-  const [status, setStatus] = useState<MtprotoStatus | null>(null);
-  const [loggingOut, setLoggingOut] = useState(false);
+  const trpc = useTRPC();
+
+  const statusQuery = useQuery(trpc.mtproto.status.queryOptions());
+  const syncMutation = useMutation(trpc.mtproto.sync.mutationOptions());
+  const logoutMutation = useMutation(trpc.auth.logout.mutationOptions());
+
+  const status = statusQuery.data ?? null;
   const [syncing, setSyncing] = useState(trackCount === 0);
   const backgroundSyncStarted = useRef(false);
 
-  const loadStatus = useCallback(async () => {
-    const response = await fetch("/api/mtproto/status");
-    if (!response.ok) return;
-    const data = (await response.json()) as MtprotoStatus;
-    setStatus(data);
-  }, []);
-
   const runSync = useCallback(async () => {
     setSyncing(true);
-    const response = await fetch("/api/mtproto/sync", { method: "POST" });
-    setSyncing(false);
-    if (!response.ok) {
+    try {
+      await syncMutation.mutateAsync();
+    } catch {
+      setSyncing(false);
       return false;
     }
-
-    await loadStatus();
+    setSyncing(false);
+    await statusQuery.refetch();
     router.refresh();
     return true;
-  }, [loadStatus, router]);
+  }, [syncMutation, statusQuery, router]);
 
   useEffect(() => {
     if (trackCount > 0) {
       setSyncing(false);
     }
   }, [trackCount]);
-
-  useEffect(() => {
-    void loadStatus();
-  }, [loadStatus]);
 
   useEffect(() => {
     if (!status?.connected || backgroundSyncStarted.current) {
@@ -61,8 +52,7 @@ export function ProfileMusicSync({ trackCount }: ProfileMusicSyncProps) {
   }, [status?.connected, runSync]);
 
   const handleLogout = async () => {
-    setLoggingOut(true);
-    await fetch("/api/auth/logout", { method: "POST" });
+    await logoutMutation.mutateAsync();
     router.push("/login");
     router.refresh();
   };
@@ -96,7 +86,7 @@ export function ProfileMusicSync({ trackCount }: ProfileMusicSyncProps) {
         <Button
           variant="outline"
           onClick={handleLogout}
-          disabled={loggingOut}
+          disabled={logoutMutation.isPending}
         >
           Log out
         </Button>

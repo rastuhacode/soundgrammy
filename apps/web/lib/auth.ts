@@ -2,7 +2,8 @@ import { SignJWT, jwtVerify } from "jose";
 import { cookies } from "next/headers";
 
 const COOKIE_NAME = "session";
-const JWT_EXPIRATION = "7d";
+const JWT_EXPIRATION = "7d"; // matches maxAge below
+const SESSION_MAX_AGE_SECONDS = 60 * 60 * 24 * 7; // 7 days
 
 export interface SessionPayload {
   tgUserId: number;
@@ -30,7 +31,9 @@ export async function createSession(payload: SessionPayload): Promise<string> {
   return token;
 }
 
-export async function verifySession(token: string): Promise<SessionPayload | null> {
+export async function verifySession(
+  token: string,
+): Promise<SessionPayload | null> {
   try {
     const { payload } = await jwtVerify(token, getJwtSecret());
     return payload as unknown as SessionPayload;
@@ -48,14 +51,26 @@ export async function getSession(): Promise<SessionPayload | null> {
   return verifySession(token);
 }
 
-export function getSessionCookieOptions(token: string) {
-  return {
-    name: COOKIE_NAME,
-    value: token,
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "lax" as const,
-    maxAge: 60 * 60 * 24 * 7, // 7 days
-    path: "/",
-  };
+function serializeCookie(value: string, maxAgeSeconds: number): string {
+  const parts = [
+    `${COOKIE_NAME}=${value}`,
+    "HttpOnly",
+    "Path=/",
+    "SameSite=Lax",
+    `Max-Age=${maxAgeSeconds}`,
+  ];
+  if (process.env.NODE_ENV === "production") {
+    parts.push("Secure");
+  }
+  return parts.join("; ");
+}
+
+/** Builds the `Set-Cookie` header value that establishes the session cookie. */
+export function serializeSessionCookie(token: string): string {
+  return serializeCookie(token, SESSION_MAX_AGE_SECONDS);
+}
+
+/** Builds the `Set-Cookie` header value that clears the session cookie. */
+export function serializeClearSessionCookie(): string {
+  return serializeCookie("", 0);
 }

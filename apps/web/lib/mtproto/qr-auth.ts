@@ -63,7 +63,7 @@ export async function startQrAuth(authToken: string) {
   const session: QrSession = {
     status: "pending",
     qrUrl: "",
-    expires: 0,
+    expires: 0, // populated when Telegram emits the QR token
     client,
   };
 
@@ -126,12 +126,15 @@ export async function startQrAuth(authToken: string) {
   const qr = await Promise.race([
     qrReady,
     new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error("Timed out generating QR code")), 30000);
+      setTimeout(
+        () => reject(new Error("Timed out generating QR code")),
+        30_000,
+      ); // 30s to receive first QR from Telegram
     }),
   ]);
 
-  const ttlMs = Math.max(0, qr.expires * 1000 - Date.now());
-  setTimeout(() => cleanupSession(authToken), ttlMs + 5000);
+  const ttlMs = Math.max(0, qr.expires * 1_000 - Date.now()); // Telegram expiry is Unix seconds
+  setTimeout(() => cleanupSession(authToken), ttlMs + 5_000); // grace period after QR expiry
 
   return qr;
 }
@@ -139,7 +142,10 @@ export async function startQrAuth(authToken: string) {
 export function getQrAuthStatus(authToken: string) {
   const session = getQrSessions().get(authToken);
   if (!session) {
-    return { status: "error" as const, error: "Session expired. Refresh the page." };
+    return {
+      status: "error" as const,
+      error: "Session expired. Refresh the page.",
+    };
   }
 
   return {

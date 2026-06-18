@@ -117,15 +117,6 @@ export function getDb(): Database.Database {
 
 export type TrackSource = "bot" | "mtproto";
 
-export interface MtprotoDocumentStored {
-  id: string;
-  accessHash: string;
-  fileReference: string;
-  dcId: number;
-  mimeType: string;
-  size: string;
-}
-
 export interface BotFile {
   file_id: string;
   file_unique_id: string;
@@ -183,21 +174,21 @@ export function getTrackByFileId(
     .get(fileId, tgUserId) as Track | undefined;
 }
 
-export function insertTrack(
-  track: {
-    tg_user_id: number;
-    file_id: string;
-    file_unique_id: string;
-    title?: string | null;
-    performer?: string | null;
-    duration?: number | null;
-    source?: TrackSource;
-    mime_type?: string | null;
-    mtproto_document?: string | null;
-    file_name?: string;
-    file_size?: number;
-  },
-) {
+export interface InsertTrackInput {
+  tg_user_id: number;
+  file_id: string;
+  file_unique_id: string;
+  title?: string | null;
+  performer?: string | null;
+  duration?: number | null;
+  source?: TrackSource;
+  mime_type?: string | null;
+  mtproto_document?: string | null;
+  file_name?: string;
+  file_size?: number;
+}
+
+export function insertTrack(track: InsertTrackInput) {
   const db = getDb();
   const stmt = db.prepare(`
     INSERT INTO tracks (
@@ -354,7 +345,7 @@ export function createMtprotoAuthPending(
     INSERT INTO mtproto_auth_pending (
       auth_token, tg_user_id, phone_number, phone_code_hash, session_data, expires_at
     )
-    VALUES (?, 0, ?, ?, ?, datetime('now', '+15 minutes'))
+    VALUES (?, 0, ?, ?, ?, datetime('now', '+15 minutes')) -- tg_user_id filled after sign-in; 15m auth window
   `,
   ).run(authToken, phoneNumber, phoneCodeHash, sessionData);
 }
@@ -390,7 +381,7 @@ export function updateMtprotoAuthPending(
   db.prepare(
     `
     UPDATE mtproto_auth_pending
-    SET phone_code_hash = ?, session_data = ?, expires_at = datetime('now', '+15 minutes')
+    SET phone_code_hash = ?, session_data = ?, expires_at = datetime('now', '+15 minutes') -- extend 15m auth window on resend
     WHERE auth_token = ?
   `,
   ).run(phoneCodeHash, sessionData, authToken);

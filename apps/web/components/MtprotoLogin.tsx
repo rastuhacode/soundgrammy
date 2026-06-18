@@ -2,14 +2,21 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import styles from "@/app/login/page.module.css";
+import { useTRPC } from "../trpc/client";
 
 type Step = "qr" | "phone" | "code" | "password" | "qr-password";
-type CodeDelivery = "app" | "sms";
+
+function errorMessage(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
+}
 
 export function MtprotoLogin() {
   const router = useRouter();
+  const trpc = useTRPC();
+
   const [step, setStep] = useState<Step>("qr");
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
   const [qrAuthToken, setQrAuthToken] = useState<string | null>(null);
@@ -17,190 +24,133 @@ export function MtprotoLogin() {
   const [code, setCode] = useState("");
   const [password, setPassword] = useState("");
   const [authToken, setAuthToken] = useState<string | null>(null);
-  const [codeDelivery, setCodeDelivery] = useState<CodeDelivery>("app");
+  const [codeDelivery, setCodeDelivery] = useState<"app" | "sms">("app");
   const [passwordHint, setPasswordHint] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
+
+  const { mutateAsync: startQr, isPending: qrStarting } = useMutation(
+    trpc.mtproto.qr.start.mutationOptions(),
+  );
+  const { mutateAsync: submitQrPassword, isPending: qrPasswordPending } =
+    useMutation(trpc.mtproto.qr.password.mutationOptions());
+  const { mutateAsync: sendCode, isPending: sendingCode } = useMutation(
+    trpc.mtproto.sendCode.mutationOptions(),
+  );
+  const { mutateAsync: resendCode, isPending: resending } = useMutation(
+    trpc.mtproto.resendCode.mutationOptions(),
+  );
+  const { mutateAsync: signIn, isPending: signingIn } = useMutation(
+    trpc.mtproto.signIn.mutationOptions(),
+  );
+  const { mutateAsync: submitPassword, isPending: passwordPending } =
+    useMutation(trpc.mtproto.password.mutationOptions());
 
   const startQrLogin = useCallback(async () => {
-    setLoading(true);
     setError(null);
     setQrDataUrl(null);
-
-    const response = await fetch("/api/mtproto/auth/qr/start", {
-      method: "POST",
-    });
-    const data = await response.json();
-    setLoading(false);
-
-    if (!response.ok) {
-      setError(data.error ?? "Failed to start QR login");
-      return;
+    try {
+      const data = await startQr();
+      setQrAuthToken(data.authToken);
+      setQrDataUrl(data.qrDataUrl ?? null);
+      setStep("qr");
+    } catch (err) {
+      setError(errorMessage(err, "Failed to start QR login"));
     }
-
-    setQrAuthToken(data.authToken);
-    setQrDataUrl(data.qrDataUrl ?? null);
-    setStep("qr");
-  }, []);
+  }, [startQr]);
 
   useEffect(() => {
     void startQrLogin();
   }, [startQrLogin]);
 
+  const qrStatusQuery = useQuery({
+    ...trpc.mtproto.qr.status.queryOptions({ authToken: qrAuthToken ?? "" }),
+    enabled: Boolean(qrAuthToken) && (step === "qr" || step === "qr-password"),
+    refetchInterval: 2000,
+  });
+
   useEffect(() => {
-    if (step !== "qr" && step !== "qr-password") return;
-    if (!qrAuthToken) return;
+    const data = qrStatusQuery.data;
+    if (!data) return;
 
-    const interval = setInterval(async () => {
-      const response = await fetch(
-        `/api/mtproto/auth/qr/status?authToken=${encodeURIComponent(qrAuthToken)}`,
-      );
-      const data = await response.json();
-
-      if (data.status === "success") {
-        router.push("/");
-        router.refresh();
-        return;
-      }
-
-      if (data.status === "awaiting_password") {
-        setPasswordHint(data.passwordHint ?? null);
-        setStep("qr-password");
-        return;
-      }
-
-      if (data.status === "error") {
-        setError(data.error ?? "QR login failed");
-      }
-    }, 2000);
-
-    return () => clearInterval(interval);
-  }, [step, qrAuthToken, router]);
+    if (data.status === "success") {
+      router.push("/");
+      router.refresh();
+      return;
+    }
+    if (data.status === "awaiting_password") {
+      setPasswordHint(data.passwordHint ?? null);
+      setStep("qr-password");
+      return;
+    }
+    if (data.status === "error") {
+      setError(data.error ?? "QR login failed");
+    }
+  }, [qrStatusQuery.data, router]);
 
   const handleSendCode = async (e: React.FormEvent) => {
     e.preventDefault();
-    setLoading(true);
     setError(null);
-
-    const response = await fetch("/api/mtproto/auth/send-code", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ phoneNumber }),
-    });
-
-    const data = await response.json();
-    setLoading(false);
-
-    if (!response.ok) {
-      setError(data.error ?? "Failed to send code");
-      return;
+    try {
+      const data = await sendCode({ phoneNumber });
+      setAuthToken(data.authToken);
+      setCodeDelivery(data.codeDelivery ?? "app");
+      setStep("code");
+    } catch (err) {
+      setError(errorMessage(err, "Failed to send code"));
     }
-
-    setAuthToken(data.authToken);
-    setCodeDelivery(data.codeDelivery ?? "app");
-    setStep("code");
   };
 
   const handleResendSms = async () => {
     if (!authToken) return;
-
-    setLoading(true);
     setError(null);
-
-    const response = await fetch("/api/mtproto/auth/resend-code", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ authToken }),
-    });
-
-    const data = await response.json();
-    setLoading(false);
-
-    if (!response.ok) {
-      setError(data.error ?? "Failed to resend code");
-      return;
+    try {
+      const data = await resendCode({ authToken });
+      setCodeDelivery(data.codeDelivery ?? "sms");
+    } catch (err) {
+      setError(errorMessage(err, "Failed to resend code"));
     }
-
-    setCodeDelivery(data.codeDelivery ?? "sms");
   };
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!authToken) return;
-
-    setLoading(true);
     setError(null);
-
-    const response = await fetch("/api/mtproto/auth/sign-in", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ authToken, code }),
-    });
-
-    const data = await response.json();
-    setLoading(false);
-
-    if (!response.ok) {
-      setError(data.error ?? "Failed to sign in");
-      return;
+    try {
+      const data = await signIn({ authToken, code });
+      if (data.needsPassword) {
+        setStep("password");
+        return;
+      }
+      router.push("/");
+      router.refresh();
+    } catch (err) {
+      setError(errorMessage(err, "Failed to sign in"));
     }
-
-    if (data.needsPassword) {
-      setStep("password");
-      return;
-    }
-
-    router.push("/");
-    router.refresh();
   };
 
   const handlePhonePassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!authToken) return;
-
-    setLoading(true);
     setError(null);
-
-    const response = await fetch("/api/mtproto/auth/password", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ authToken, password }),
-    });
-
-    const data = await response.json();
-    setLoading(false);
-
-    if (!response.ok) {
-      setError(data.error ?? "Invalid password");
-      return;
+    try {
+      await submitPassword({ authToken, password });
+      router.push("/");
+      router.refresh();
+    } catch (err) {
+      setError(errorMessage(err, "Invalid password"));
     }
-
-    router.push("/");
-    router.refresh();
   };
 
   const handleQrPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!qrAuthToken) return;
-
-    setLoading(true);
     setError(null);
-
-    const response = await fetch("/api/mtproto/auth/qr/password", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ authToken: qrAuthToken, password }),
-    });
-
-    const data = await response.json();
-    setLoading(false);
-
-    if (!response.ok) {
-      setError(data.error ?? "Invalid password");
-      return;
+    try {
+      await submitQrPassword({ authToken: qrAuthToken, password });
+      setStep("qr");
+    } catch (err) {
+      setError(errorMessage(err, "Invalid password"));
     }
-
-    setStep("qr");
   };
 
   return (
@@ -236,7 +186,7 @@ export function MtprotoLogin() {
                   />
                 ) : (
                   <p className="text-sm opacity-60">
-                    {loading ? "Generating QR code…" : "Loading QR code…"}
+                    {qrStarting ? "Generating QR code…" : "Loading QR code…"}
                   </p>
                 )}
                 <p className="text-xs opacity-50 text-center">
@@ -246,7 +196,7 @@ export function MtprotoLogin() {
                   type="button"
                   variant="ghost"
                   onClick={() => void startQrLogin()}
-                  disabled={loading}
+                  disabled={qrStarting}
                 >
                   Refresh QR code
                 </Button>
@@ -267,8 +217,8 @@ export function MtprotoLogin() {
                   className="h-10 rounded-md border border-input bg-background px-3 text-sm w-full"
                   required
                 />
-                <Button type="submit" disabled={loading} className="w-full">
-                  {loading ? "Signing in…" : "Continue"}
+                <Button type="submit" disabled={qrPasswordPending} className="w-full">
+                  {qrPasswordPending ? "Signing in…" : "Continue"}
                 </Button>
               </form>
             )}
@@ -296,8 +246,8 @@ export function MtprotoLogin() {
               className="h-10 rounded-md border border-input bg-background px-3 text-sm w-full"
               required
             />
-            <Button type="submit" disabled={loading} className="w-full">
-              {loading ? "Sending…" : "Send login code"}
+            <Button type="submit" disabled={sendingCode} className="w-full">
+              {sendingCode ? "Sending…" : "Send login code"}
             </Button>
             <Button type="button" variant="ghost" onClick={() => setStep("qr")}>
               Back to QR login
@@ -322,14 +272,14 @@ export function MtprotoLogin() {
               className="h-10 rounded-md border border-input bg-background px-3 text-sm w-full"
               required
             />
-            <Button type="submit" disabled={loading} className="w-full">
-              {loading ? "Verifying…" : "Sign in"}
+            <Button type="submit" disabled={signingIn} className="w-full">
+              {signingIn ? "Verifying…" : "Sign in"}
             </Button>
             {codeDelivery === "app" ? (
               <Button
                 type="button"
                 variant="outline"
-                disabled={loading}
+                disabled={resending}
                 onClick={() => void handleResendSms()}
               >
                 Try SMS instead
@@ -352,8 +302,8 @@ export function MtprotoLogin() {
               className="h-10 rounded-md border border-input bg-background px-3 text-sm w-full"
               required
             />
-            <Button type="submit" disabled={loading} className="w-full">
-              {loading ? "Signing in…" : "Sign in"}
+            <Button type="submit" disabled={passwordPending} className="w-full">
+              {passwordPending ? "Signing in…" : "Sign in"}
             </Button>
           </form>
         )}

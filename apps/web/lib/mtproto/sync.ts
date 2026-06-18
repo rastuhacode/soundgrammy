@@ -1,4 +1,4 @@
-import type { TelegramClient } from "telegram";
+import type { Api, TelegramClient } from "telegram";
 import {
   deleteMtprotoTracksNotIn,
   getMtprotoSession,
@@ -9,17 +9,8 @@ import {
   type TrackSource,
 } from "../db";
 import { withMtprotoClient } from "./client";
-import {
-  computeSavedMusicHash,
-  parseDocumentMetadata,
-} from "./document";
-import {
-  GetSavedMusicRequest,
-  registerSavedMusicTl,
-  type SavedMusicResult,
-} from "./saved-music-tl";
-
-registerSavedMusicTl();
+import { computeSavedMusicHash, parseDocumentMetadata } from "./document";
+import { getSavedMusic, SAVED_MUSIC_PAGE_SIZE } from "./saved-music-tl";
 
 export interface SyncProfileMusicOptions {
   storedHash?: string | null;
@@ -38,25 +29,24 @@ async function fetchAllProfileMusic(
   hash: string,
 ): Promise<
   | { notModified: true; count: number }
-  | { notModified: false; documents: import("telegram").Api.Document[] }
+  | { notModified: false; documents: Api.Document[] }
 > {
-  const documents: import("telegram").Api.Document[] = [];
+  const documents: Api.Document[] = [];
   let offset = 0;
-  const limit = 100;
 
   while (true) {
-    const result = (await client.invoke(
-      new GetSavedMusicRequest({ offset, limit, hash }) as never,
-    )) as SavedMusicResult;
+    const result = await getSavedMusic(client, {
+      offset,
+      limit: SAVED_MUSIC_PAGE_SIZE,
+      hash,
+    });
 
     if (result.className === "users.savedMusicNotModified") {
       return { notModified: true, count: result.count };
     }
 
     documents.push(...result.documents);
-    if (result.documents.length < limit) {
-      break;
-    }
+    if (result.documents.length < SAVED_MUSIC_PAGE_SIZE) break;
     offset += result.documents.length;
   }
 
@@ -69,8 +59,7 @@ export async function syncProfileMusic(
   options: SyncProfileMusicOptions = {},
 ): Promise<SyncProfileMusicResult> {
   const localTracks = getTracksByUser(tgUserId);
-  const hash =
-    localTracks.length === 0 ? "0" : (options.storedHash ?? "0");
+  const hash = localTracks.length === 0 ? "0" : (options.storedHash ?? "0"); // "0" = no cached hash yet
   const fetched = await fetchAllProfileMusic(client, hash);
 
   if (fetched.notModified) {
@@ -123,15 +112,13 @@ export async function syncProfileMusic(
   };
 }
 
-export async function ensureProfileMusicSynced(tgUserId: number): Promise<void> {
-  if (getTracksByUser(tgUserId).length > 0) {
-    return;
-  }
+export async function ensureProfileMusicSynced(
+  tgUserId: number,
+): Promise<void> {
+  if (getTracksByUser(tgUserId).length > 0) return;
 
   const mtprotoSession = getMtprotoSession(tgUserId);
-  if (!mtprotoSession) {
-    return;
-  }
+  if (!mtprotoSession) return;
 
   const result = await withMtprotoClient(
     mtprotoSession.session_data,
