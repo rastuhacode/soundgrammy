@@ -23,4 +23,4 @@ Get `TELEGRAM_API_ID` and `TELEGRAM_API_HASH` from [my.telegram.org](https://my.
 
 ### Auth
 
-Sign in with your Telegram phone number (MTProto). After login, use **Sync profile music** to import songs pinned to your Telegram profile.
+Sign in with your Telegram phone number (MTProto). Profile music syncs automatically on load.

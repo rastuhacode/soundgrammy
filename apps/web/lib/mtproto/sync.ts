@@ -1,6 +1,18 @@
-import { Api } from "telegram";
 import type { TelegramClient } from "telegram";
-import { insertTrack, type TrackSource } from "../db";
+import {
+  deleteMtprotoTracksNotIn,
+  getMtprotoSession,
+  getTracksByUser,
+  insertTrack,
+  updateMtprotoLastSync,
+  updateMtprotoSavedMusicHash,
+  type TrackSource,
+} from "../db";
+import { withMtprotoClient } from "./client";
+import {
+  computeSavedMusicHash,
+  parseDocumentMetadata,
+} from "./document";
 import {
   GetSavedMusicRequest,
   registerSavedMusicTl,
@@ -9,53 +21,36 @@ import {
 
 registerSavedMusicTl();
 
-function parseDocument(doc: Api.Document): {
-  title: string | null;
-  performer: string | null;
-  duration: number | null;
-  storedJson: string;
-} {
-  let title: string | null = null;
-  let performer: string | null = null;
-  let duration: number | null = null;
+export interface SyncProfileMusicOptions {
+  storedHash?: string | null;
+}
 
-  for (const attr of doc.attributes ?? []) {
-    if (attr instanceof Api.DocumentAttributeAudio) {
-      title = attr.title ?? null;
-      performer = attr.performer ?? null;
-      duration = attr.duration ?? null;
-    }
-    if (attr instanceof Api.DocumentAttributeFilename && !title) {
-      title = attr.fileName;
-    }
-  }
-
-  const storedJson = JSON.stringify({
-    id: doc.id.toString(),
-    accessHash: doc.accessHash?.toString() ?? "0",
-    fileReference: Buffer.from(doc.fileReference).toString("base64"),
-    dcId: doc.dcId,
-    mimeType: doc.mimeType ?? "audio/mpeg",
-    size: doc.size?.toString() ?? "0",
-  });
-
-  return { title, performer, duration, storedJson };
+export interface SyncProfileMusicResult {
+  imported: number;
+  removed: number;
+  total: number;
+  notModified: boolean;
+  hash: string;
 }
 
 async function fetchAllProfileMusic(
   client: TelegramClient,
-): Promise<Api.Document[]> {
-  const documents: Api.Document[] = [];
+  hash: string,
+): Promise<
+  | { notModified: true; count: number }
+  | { notModified: false; documents: import("telegram").Api.Document[] }
+> {
+  const documents: import("telegram").Api.Document[] = [];
   let offset = 0;
   const limit = 100;
 
   while (true) {
     const result = (await client.invoke(
-      new GetSavedMusicRequest({ offset, limit }) as never,
+      new GetSavedMusicRequest({ offset, limit, hash }) as never,
     )) as SavedMusicResult;
 
     if (result.className === "users.savedMusicNotModified") {
-      break;
+      return { notModified: true, count: result.count };
     }
 
     documents.push(...result.documents);
@@ -65,19 +60,38 @@ async function fetchAllProfileMusic(
     offset += result.documents.length;
   }
 
-  return documents;
+  return { notModified: false, documents };
 }
 
 export async function syncProfileMusic(
   client: TelegramClient,
   tgUserId: number,
-): Promise<{ imported: number; total: number }> {
-  const documents = await fetchAllProfileMusic(client);
+  options: SyncProfileMusicOptions = {},
+): Promise<SyncProfileMusicResult> {
+  const localTracks = getTracksByUser(tgUserId);
+  const hash =
+    localTracks.length === 0 ? "0" : (options.storedHash ?? "0");
+  const fetched = await fetchAllProfileMusic(client, hash);
+
+  if (fetched.notModified) {
+    return {
+      imported: 0,
+      removed: 0,
+      total: fetched.count,
+      notModified: true,
+      hash,
+    };
+  }
+
+  const documents = fetched.documents;
+  const fileUniqueIds: string[] = [];
   let imported = 0;
 
   for (const doc of documents) {
-    const { title, performer, duration, storedJson } = parseDocument(doc);
+    const { title, performer, duration, storedJson } =
+      parseDocumentMetadata(doc);
     const fileUniqueId = `mtproto:${doc.id.toString()}`;
+    fileUniqueIds.push(fileUniqueId);
 
     insertTrack({
       tg_user_id: tgUserId,
@@ -95,5 +109,40 @@ export async function syncProfileMusic(
     imported++;
   }
 
-  return { imported, total: documents.length };
+  const removed = deleteMtprotoTracksNotIn(tgUserId, fileUniqueIds);
+  const nextHash = computeSavedMusicHash(
+    documents.map((doc) => doc.id.toString()),
+  );
+
+  return {
+    imported,
+    removed,
+    total: documents.length,
+    notModified: false,
+    hash: nextHash,
+  };
+}
+
+export async function ensureProfileMusicSynced(tgUserId: number): Promise<void> {
+  if (getTracksByUser(tgUserId).length > 0) {
+    return;
+  }
+
+  const mtprotoSession = getMtprotoSession(tgUserId);
+  if (!mtprotoSession) {
+    return;
+  }
+
+  const result = await withMtprotoClient(
+    mtprotoSession.session_data,
+    async (client) =>
+      syncProfileMusic(client, tgUserId, {
+        storedHash: mtprotoSession.saved_music_hash,
+      }),
+  );
+
+  updateMtprotoLastSync(tgUserId);
+  if (!result.notModified) {
+    updateMtprotoSavedMusicHash(tgUserId, result.hash);
+  }
 }

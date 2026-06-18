@@ -3,6 +3,7 @@ import { getSession } from "lib/auth";
 import {
   getMtprotoSession,
   updateMtprotoLastSync,
+  updateMtprotoSavedMusicHash,
 } from "lib/db";
 import { withMtprotoClient } from "lib/mtproto/client";
 import { syncProfileMusic } from "lib/mtproto/sync";
@@ -24,10 +25,16 @@ export async function POST() {
   try {
     const result = await withMtprotoClient(
       mtprotoSession.session_data,
-      async (client) => syncProfileMusic(client, session.tgUserId),
+      async (client) =>
+        syncProfileMusic(client, session.tgUserId, {
+          storedHash: mtprotoSession.saved_music_hash,
+        }),
     );
 
     updateMtprotoLastSync(session.tgUserId);
+    if (!result.notModified) {
+      updateMtprotoSavedMusicHash(session.tgUserId, result.hash);
+    }
 
     return NextResponse.json(result);
   } catch (error) {

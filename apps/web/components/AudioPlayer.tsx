@@ -2,7 +2,7 @@
 
 import { useRef, useState, useEffect, useLayoutEffect } from "react";
 import type { Track } from "../lib/db";
-import { Pause, Play, Volume2 } from "lucide-react";
+import { Pause, Play, Volume2, Music } from "lucide-react";
 
 const VOLUME_STORAGE_KEY = "soundgrammy-volume";
 
@@ -37,6 +37,7 @@ export function AudioPlayer({
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [volume, setVolume] = useState(100);
+  const [thumbError, setThumbError] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
   const volumeRef = useRef(volume);
   const isSeekingRef = useRef(false);
@@ -97,6 +98,10 @@ export function AudioPlayer({
   }, [volume]);
 
   useEffect(() => {
+    setThumbError(false);
+  }, [track?.id]);
+
+  useEffect(() => {
     const audio = audioRef.current;
     if (!audio || !track) return;
 
@@ -153,11 +158,18 @@ export function AudioPlayer({
       {track ? (
         <div className="fixed bottom-0 left-0 right-0 flex items-center gap-4 px-6 py-4 bg-background border-t border-border h-30">
           <div className="flex gap-4 items-center min-w-40 w-1/5">
-            <img
-              src="https://upload.wikimedia.org/wikipedia/en/b/bb/BMTH_Sempiternal.png"
-              alt="Picture of the author"
-              className="rounded-md w-20 h-20 object-cover aspect-square"
-            />
+            {thumbError ? (
+              <div className="rounded-md w-20 h-20 shrink-0 bg-muted flex items-center justify-center aspect-square">
+                <Music className="opacity-60" />
+              </div>
+            ) : (
+              <img
+                src={`/api/tracks/${track.id}/thumbnail`}
+                alt="thumbnail"
+                className="rounded-md w-20 h-20 object-cover aspect-square shrink-0"
+                onError={() => setThumbError(true)}
+              />
+            )}
             <div className="flex flex-col gap-1 grow max-w-full overflow-hidden">
               <span
                 className="text-sm font-medium overflow-hidden text-ellipsis whitespace-nowrap"

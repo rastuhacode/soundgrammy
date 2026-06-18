@@ -10,6 +10,7 @@ const nextConfig = {
     "qrcode",
   ],
   devIndicators: false,
+  typedRoutes: true,
 };
 
 export default nextConfig;

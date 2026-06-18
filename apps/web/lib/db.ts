@@ -5,6 +5,17 @@ import path from "node:path";
 const DATA_DIR = path.join(process.cwd(), "data");
 const DB_PATH = path.join(DATA_DIR, "soundgrammy.db");
 
+function migrateMtprotoSessionsTable(db: Database.Database) {
+  const columns = db
+    .prepare("PRAGMA table_info(mtproto_sessions)")
+    .all() as { name: string }[];
+  const columnNames = new Set(columns.map((c) => c.name));
+
+  if (!columnNames.has("saved_music_hash")) {
+    db.exec("ALTER TABLE mtproto_sessions ADD COLUMN saved_music_hash TEXT");
+  }
+}
+
 function migrateTracksTable(db: Database.Database) {
   const columns = db
     .prepare("PRAGMA table_info(tracks)")
@@ -73,9 +84,12 @@ function createDatabase(): Database.Database {
       phone_number TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
       updated_at TEXT NOT NULL DEFAULT (datetime('now')),
-      last_sync_at TEXT
+      last_sync_at TEXT,
+      saved_music_hash TEXT
     )
   `);
+
+  migrateMtprotoSessionsTable(db);
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS mtproto_auth_pending (
@@ -232,6 +246,7 @@ export interface MtprotoSession {
   created_at: string;
   updated_at: string;
   last_sync_at: string | null;
+  saved_music_hash: string | null;
 }
 
 export function getMtprotoSession(
@@ -266,6 +281,50 @@ export function updateMtprotoLastSync(tgUserId: number) {
   db.prepare(
     "UPDATE mtproto_sessions SET last_sync_at = datetime('now') WHERE tg_user_id = ?",
   ).run(tgUserId);
+}
+
+export function updateMtprotoSavedMusicHash(
+  tgUserId: number,
+  savedMusicHash: string,
+) {
+  const db = getDb();
+  db.prepare(
+    "UPDATE mtproto_sessions SET saved_music_hash = ? WHERE tg_user_id = ?",
+  ).run(savedMusicHash, tgUserId);
+}
+
+export function updateTrackMtprotoDocument(
+  trackId: number,
+  tgUserId: number,
+  mtprotoDocument: string,
+) {
+  const db = getDb();
+  db.prepare(
+    "UPDATE tracks SET mtproto_document = ? WHERE id = ? AND tg_user_id = ?",
+  ).run(mtprotoDocument, trackId, tgUserId);
+}
+
+export function deleteMtprotoTracksNotIn(
+  tgUserId: number,
+  fileUniqueIds: string[],
+): number {
+  const db = getDb();
+  if (fileUniqueIds.length === 0) {
+    const result = db
+      .prepare(
+        "DELETE FROM tracks WHERE tg_user_id = ? AND source = 'mtproto'",
+      )
+      .run(tgUserId);
+    return result.changes;
+  }
+
+  const placeholders = fileUniqueIds.map(() => "?").join(", ");
+  const result = db
+    .prepare(
+      `DELETE FROM tracks WHERE tg_user_id = ? AND source = 'mtproto' AND file_unique_id NOT IN (${placeholders})`,
+    )
+    .run(tgUserId, ...fileUniqueIds);
+  return result.changes;
 }
 
 export function deleteMtprotoSession(tgUserId: number) {

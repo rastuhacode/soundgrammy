@@ -2,8 +2,13 @@ import { TelegramClient, sessions, Api } from "telegram";
 import bigInt from "big-integer";
 import { getMtprotoCredentials } from "./config";
 import { decryptSession, encryptSession } from "./crypto";
+import { isFileReferenceError, parseStoredDocument } from "./document";
+import type { StoredDocument } from "./document";
+import { refreshSavedMusicDocumentJson } from "./refresh";
 
 const TELEGRAM_REQUEST_SIZE = 256 * 1024;
+
+export { parseStoredDocument, type StoredDocument } from "./document";
 
 export function saveClientSession(client: TelegramClient): string {
   return encryptSession((client.session as sessions.StringSession).save());
@@ -38,28 +43,57 @@ export async function withMtprotoClient<T>(
   }
 }
 
-export interface StoredDocument {
-  id: string;
-  accessHash: string;
-  fileReference: string;
-  dcId: number;
-  mimeType?: string;
-  size?: string;
-}
-
-export function parseStoredDocument(storedJson: string): StoredDocument {
-  return JSON.parse(storedJson) as StoredDocument;
-}
-
 function buildDocumentLocation(
   data: StoredDocument,
+  thumbSize = "",
 ): Api.InputDocumentFileLocation {
   return new Api.InputDocumentFileLocation({
     id: bigInt(data.id),
     accessHash: bigInt(data.accessHash),
     fileReference: Buffer.from(data.fileReference, "base64"),
-    thumbSize: "",
+    thumbSize,
   });
+}
+
+async function downloadDocumentRange(
+  client: TelegramClient,
+  data: StoredDocument,
+  byteRange: { start: number; end: number },
+  onChunk: (chunk: Uint8Array) => void,
+): Promise<void> {
+  const totalSize = Number(data.size ?? 0);
+  const start = byteRange.start;
+  const end = byteRange.end;
+  const byteCount = end - start + 1;
+  const location = buildDocumentLocation(data);
+  const chunkCount = Math.ceil(byteCount / TELEGRAM_REQUEST_SIZE);
+
+  const iter = client.iterDownload({
+    file: location,
+    offset: bigInt(start),
+    limit: chunkCount,
+    requestSize: TELEGRAM_REQUEST_SIZE,
+    chunkSize: TELEGRAM_REQUEST_SIZE,
+    fileSize: totalSize > 0 ? bigInt(totalSize) : undefined,
+    dcId: data.dcId,
+  });
+
+  let bytesSent = 0;
+  for await (const chunk of iter) {
+    const buffer = chunk as Buffer;
+    const remaining = byteCount - bytesSent;
+    if (remaining <= 0) {
+      break;
+    }
+
+    if (buffer.length > remaining) {
+      onChunk(new Uint8Array(buffer.subarray(0, remaining)));
+      return;
+    }
+
+    onChunk(new Uint8Array(buffer));
+    bytesSent += buffer.length;
+  }
 }
 
 export interface MtprotoDocumentStream {
@@ -73,8 +107,10 @@ export function createMtprotoDocumentStream(
   encryptedSession: string,
   storedJson: string,
   range?: { start: number; end: number },
+  onDocumentRefreshed?: (storedJson: string) => void,
 ): MtprotoDocumentStream {
-  const data = parseStoredDocument(storedJson);
+  let currentJson = storedJson;
+  const data = parseStoredDocument(currentJson);
   const totalSize = Number(data.size ?? 0);
   const mimeType = data.mimeType ?? "audio/mpeg";
   const start = range?.start ?? 0;
@@ -89,35 +125,30 @@ export function createMtprotoDocumentStream(
     async start(controller) {
       try {
         client = await createMtprotoClient(sessionString);
-        const location = buildDocumentLocation(data);
-        const chunkCount = Math.ceil(byteCount / TELEGRAM_REQUEST_SIZE);
+        const byteRange = { start, end };
 
-        const iter = client.iterDownload({
-          file: location,
-          offset: bigInt(start),
-          limit: chunkCount,
-          requestSize: TELEGRAM_REQUEST_SIZE,
-          chunkSize: TELEGRAM_REQUEST_SIZE,
-          fileSize: totalSize > 0 ? bigInt(totalSize) : undefined,
-          dcId: data.dcId,
-        });
+        const tryDownload = async (json: string) => {
+          await downloadDocumentRange(
+            client!,
+            parseStoredDocument(json),
+            byteRange,
+            (chunk) => controller.enqueue(chunk),
+          );
+        };
 
-        let bytesSent = 0;
-        for await (const chunk of iter) {
-          const buffer = chunk as Buffer;
-          const remaining = byteCount - bytesSent;
-          if (remaining <= 0) {
-            break;
+        try {
+          await tryDownload(currentJson);
+        } catch (error) {
+          if (!isFileReferenceError(error)) {
+            throw error;
           }
 
-          if (buffer.length > remaining) {
-            controller.enqueue(new Uint8Array(buffer.subarray(0, remaining)));
-            bytesSent += remaining;
-            break;
-          }
-
-          controller.enqueue(new Uint8Array(buffer));
-          bytesSent += buffer.length;
+          currentJson = await refreshSavedMusicDocumentJson(
+            client!,
+            currentJson,
+          );
+          onDocumentRefreshed?.(currentJson);
+          await tryDownload(currentJson);
         }
 
         controller.close();
@@ -139,4 +170,59 @@ export function createMtprotoDocumentStream(
   });
 
   return { stream, mimeType, totalSize, contentLength: byteCount };
+}
+
+export async function downloadMtprotoDocumentThumbnail(
+  encryptedSession: string,
+  storedJson: string,
+  onDocumentRefreshed?: (storedJson: string) => void,
+): Promise<Buffer | null> {
+  const stored = parseStoredDocument(storedJson);
+  if (stored.thumbData) {
+    return Buffer.from(stored.thumbData, "base64");
+  }
+  if (!stored.thumbSize) {
+    return null;
+  }
+
+  let currentJson = storedJson;
+  const sessionString = decryptSession(encryptedSession);
+  const client = await createMtprotoClient(sessionString);
+
+  try {
+    const tryDownload = async (json: string) => {
+      const data = parseStoredDocument(json);
+      if (!data.thumbSize) {
+        return null;
+      }
+
+      const buffer = await client.downloadFile(
+        buildDocumentLocation(data, data.thumbSize),
+        {
+          dcId: data.dcId,
+          fileSize: data.thumbFileSize
+            ? bigInt(data.thumbFileSize)
+            : undefined,
+        },
+      );
+      if (!buffer || (Buffer.isBuffer(buffer) && buffer.length === 0)) {
+        return null;
+      }
+      return Buffer.isBuffer(buffer) ? buffer : Buffer.from(buffer);
+    };
+
+    try {
+      return await tryDownload(currentJson);
+    } catch (error) {
+      if (!isFileReferenceError(error)) {
+        throw error;
+      }
+
+      currentJson = await refreshSavedMusicDocumentJson(client, currentJson);
+      onDocumentRefreshed?.(currentJson);
+      return await tryDownload(currentJson);
+    }
+  } finally {
+    await client.disconnect();
+  }
 }

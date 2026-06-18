@@ -1,5 +1,7 @@
+import { redirect } from "next/navigation";
 import { getSession } from "../lib/auth";
-import { getTracksByUser } from "../lib/db";
+import { getMtprotoSession, getTracksByUser } from "../lib/db";
+import { ensureProfileMusicSynced } from "../lib/mtproto/sync";
 import { MusicLibrary } from "../components/MusicLibrary";
 import { ProfileMusicSync } from "../components/ProfileMusicSync";
 
@@ -10,6 +12,12 @@ export default async function HomePage() {
     return null;
   }
 
+  const mtprotoSession = getMtprotoSession(session.tgUserId);
+  if (!mtprotoSession) {
+    redirect("/login");
+  }
+
+  await ensureProfileMusicSynced(session.tgUserId);
   const tracks = getTracksByUser(session.tgUserId);
 
   return (
@@ -18,7 +26,7 @@ export default async function HomePage() {
         <h1 className="text-2xl font-bold">SoundGrammy</h1>
         <span className="opacity-60">{session.firstName}</span>
       </header>
-      <ProfileMusicSync />
+      <ProfileMusicSync trackCount={tracks.length} />
       <main className="w-full grow">
         <MusicLibrary tracks={tracks} />
       </main>

@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSession } from "lib/auth";
-import { getMtprotoSession, getTrackById } from "lib/db";
+import { getMtprotoSession, getTrackById, updateTrackMtprotoDocument } from "lib/db";
 import {
   createMtprotoDocumentStream,
   parseStoredDocument,
@@ -105,6 +105,9 @@ export async function GET(
       mtprotoSession.session_data,
       track.mtproto_document,
       byteRange,
+      (refreshedDocument) => {
+        updateTrackMtprotoDocument(track.id, session.tgUserId, refreshedDocument);
+      },
     );
 
     const headers: Record<string, string> = {

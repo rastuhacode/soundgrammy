@@ -12,18 +12,19 @@
   },
   "dependencies": {
     "better-sqlite3": "catalog:backend",
+    "big-integer": "catalog:backend",
     "class-variance-authority": "catalog:frontend",
     "clsx": "catalog:frontend",
     "jose": "catalog:backend",
     "lucide-react": "catalog:frontend",
+    "music-metadata": "^11.13.0",
     "next": "catalog:frontend",
+    "qrcode": "catalog:backend",
     "radix-ui": "catalog:frontend",
     "react": "catalog:frontend",
     "react-dom": "catalog:frontend",
     "tailwind-merge": "catalog:frontend",
-    "telegram": "catalog:backend",
-    "big-integer": "catalog:backend",
-    "qrcode": "catalog:backend"
+    "telegram": "catalog:backend"
   },
   "devDependencies": {
     "@repo/eslint-config": "*",

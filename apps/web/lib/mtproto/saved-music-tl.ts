@@ -1,4 +1,4 @@
-import bigInt from "big-integer";
+import bigInt, { type BigInteger } from "big-integer";
 import { Api } from "telegram";
 import { toSignedLittleBuffer } from "telegram/Helpers";
 import { tlobjects } from "telegram/tl/AllTLObjects";
@@ -6,6 +6,8 @@ import { tlobjects } from "telegram/tl/AllTLObjects";
 const SAVED_MUSIC_ID = 0x34a2f297;
 const SAVED_MUSIC_NOT_MODIFIED_ID = 0xe3878aa4;
 const GET_SAVED_MUSIC_ID = 0x788d7fe3;
+const GET_SAVED_MUSIC_BY_ID = 0x7573a4e9;
+const VECTOR_CONSTRUCTOR_ID = 0x1cb5c415;
 
 let registered = false;
 
@@ -42,6 +44,13 @@ export function registerSavedMusicTl() {
   tlobjects[SAVED_MUSIC_NOT_MODIFIED_ID] = SavedMusicNotModified;
 }
 
+function serializeVector(items: Buffer[]): Buffer {
+  const header = Buffer.alloc(8);
+  header.writeUInt32LE(VECTOR_CONSTRUCTOR_ID, 0);
+  header.writeInt32LE(items.length, 4);
+  return Buffer.concat([header, ...items]);
+}
+
 export class GetSavedMusicRequest {
   CONSTRUCTOR_ID = GET_SAVED_MUSIC_ID;
   SUBCLASS_OF_ID = 0;
@@ -50,11 +59,20 @@ export class GetSavedMusicRequest {
   id = new Api.InputUserSelf();
   offset: number;
   limit: number;
-  hash = bigInt(0);
+  hash: BigInteger;
 
-  constructor({ offset, limit }: { offset: number; limit: number }) {
+  constructor({
+    offset,
+    limit,
+    hash = "0",
+  }: {
+    offset: number;
+    limit: number;
+    hash?: string | BigInteger;
+  }) {
     this.offset = offset;
     this.limit = limit;
+    this.hash = typeof hash === "string" ? bigInt(hash) : hash;
   }
 
   getBytes() {
@@ -70,6 +88,37 @@ export class GetSavedMusicRequest {
       offsetBuf,
       limitBuf,
       toSignedLittleBuffer(this.hash, 8),
+    ]);
+  }
+
+  readResult(reader: { tgReadObject: () => unknown }) {
+    return reader.tgReadObject();
+  }
+
+  async resolve() {
+    // InputUserSelf needs no resolution
+  }
+}
+
+export class GetSavedMusicByIDRequest {
+  CONSTRUCTOR_ID = GET_SAVED_MUSIC_BY_ID;
+  SUBCLASS_OF_ID = 0;
+  classType = "request" as const;
+  className = "users.GetSavedMusicByID";
+  id = new Api.InputUserSelf();
+  documents: Api.InputDocument[];
+
+  constructor(documents: Api.InputDocument[]) {
+    this.documents = documents;
+  }
+
+  getBytes() {
+    const header = Buffer.alloc(4);
+    header.writeUInt32LE(this.CONSTRUCTOR_ID, 0);
+    return Buffer.concat([
+      header,
+      new Api.InputUserSelf().getBytes(),
+      serializeVector(this.documents.map((doc) => doc.getBytes())),
     ]);
   }
 

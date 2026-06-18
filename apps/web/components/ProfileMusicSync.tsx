@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 
@@ -11,15 +11,15 @@ interface MtprotoStatus {
 }
 
 interface ProfileMusicSyncProps {
-  onSynced?: () => void;
+  trackCount: number;
 }
 
-export function ProfileMusicSync({ onSynced }: ProfileMusicSyncProps) {
+export function ProfileMusicSync({ trackCount }: ProfileMusicSyncProps) {
   const router = useRouter();
   const [status, setStatus] = useState<MtprotoStatus | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [syncing, setSyncing] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
+  const [syncing, setSyncing] = useState(trackCount === 0);
+  const backgroundSyncStarted = useRef(false);
 
   const loadStatus = useCallback(async () => {
     const response = await fetch("/api/mtproto/status");
@@ -28,27 +28,37 @@ export function ProfileMusicSync({ onSynced }: ProfileMusicSyncProps) {
     setStatus(data);
   }, []);
 
+  const runSync = useCallback(async () => {
+    setSyncing(true);
+    const response = await fetch("/api/mtproto/sync", { method: "POST" });
+    setSyncing(false);
+    if (!response.ok) {
+      return false;
+    }
+
+    await loadStatus();
+    router.refresh();
+    return true;
+  }, [loadStatus, router]);
+
+  useEffect(() => {
+    if (trackCount > 0) {
+      setSyncing(false);
+    }
+  }, [trackCount]);
+
   useEffect(() => {
     void loadStatus();
   }, [loadStatus]);
 
-  const handleSync = async () => {
-    setSyncing(true);
-    setError(null);
-
-    const response = await fetch("/api/mtproto/sync", { method: "POST" });
-    const data = await response.json();
-    setSyncing(false);
-
-    if (!response.ok) {
-      setError(data.error ?? "Sync failed");
+  useEffect(() => {
+    if (!status?.connected || backgroundSyncStarted.current) {
       return;
     }
 
-    await loadStatus();
-    onSynced?.();
-    router.refresh();
-  };
+    backgroundSyncStarted.current = true;
+    void runSync();
+  }, [status?.connected, runSync]);
 
   const handleLogout = async () => {
     setLoggingOut(true);
@@ -73,33 +83,24 @@ export function ProfileMusicSync({ onSynced }: ProfileMusicSyncProps) {
           <p className="text-sm opacity-60 mt-1">
             {status.phoneNumber
               ? `Signed in as ${status.phoneNumber}`
-              : "Sync songs pinned to your Telegram profile"}
+              : "Songs pinned to your Telegram profile"}
           </p>
-          {status.lastSyncAt ? (
+          {syncing ? (
+            <p className="text-xs opacity-50 mt-1">Syncing your library…</p>
+          ) : status.lastSyncAt ? (
             <p className="text-xs opacity-50 mt-1">
-              Last sync: {new Date(status.lastSyncAt).toLocaleString()}
+              Last synced: {new Date(status.lastSyncAt).toLocaleString()}
             </p>
           ) : null}
         </div>
-        <div className="flex flex-wrap gap-2">
-          <Button onClick={handleSync} disabled={syncing || !status.connected}>
-            {syncing ? "Syncing…" : "Sync profile music"}
-          </Button>
-          <Button
-            variant="outline"
-            onClick={handleLogout}
-            disabled={loggingOut}
-          >
-            Log out
-          </Button>
-        </div>
+        <Button
+          variant="outline"
+          onClick={handleLogout}
+          disabled={loggingOut}
+        >
+          Log out
+        </Button>
       </div>
-
-      {error ? (
-        <p className="text-sm text-destructive" role="alert">
-          {error}
-        </p>
-      ) : null}
     </section>
   );
 }
