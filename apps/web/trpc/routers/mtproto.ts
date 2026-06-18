@@ -99,7 +99,9 @@ const qrRouter = createTRPCRouter({
 
   /** Submits the 2FA password for a QR login awaiting it. */
   password: publicProcedure
-    .input(z.object({ authToken: z.string().min(1), password: z.string().min(1) }))
+    .input(
+      z.object({ authToken: z.string().min(1), password: z.string().min(1) }),
+    )
     .mutation(({ input }) => {
       try {
         submitQrPassword(input.authToken, input.password);

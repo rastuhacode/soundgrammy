@@ -28,8 +28,7 @@ export function decryptSession(payload: string): string {
   const iv = Buffer.from(ivB64, "base64");
   const encrypted = Buffer.from(dataB64, "base64");
   const decipher = createDecipheriv("aes-256-cbc", getKey(), iv); // 256-bit key, 128-bit IV from payload
-  return Buffer.concat([
-    decipher.update(encrypted),
-    decipher.final(),
-  ]).toString("utf8");
+  return Buffer.concat([decipher.update(encrypted), decipher.final()]).toString(
+    "utf8",
+  );
 }

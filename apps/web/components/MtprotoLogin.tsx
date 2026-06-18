@@ -162,7 +162,10 @@ export function MtprotoLogin() {
         </p>
 
         {error ? (
-          <p className="text-sm text-destructive w-full text-center" role="alert">
+          <p
+            className="text-sm text-destructive w-full text-center"
+            role="alert"
+          >
             {error}
           </p>
         ) : null}
@@ -174,7 +177,9 @@ export function MtprotoLogin() {
                 <p className="text-sm opacity-80 text-center">
                   Scan with Telegram on your phone:
                   <br />
-                  <span className="opacity-70">Settings → Devices → Link Desktop Device</span>
+                  <span className="opacity-70">
+                    Settings → Devices → Link Desktop Device
+                  </span>
                 </p>
                 {qrDataUrl ? (
                   <img
@@ -217,7 +222,11 @@ export function MtprotoLogin() {
                   className="h-10 rounded-md border border-input bg-background px-3 text-sm w-full"
                   required
                 />
-                <Button type="submit" disabled={qrPasswordPending} className="w-full">
+                <Button
+                  type="submit"
+                  disabled={qrPasswordPending}
+                  className="w-full"
+                >
                   {qrPasswordPending ? "Signing in…" : "Continue"}
                 </Button>
               </form>
@@ -236,7 +245,8 @@ export function MtprotoLogin() {
             className="flex flex-col gap-3 w-full"
           >
             <p className="text-xs opacity-60 text-center">
-              Phone login may not work for Russian numbers (SMS blocked). Prefer QR login.
+              Phone login may not work for Russian numbers (SMS blocked). Prefer
+              QR login.
             </p>
             <input
               type="tel"
@@ -261,7 +271,7 @@ export function MtprotoLogin() {
             <p className="text-sm opacity-80 text-center">
               {codeDelivery === "sms"
                 ? "Check SMS for your login code."
-                : "Check the Telegram app chat with \"Telegram\" for your code."}
+                : 'Check the Telegram app chat with "Telegram" for your code.'}
             </p>
             <input
               type="text"

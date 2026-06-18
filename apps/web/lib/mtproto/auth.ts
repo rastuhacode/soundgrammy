@@ -31,7 +31,11 @@ export async function resendAuthCode(
   phoneNumber: string,
   phoneCodeHash: string,
   encryptedSession: string,
-): Promise<{ phoneCodeHash: string; sessionData: string; codeDelivery: CodeDelivery }> {
+): Promise<{
+  phoneCodeHash: string;
+  sessionData: string;
+  codeDelivery: CodeDelivery;
+}> {
   const sessionString = decryptSession(encryptedSession);
   const client = await createMtprotoClient(sessionString);
 

@@ -6,9 +6,9 @@ const DATA_DIR = path.join(process.cwd(), "data");
 const DB_PATH = path.join(DATA_DIR, "soundgrammy.db");
 
 function migrateMtprotoSessionsTable(db: Database.Database) {
-  const columns = db
-    .prepare("PRAGMA table_info(mtproto_sessions)")
-    .all() as { name: string }[];
+  const columns = db.prepare("PRAGMA table_info(mtproto_sessions)").all() as {
+    name: string;
+  }[];
   const columnNames = new Set(columns.map((c) => c.name));
 
   if (!columnNames.has("saved_music_hash")) {
@@ -17,15 +17,13 @@ function migrateMtprotoSessionsTable(db: Database.Database) {
 }
 
 function migrateTracksTable(db: Database.Database) {
-  const columns = db
-    .prepare("PRAGMA table_info(tracks)")
-    .all() as { name: string }[];
+  const columns = db.prepare("PRAGMA table_info(tracks)").all() as {
+    name: string;
+  }[];
   const columnNames = new Set(columns.map((c) => c.name));
 
   if (!columnNames.has("source")) {
-    db.exec(
-      "ALTER TABLE tracks ADD COLUMN source TEXT NOT NULL DEFAULT 'bot'",
-    );
+    db.exec("ALTER TABLE tracks ADD COLUMN source TEXT NOT NULL DEFAULT 'bot'");
   }
   if (!columnNames.has("mime_type")) {
     db.exec("ALTER TABLE tracks ADD COLUMN mime_type TEXT");
@@ -154,10 +152,7 @@ export function getTracksByUser(tgUserId: number): Track[] {
     .all(tgUserId) as Track[];
 }
 
-export function getTrackById(
-  id: number,
-  tgUserId: number,
-): Track | undefined {
+export function getTrackById(id: number, tgUserId: number): Track | undefined {
   const db = getDb();
   return db
     .prepare("SELECT * FROM tracks WHERE id = ? AND tg_user_id = ?")
@@ -302,9 +297,7 @@ export function deleteMtprotoTracksNotIn(
   const db = getDb();
   if (fileUniqueIds.length === 0) {
     const result = db
-      .prepare(
-        "DELETE FROM tracks WHERE tg_user_id = ? AND source = 'mtproto'",
-      )
+      .prepare("DELETE FROM tracks WHERE tg_user_id = ? AND source = 'mtproto'")
       .run(tgUserId);
     return result.changes;
   }

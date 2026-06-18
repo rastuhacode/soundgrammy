@@ -1,11 +1,7 @@
 import { getSession } from "lib/auth";
 import { serializeClearSessionCookie } from "lib/auth";
 import { deleteMtprotoSession } from "lib/db";
-import {
-  createTRPCRouter,
-  protectedProcedure,
-  publicProcedure,
-} from "../init";
+import { createTRPCRouter, protectedProcedure, publicProcedure } from "../init";
 
 export const authRouter = createTRPCRouter({
   /** Returns the current session payload (decoded from the session cookie). */
