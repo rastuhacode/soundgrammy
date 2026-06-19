@@ -9,45 +9,7 @@ import {
   createMtprotoDocumentStream,
   parseStoredDocument,
 } from "lib/mtproto/client";
-
-function parseByteRange(
-  rangeHeader: string,
-  fileSize: number,
-): { start: number; end: number } | "unsatisfiable" | null {
-  if (!rangeHeader.startsWith("bytes=")) {
-    return null;
-  }
-
-  const [startStr, endStr] = rangeHeader.slice(6).split("-");
-  if (startStr === "" && endStr === "") {
-    return "unsatisfiable";
-  }
-
-  let start: number;
-  let end: number;
-
-  if (startStr === "") {
-    const suffixLength = Number(endStr);
-    if (!Number.isFinite(suffixLength) || suffixLength <= 0) {
-      return "unsatisfiable";
-    }
-    start = Math.max(0, fileSize - suffixLength);
-    end = fileSize - 1;
-  } else {
-    start = Number(startStr);
-    end = endStr !== "" ? Number(endStr) : fileSize - 1;
-  }
-
-  if (!Number.isFinite(start) || !Number.isFinite(end)) {
-    return "unsatisfiable";
-  }
-  if (start >= fileSize || start > end) {
-    return "unsatisfiable";
-  }
-
-  end = Math.min(end, fileSize - 1);
-  return { start, end };
-}
+import { parseByteRange } from "lib/stream/range";
 
 export async function GET(
   request: Request,
@@ -102,6 +64,13 @@ export async function GET(
     });
   }
 
+  // Serve the whole requested range in a single response and let the stream's
+  // backpressure decide how much is actually pulled from Telegram: the browser
+  // reads only its current position plus its own look-ahead, then stops reading
+  // (pausing our Telegram download) until playback advances. Sequential
+  // playback is therefore one open request; a new request is opened only on
+  // seek (a fresh Range) — no artificial chunking that would stall playback.
+  const isRangeRequest = parsedRange !== null;
   const byteRange = parsedRange ?? { start: 0, end: totalSize - 1 };
 
   try {
@@ -125,7 +94,7 @@ export async function GET(
       "Content-Length": String(contentLength),
     };
 
-    if (parsedRange) {
+    if (isRangeRequest) {
       headers["Content-Range"] =
         `bytes ${byteRange.start}-${byteRange.end}/${totalSize}`;
       return new Response(stream, { status: 206, headers });

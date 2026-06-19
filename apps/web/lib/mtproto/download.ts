@@ -6,6 +6,10 @@ import { parseStoredDocument } from "./document";
 import type { StoredDocument } from "./document";
 import { refreshSavedMusicDocumentJson } from "./refresh";
 import { createMtprotoClient } from "./session";
+import {
+  acquirePooledMtprotoClient,
+  releasePooledMtprotoClient,
+} from "./client-pool";
 
 /**
  * Downloading Telegram documents (audio files and their thumbnails) over
@@ -28,19 +32,27 @@ function buildDocumentLocation(
   });
 }
 
-async function downloadFileRange(
+/**
+ * Lazily downloads an inclusive byte range from Telegram, yielding chunks
+ * trimmed to the exact range. Being a generator, it only fetches the next
+ * Telegram block when the consumer pulls — this is what lets the HTTP response
+ * apply backpressure instead of buffering the whole range in memory.
+ */
+async function* iterateDocumentRange(
   client: TelegramClient,
   data: StoredDocument,
   byteRange: { start: number; end: number },
-  onChunk: (chunk: Uint8Array) => void,
   thumbSize = "",
-): Promise<void> {
+): AsyncGenerator<Uint8Array> {
   const totalSize = thumbSize
     ? Number(data.thumbFileSize ?? 0)
     : Number(data.size ?? 0);
   const start = byteRange.start;
   const end = byteRange.end;
   const byteCount = end - start + 1;
+  if (byteCount <= 0) {
+    return;
+  }
   const location = buildDocumentLocation(data, thumbSize);
   const chunkCount = Math.ceil(byteCount / TELEGRAM_REQUEST_SIZE);
 
@@ -63,13 +75,116 @@ async function downloadFileRange(
     }
 
     if (buffer.length > remaining) {
-      onChunk(new Uint8Array(buffer.subarray(0, remaining)));
+      yield new Uint8Array(buffer.subarray(0, remaining));
       return;
     }
 
-    onChunk(new Uint8Array(buffer));
+    yield new Uint8Array(buffer);
     bytesSent += buffer.length;
   }
+}
+
+/**
+ * Builds a backpressure-aware {@link ReadableStream} for an inclusive byte
+ * range of a stored document (or its thumbnail when `thumbSize` is set).
+ *
+ * The Telegram client and download iterator are created lazily on first pull
+ * and torn down on completion/cancel. Crucially, the stream is driven by
+ * `pull()`, so it fetches at most one Telegram block ahead of what the consumer
+ * has read — when the browser pauses reading (buffer full), the download pauses
+ * too instead of eagerly draining the whole range. If Telegram rejects a stale
+ * file reference, the document is refreshed once and the download resumes from
+ * the byte we left off at.
+ */
+function createDocumentRangeStream(params: {
+  sessionString: string;
+  storedJson: string;
+  range: { start: number; end: number };
+  thumbSize?: string;
+  onDocumentRefreshed?: (storedJson: string) => void;
+}): ReadableStream<Uint8Array> {
+  const {
+    sessionString,
+    storedJson,
+    range,
+    thumbSize = "",
+    onDocumentRefreshed,
+  } = params;
+  const byteCount = range.end - range.start + 1;
+
+  let currentJson = storedJson;
+  let client: TelegramClient | null = null;
+  let iterator: AsyncGenerator<Uint8Array> | null = null;
+  let emitted = 0;
+  let refreshed = false;
+
+  const newIterator = () =>
+    iterateDocumentRange(
+      client!,
+      parseStoredDocument(currentJson),
+      { start: range.start + emitted, end: range.end },
+      thumbSize,
+    );
+
+  const cleanup = async () => {
+    if (iterator) {
+      await iterator.return(undefined).catch(() => undefined);
+      iterator = null;
+    }
+    if (client) {
+      // Release back to the pool; the connection stays open for reuse by the
+      // next range window or track instead of being torn down per request.
+      releasePooledMtprotoClient(sessionString);
+      client = null;
+    }
+  };
+
+  return new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        if (!client) {
+          client = await acquirePooledMtprotoClient(sessionString);
+        }
+        if (!iterator) {
+          iterator = newIterator();
+        }
+
+        let result: IteratorResult<Uint8Array>;
+        try {
+          result = await iterator.next();
+        } catch (error) {
+          if (refreshed || !isFileReferenceError(error)) {
+            throw error;
+          }
+          refreshed = true;
+          currentJson = await refreshSavedMusicDocumentJson(client, currentJson);
+          onDocumentRefreshed?.(currentJson);
+          iterator = newIterator();
+          result = await iterator.next();
+        }
+
+        if (result.done) {
+          controller.close();
+          await cleanup();
+          return;
+        }
+
+        emitted += result.value.byteLength;
+        controller.enqueue(result.value);
+
+        if (emitted >= byteCount) {
+          controller.close();
+          await cleanup();
+        }
+      } catch (error) {
+        await cleanup();
+        controller.error(error);
+      }
+    },
+    async cancel() {
+      await cleanup();
+    },
+  });
 }
 
 export interface MtprotoDocumentStream {
@@ -92,63 +207,19 @@ export function createMtprotoDocumentStream(
   range?: { start: number; end: number },
   onDocumentRefreshed?: (storedJson: string) => void,
 ): MtprotoDocumentStream {
-  let currentJson = storedJson;
-  const data = parseStoredDocument(currentJson);
+  const data = parseStoredDocument(storedJson);
   const totalSize = Number(data.size ?? 0);
   const mimeType = data.mimeType ?? "audio/mpeg";
   const start = range?.start ?? 0;
   const end =
     range?.end ?? (totalSize > 0 ? totalSize - 1 : Number.MAX_SAFE_INTEGER); // inclusive end byte; unknown size → stream until EOF
   const byteCount = end - start + 1;
-  const sessionString = decryptSession(encryptedSession);
-  let client: TelegramClient | null = null;
 
-  const stream = new ReadableStream<Uint8Array>({
-    async start(controller) {
-      try {
-        client = await createMtprotoClient(sessionString);
-        const byteRange = { start, end };
-
-        const tryDownload = async (json: string) => {
-          await downloadFileRange(
-            client!,
-            parseStoredDocument(json),
-            byteRange,
-            (chunk) => controller.enqueue(chunk),
-          );
-        };
-
-        try {
-          await tryDownload(currentJson);
-        } catch (error) {
-          if (!isFileReferenceError(error)) {
-            throw error;
-          }
-
-          currentJson = await refreshSavedMusicDocumentJson(
-            client!,
-            currentJson,
-          );
-          onDocumentRefreshed?.(currentJson);
-          await tryDownload(currentJson);
-        }
-
-        controller.close();
-      } catch (error) {
-        controller.error(error);
-      } finally {
-        if (client) {
-          await client.disconnect();
-          client = null;
-        }
-      }
-    },
-    async cancel() {
-      if (client) {
-        await client.disconnect();
-        client = null;
-      }
-    },
+  const stream = createDocumentRangeStream({
+    sessionString: decryptSession(encryptedSession),
+    storedJson,
+    range: { start, end },
+    onDocumentRefreshed,
   });
 
   return { stream, mimeType, totalSize, contentLength: byteCount };
@@ -168,67 +239,17 @@ export function createMtprotoThumbnailStream(
     return null;
   }
 
-  let currentJson = storedJson;
   const totalSize = Number(stored.thumbFileSize ?? 0);
   const start = 0;
-  const end =
-    totalSize > 0 ? totalSize - 1 : Number.MAX_SAFE_INTEGER;
+  const end = totalSize > 0 ? totalSize - 1 : Number.MAX_SAFE_INTEGER;
   const byteCount = end - start + 1;
-  const sessionString = decryptSession(encryptedSession);
-  let client: TelegramClient | null = null;
 
-  const stream = new ReadableStream<Uint8Array>({
-    async start(controller) {
-      try {
-        client = await createMtprotoClient(sessionString);
-        const byteRange = { start, end };
-
-        const tryDownload = async (json: string) => {
-          const data = parseStoredDocument(json);
-          if (!data.thumbSize) {
-            return;
-          }
-
-          await downloadFileRange(
-            client!,
-            data,
-            byteRange,
-            (chunk) => controller.enqueue(chunk),
-            data.thumbSize,
-          );
-        };
-
-        try {
-          await tryDownload(currentJson);
-        } catch (error) {
-          if (!isFileReferenceError(error)) {
-            throw error;
-          }
-
-          currentJson = await refreshSavedMusicDocumentJson(
-            client!,
-            currentJson,
-          );
-          onDocumentRefreshed?.(currentJson);
-          await tryDownload(currentJson);
-        }
-
-        controller.close();
-      } catch (error) {
-        controller.error(error);
-      } finally {
-        if (client) {
-          await client.disconnect();
-          client = null;
-        }
-      }
-    },
-    async cancel() {
-      if (client) {
-        await client.disconnect();
-        client = null;
-      }
-    },
+  const stream = createDocumentRangeStream({
+    sessionString: decryptSession(encryptedSession),
+    storedJson,
+    range: { start, end },
+    thumbSize: stored.thumbSize,
+    onDocumentRefreshed,
   });
 
   return {
