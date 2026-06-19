@@ -22,7 +22,6 @@
         "better-sqlite3": "catalog:backend",
         "big-integer": "catalog:backend",
         "class-variance-authority": "catalog:frontend",
-        "client-only": "catalog:frontend",
         "clsx": "catalog:frontend",
         "jose": "catalog:backend",
         "lucide-react": "catalog:frontend",
@@ -36,7 +35,8 @@
         "superjson": "catalog:backend",
         "tailwind-merge": "catalog:frontend",
         "telegram": "catalog:backend",
-        "zod": "catalog:backend",
+        "zod": "catalog:frontend",
+        "zustand": "^5.0.8",
       },
       "devDependencies": {
         "@repo/eslint-config": "*",
@@ -94,7 +94,6 @@
       "qrcode": "^1.5.4",
       "superjson": "^2.2.6",
       "telegram": "^2.26.22",
-      "zod": "^4.4.3",
     },
     "build": {
       "@tailwindcss/postcss": "^4.1.18",
@@ -110,7 +109,6 @@
       "@trpc/client": "^11.18.0",
       "@trpc/tanstack-react-query": "^11.18.0",
       "class-variance-authority": "^0.7.1",
-      "client-only": "^0.0.1",
       "clsx": "^2.1.1",
       "lucide-react": "^0.563.0",
       "next": "16.2.9",
@@ -119,6 +117,8 @@
       "react-dom": "^19.2.7",
       "server-only": "^0.0.1",
       "tailwind-merge": "^3.6.0",
+      "zod": "^4.4.3",
+      "zustand": "^5.0.8",
     },
     "lint": {
       "@eslint/js": "^10.0.1",
@@ -1766,6 +1766,8 @@
     "zod-to-json-schema": ["zod-to-json-schema@3.25.1", "", { "peerDependencies": { "zod": "^3.25 || ^4" } }, "sha512-pM/SU9d3YAggzi6MtR4h7ruuQlqKtad8e9S0fmxcMi+ueAK5Korys/aWcV9LIIHTVbj01NdzxcnXSN+O74ZIVA=="],
 
     "zod-validation-error": ["zod-validation-error@4.0.2", "", { "peerDependencies": { "zod": "^3.25.0 || ^4.0.0" } }, "sha512-Q6/nZLe6jxuU80qb/4uJ4t5v2VEZ44lzQjPDhYJNztRQ4wyWc6VF3D3Kb/fAuPetZQnhS3hnajCf9CsWesghLQ=="],
+
+    "zustand": ["zustand@5.0.14", "", { "peerDependencies": { "@types/react": ">=18.0.0", "immer": ">=9.0.6", "react": ">=18.0.0", "use-sync-external-store": ">=1.2.0" }, "optionalPeers": ["@types/react", "immer", "react", "use-sync-external-store"] }, "sha512-/8tAspM5LMPr28b3fwLYrtdj77ECpfZviaP75CMTnwO8ISyaE4GDIG/9rDDYq/cH9D2Xw2A2RXglLInmVBQB/g=="],
 
     "@babel/code-frame/@babel/helper-validator-identifier": ["@babel/helper-validator-identifier@7.28.5", "", {}, "sha512-qSs4ifwzKJSV39ucNjsvc6WVHs6b7S03sOh2OcHF9UHfVPqWWALUsNUVzhSBiItjRZoLHx7nIarVjqKVusUZ1Q=="],
 

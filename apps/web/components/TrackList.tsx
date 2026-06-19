@@ -1,7 +1,9 @@
 "use client";
 
+import { useState } from "react";
+import { Music, Play } from "lucide-react";
+import { usePlayerStore } from "@/stores/player-store";
 import type { Track } from "@/lib/db";
-import { Play, Trash } from "lucide-react";
 
 function formatDuration(seconds: number | null): string {
   if (seconds === null) return "--:--";
@@ -10,73 +12,141 @@ function formatDuration(seconds: number | null): string {
   return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
 
-interface TrackListProps {
-  tracks: Track[];
-  currentTrackId: number | null;
+interface TrackRowProps {
+  track: Track;
+  index: number;
+  isActive: boolean;
   isPlaying: boolean;
   onTrackSelect: (track: Track) => void;
-  onDelete: (track: Track) => void;
 }
 
-export function TrackList({
-  tracks,
-  currentTrackId,
+function TrackRow({
+  track,
+  index,
+  isActive,
   isPlaying,
   onTrackSelect,
-  onDelete,
-}: TrackListProps) {
+}: TrackRowProps) {
+  const [thumbError, setThumbError] = useState(false);
+  const showEqualizer = isActive && isPlaying;
+
+  return (
+    <li
+      className="animate-fade-up"
+      style={{ animationDelay: `${Math.min(index * 45, 600)}ms` }}
+    >
+      <div
+        className={`group relative flex items-center gap-4 rounded-xl border px-3 py-2.5 transition-colors duration-200 ${
+          isActive
+            ? "border-primary/40 bg-primary/10"
+            : "border-transparent hover:border-border hover:bg-card/70"
+        }`}
+      >
+        <button
+          type="button"
+          onClick={() => onTrackSelect(track)}
+          aria-label={showEqualizer ? "Pause track" : "Play track"}
+          className="relative size-12 shrink-0 overflow-hidden rounded-lg"
+        >
+          {thumbError ? (
+            <div className="flex size-12 items-center justify-center bg-muted text-muted-foreground">
+              <Music className="size-5" />
+            </div>
+          ) : (
+            <img
+              src={`/api/tracks/${track.id}/thumbnail`}
+              alt="Thumbnail"
+              className="size-12 object-cover"
+              onError={() => setThumbError(true)}
+            />
+          )}
+          <span
+            className={`absolute inset-0 flex items-center justify-center bg-background/65 backdrop-blur-[1px] transition-opacity duration-200 ${
+              isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+            }`}
+          >
+            {showEqualizer ? (
+              <span className="equalizer flex h-4 items-end gap-1">
+                <span className="w-[3px] rounded-[1px] bg-foreground" />
+                <span />
+                <span />
+              </span>
+            ) : isActive ? (
+              <Play className="size-5 fill-primary text-primary" />
+            ) : (
+              <Play className="size-5 fill-foreground text-foreground" />
+            )}
+          </span>
+        </button>
+
+        <button
+          type="button"
+          onClick={() => onTrackSelect(track)}
+          className="flex min-w-0 flex-1 flex-col items-start text-left"
+        >
+          <span
+            className={`max-w-full truncate text-sm font-medium ${
+              isActive ? "text-primary" : "text-foreground"
+            }`}
+          >
+            {track.title ?? "Unknown Title"}
+          </span>
+          <span className="max-w-full truncate text-sm text-muted-foreground">
+            {track.performer ?? "Unknown Artist"}
+          </span>
+        </button>
+
+        <span className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
+          {formatDuration(track.duration)}
+        </span>
+      </div>
+    </li>
+  );
+}
+
+export function TrackList() {
+  const tracks = usePlayerStore((state) => state.tracks);
+  const currentTrackId = usePlayerStore(
+    (state) => state.currentTrack?.id ?? null,
+  );
+  const isPlaying = usePlayerStore((state) => state.isPlaying);
+  const selectTrack = usePlayerStore((state) => state.selectTrack);
+
   if (tracks.length === 0) {
     return (
-      <div className="flex flex-col gap-2 justify-center items-center p-4">
-        <p>No tracks yet</p>
-        <p className="text-sm opacity-60">
-          No music pinned to your Telegram profile yet
+      <div className="animate-fade-up flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-border px-6 py-20 text-center">
+        <div className="flex size-14 items-center justify-center rounded-full border border-border bg-card text-muted-foreground">
+          <Music className="size-6" />
+        </div>
+        <p className="text-base font-medium text-foreground">No tracks yet</p>
+        <p className="max-w-xs text-sm text-muted-foreground">
+          Pin music to your Telegram profile and it will tune in here
+          automatically.
         </p>
       </div>
     );
   }
 
   return (
-    <ul className="list-none flex flex-col gap-2">
-      {tracks.map((track) => {
-        const isActive = currentTrackId === track.id;
-        return (
-          <li key={track.id}>
-            <div
-              className={`flex items-center gap-4 w-full p-4 border-none bg-transparent text-foreground rounded-md transition-background duration-150 font-sans text-left ${isActive ? "bg-gray-100" : ""}`}
-            >
-              <button
-                className="w-6 h-6 flex items-center justify-center shrink-0"
-                onClick={() => onTrackSelect(track)}
-              >
-                {isActive && isPlaying ? (
-                  <span className="flex items-end gap-1 h-4 equalizer">
-                    <span className="w-[3px] bg-foreground rounded-[1px]" />
-                    <span />
-                    <span />
-                  </span>
-                ) : (
-                  <Play />
-                )}
-              </button>
-              <div className="flex flex-col gap-1 min-w-0 flex-1">
-                <span className="text-sm font-medium overflow-hidden text-ellipsis whitespace-nowrap">
-                  {track.title ?? "Unknown Title"}
-                </span>
-                <span className="text-sm opacity-60 overflow-hidden text-ellipsis whitespace-nowrap">
-                  {track.performer ?? "Unknown Artist"}
-                </span>
-              </div>
-              <span className="text-sm opacity-50 font-mono shrink-0">
-                {formatDuration(track.duration)}
-              </span>
-              <button aria-label="Delete track" onClick={() => onDelete(track)}>
-                <Trash />
-              </button>
-            </div>
-          </li>
-        );
-      })}
-    </ul>
+    <div>
+      <div className="mb-3 flex items-center gap-3 px-3">
+        <h2 className="font-mono text-xs uppercase tracking-[0.28em] text-muted-foreground">
+          Library
+        </h2>
+        <span className="dial-divider h-3 flex-1" />
+      </div>
+      <ul className="flex list-none flex-col gap-0.5">
+        {tracks.map((track, index) => (
+          <TrackRow
+            key={track.id}
+            track={track}
+            index={index}
+            isActive={currentTrackId === track.id}
+            isPlaying={isPlaying}
+            onTrackSelect={selectTrack}
+          />
+        ))}
+      </ul>
+    </div>
   );
 }

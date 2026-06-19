@@ -11,10 +11,12 @@ import superjson from "superjson";
  * `client.tsx`).
  */
 export function makeQueryClient(): QueryClient {
+  const STALE_TIME = 30 * 1000; // 30s
+
   return new QueryClient({
     defaultOptions: {
       queries: {
-        staleTime: 30 * 1000, // avoid immediate refetch on the client after SSR hydration
+        staleTime: STALE_TIME, // avoid immediate refetch on the client after SSR hydration
       },
       dehydrate: {
         serializeData: superjson.serialize,

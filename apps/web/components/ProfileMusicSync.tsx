@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useMutation, useQuery } from "@tanstack/react-query";
+import { LogOut, RadioTower } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useTRPC } from "../trpc/client";
 
@@ -59,38 +60,51 @@ export function ProfileMusicSync({ trackCount }: ProfileMusicSyncProps) {
 
   if (status === null) {
     return (
-      <div className="mx-4 p-4 rounded-lg border border-border bg-card text-sm opacity-60">
-        Loading…
+      <div className="flex animate-pulse items-center gap-3 rounded-xl border border-border bg-card/60 px-5 py-4 text-sm text-muted-foreground">
+        <span className="h-2 w-2 rounded-full bg-muted-foreground/60" />
+        Connecting to Telegram…
       </div>
     );
   }
 
   return (
-    <section className="mx-4 p-4 rounded-lg border border-border bg-card space-y-3">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-sm font-semibold">Profile music</h2>
-          <p className="text-sm opacity-60 mt-1">
-            {status.phoneNumber
-              ? `Signed in as ${status.phoneNumber}`
-              : "Songs pinned to your Telegram profile"}
-          </p>
+    <section className="animate-fade-up flex flex-wrap items-center justify-between gap-4 rounded-xl border border-border bg-card/60 px-5 py-4 backdrop-blur-sm">
+      <div className="flex items-center gap-4">
+        <div className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-primary/30 bg-primary/10 text-primary">
+          <RadioTower className="size-5" />
           {syncing ? (
-            <p className="text-xs opacity-50 mt-1">Syncing your library…</p>
+            <span className="absolute -right-1 -top-1 flex h-3 w-3">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75" />
+              <span className="relative inline-flex h-3 w-3 rounded-full bg-primary" />
+            </span>
+          ) : null}
+        </div>
+        <div>
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-[10px] uppercase tracking-[0.18em] text-primary">
+              {syncing ? "syncing" : "live"}
+            </span>
+          </div>
+          {syncing ? (
+            <p className="mt-1 font-mono text-xs text-muted-foreground/70">
+              Pulling your library…
+            </p>
           ) : status.lastSyncAt ? (
-            <p className="text-xs opacity-50 mt-1">
-              Last synced: {new Date(status.lastSyncAt).toLocaleString()}
+            <p className="mt-1 font-mono text-xs text-muted-foreground/70">
+              Last synced {new Date(status.lastSyncAt).toLocaleString()}
             </p>
           ) : null}
         </div>
-        <Button
-          variant="outline"
-          onClick={handleLogout}
-          disabled={logoutMutation.isPending}
-        >
-          Log out
-        </Button>
       </div>
+      <Button
+        variant="outline"
+        size="sm"
+        onClick={handleLogout}
+        disabled={logoutMutation.isPending}
+      >
+        <LogOut className="size-4" />
+        Log out
+      </Button>
     </section>
   );
 }

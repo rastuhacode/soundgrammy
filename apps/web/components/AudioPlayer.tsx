@@ -1,8 +1,9 @@
 "use client";
 
 import { useRef, useState, useEffect, useLayoutEffect } from "react";
-import type { Track } from "../lib/db";
 import { Pause, Play, Volume2, Music } from "lucide-react";
+import { AudioProgressBar } from "@/components/audio/AudioProgressBar";
+import { usePlayerStore } from "@/stores/player-store";
 
 const VOLUME_STORAGE_KEY = "soundgrammy-volume";
 
@@ -21,21 +22,15 @@ function getStoredVolume(): number {
   return Number.isFinite(value) && value >= 0 && value <= 100 ? value : 100;
 }
 
-interface AudioPlayerProps {
-  track: Track | null;
-  isPlaying: boolean;
-  onPlayingChange: (playing: boolean) => void;
-  onEnd: () => void;
-}
+export function AudioPlayer() {
+  const track = usePlayerStore((state) => state.currentTrack);
+  const isPlaying = usePlayerStore((state) => state.isPlaying);
+  const setPlaying = usePlayerStore((state) => state.setPlaying);
+  const playNext = usePlayerStore((state) => state.playNext);
 
-export function AudioPlayer({
-  track,
-  isPlaying,
-  onPlayingChange,
-  onEnd,
-}: AudioPlayerProps) {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [bufferedTime, setBufferedTime] = useState(0);
   const [volume, setVolume] = useState(100);
   const [thumbError, setThumbError] = useState(false);
   const audioRef = useRef<HTMLAudioElement>(null);
@@ -62,16 +57,8 @@ export function AudioPlayer({
     if (isPlaying) {
       audioRef.current.pause();
     } else {
-      audioRef.current.play().catch(() => onPlayingChange(false));
+      audioRef.current.play().catch(() => setPlaying(false));
     }
-  };
-
-  const handleSeek = (e: React.FormEvent<HTMLInputElement>) => {
-    if (!audioRef.current) return;
-    const time = Number(e.currentTarget.value);
-    isSeekingRef.current = true;
-    audioRef.current.currentTime = time;
-    setCurrentTime(time);
   };
 
   const handleSeekEnd = () => {
@@ -111,7 +98,7 @@ export function AudioPlayer({
 
     if (isPlaying) {
       audio.play().catch(() => {
-        onPlayingChange(false);
+        setPlaying(false);
       });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps -- only reload audio when track changes
@@ -122,14 +109,11 @@ export function AudioPlayer({
     if (!audio || !track) return;
 
     if (isPlaying) {
-      audio.play().catch(() => onPlayingChange(false));
+      audio.play().catch(() => setPlaying(false));
     } else {
       audio.pause();
     }
-  }, [isPlaying, track, onPlayingChange]);
-
-  const play = () => onPlayingChange(true);
-  const pause = () => onPlayingChange(false);
+  }, [isPlaying, track, setPlaying]);
 
   const onTimeUpdate = (event: React.ChangeEvent<HTMLAudioElement>) => {
     if (isSeekingRef.current) return;
@@ -140,101 +124,120 @@ export function AudioPlayer({
     setDuration(event.target.duration);
   };
 
-  const progress = duration > 0 ? (currentTime / duration) * 100 : 0;
+  const onProgress = (event: React.SyntheticEvent<HTMLAudioElement>) => {
+    const audio = event.currentTarget;
+    if (!audio.buffered.length) {
+      setBufferedTime(0);
+      return;
+    }
+    setBufferedTime(audio.buffered.end(audio.buffered.length - 1));
+  };
 
   return (
     <>
       <audio
         ref={setAudioRef}
         preload="metadata"
-        onPlay={play}
-        onPause={pause}
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
         onTimeUpdate={onTimeUpdate}
         onDurationChange={onDurationChange}
-        onEnded={onEnd}
+        onProgress={onProgress}
+        onEnded={playNext}
+        aria-hidden={true}
         className="hidden"
       />
 
       {track ? (
-        <div className="fixed bottom-0 left-0 right-0 flex items-center gap-4 px-6 py-4 bg-background border-t border-border h-30">
-          <div className="flex gap-4 items-center min-w-40 w-1/5">
-            {thumbError ? (
-              <div className="rounded-md w-20 h-20 shrink-0 bg-muted flex items-center justify-center aspect-square">
-                <Music className="opacity-60" />
-              </div>
-            ) : (
-              <img
-                src={`/api/tracks/${track.id}/thumbnail`}
-                alt="thumbnail"
-                className="rounded-md w-20 h-20 object-cover aspect-square shrink-0"
-                onError={() => setThumbError(true)}
-              />
-            )}
-            <div className="flex flex-col gap-1 grow max-w-full overflow-hidden">
-              <span
-                className="text-sm font-medium overflow-hidden text-ellipsis whitespace-nowrap"
-                title={track.title ?? "Unknown Title"}
-              >
-                {track.title ?? "Unknown Title"}
-              </span>
-              <span
-                className="text-sm opacity-60 overflow-hidden text-ellipsis whitespace-nowrap"
-                title={track.performer ?? "Unknown Artist"}
-              >
-                {track.performer ?? "Unknown Artist"}
-              </span>
-            </div>
-          </div>
+        <div className="relative flex h-24 w-full flex-col border-t border-border bg-card/80 backdrop-blur-xl">
+          <AudioProgressBar
+            currentTime={currentTime}
+            duration={duration}
+            bufferedTime={bufferedTime}
+            onSeek={(time) => {
+              if (!audioRef.current) return;
+              isSeekingRef.current = true;
+              audioRef.current.currentTime = time;
+              setCurrentTime(time);
+            }}
+            onSeekStart={() => {
+              isSeekingRef.current = true;
+            }}
+            onSeekEnd={handleSeekEnd}
+          />
 
-          <div className="flex flex-col items-center gap-2 grow min-w-0">
-            <div className="flex items-center gap-2 w-full">
-              <span className="text-sm opacity-60 font-mono shrink-0 w-8 text-center">
+          <div className="flex h-full w-full items-center gap-2 px-4">
+            <div className="flex w-1/3 items-center gap-3">
+              <div className="relative shrink-0">
+                {thumbError ? (
+                  <div className="flex size-14 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                    <Music className="size-5" />
+                  </div>
+                ) : (
+                  <img
+                    src={`/api/tracks/${track.id}/thumbnail`}
+                    alt="Thumbnail"
+                    className="size-16 rounded-lg object-cover ring-1 ring-border"
+                    onError={() => setThumbError(true)}
+                  />
+                )}
+              </div>
+              <div className="hidden min-w-0 flex-col sm:flex">
+                <span
+                  className="truncate text-sm font-medium text-foreground"
+                  title={track.title ?? "Unknown Title"}
+                >
+                  {track.title ?? "Unknown Title"}
+                </span>
+                <span
+                  className="truncate text-xs text-muted-foreground"
+                  title={track.performer ?? "Unknown Artist"}
+                >
+                  {track.performer ?? "Unknown Artist"}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex w-1/3 flex-col items-center gap-2">
+              <button
+                type="button"
+                onClick={togglePlay}
+                aria-label={isPlaying ? "Pause" : "Play"}
+                className="flex size-11 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-[0_0_24px_-4px_var(--primary)] transition-transform hover:scale-105 active:scale-95"
+              >
+                {isPlaying ? (
+                  <Pause className="size-5 fill-current" />
+                ) : (
+                  <Play className="size-5 translate-x-px fill-current" />
+                )}
+              </button>
+              <div className="font-mono text-xs tabular-nums text-muted-foreground">
                 {formatTime(currentTime)}
-              </span>
+                <span className="mx-1 text-muted-foreground/60">/</span>
+                {formatTime(duration)}
+              </div>
+            </div>
+
+            <div className="w-1/3 items-center gap-2 flex justify-end">
+              <Volume2 className="size-4 shrink-0 text-muted-foreground" />
               <input
                 type="range"
-                className="w-full h-1 appearance-none rounded-[2px] outline-none cursor-pointer bg-primary [&::-webkit-slider-thumb]:bg-white"
+                className="hifi-range h-1 w-32 appearance-none rounded-full outline-none"
                 min={0}
-                max={duration || 0}
-                step={0.1}
-                value={currentTime}
-                onInput={handleSeek}
-                onChange={handleSeek}
-                onMouseUp={handleSeekEnd}
-                onTouchEnd={handleSeekEnd}
-                style={{ "--progress": `${progress}%` } as React.CSSProperties}
+                max={100}
+                step={0.01}
+                value={volume}
+                onChange={handleVolumeChange}
+                autoComplete="off"
+                aria-label="Volume"
+                style={{ "--progress": `${volume}%` } as React.CSSProperties}
               />
-              <span className="text-sm opacity-60 font-mono shrink-0 w-8 text-center">
-                {formatTime(duration)}
-              </span>
             </div>
-
-            <button
-              className="w-5 h-5 rounded-full bg-transparent text-foreground text-sm cursor-pointer flex items-center justify-center"
-              onClick={togglePlay}
-              aria-label={isPlaying ? "Pause" : "Play"}
-            >
-              {isPlaying ? <Pause /> : <Play />}
-            </button>
-          </div>
-
-          <div className="flex items-center gap-2 min-w-40 w-1/5">
-            <span className="text-sm opacity-60 font-mono shrink-0 w-8 text-center">
-              <Volume2 />
-            </span>
-            <input
-              type="range"
-              className="w-full h-1 appearance-none rounded-[2px] outline-none cursor-pointer bg-primary [&::-webkit-slider-thumb]:bg-white"
-              min={0}
-              max={100}
-              step={0.01}
-              value={volume}
-              onChange={handleVolumeChange}
-              autoComplete="off"
-            />
           </div>
         </div>
-      ) : null}
+      ) : (
+        <></>
+      )}
     </>
   );
 }

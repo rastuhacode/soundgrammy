@@ -31,7 +31,8 @@
     "superjson": "catalog:backend",
     "tailwind-merge": "catalog:frontend",
     "telegram": "catalog:backend",
-    "zod": "catalog:frontend"
+    "zod": "catalog:frontend",
+    "zustand": "catalog:frontend"
   },
   "devDependencies": {
     "@repo/eslint-config": "*",
