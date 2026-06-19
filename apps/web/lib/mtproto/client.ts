@@ -13,6 +13,7 @@ export {
 
 export {
   createMtprotoDocumentStream,
+  createMtprotoThumbnailStream,
   downloadMtprotoDocumentThumbnail,
   type MtprotoDocumentStream,
 } from "./download";

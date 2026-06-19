@@ -8,7 +8,7 @@ import {
 } from "lib/db";
 import {
   createMtprotoDocumentStream,
-  downloadMtprotoDocumentThumbnail,
+  createMtprotoThumbnailStream,
   withMtprotoClient,
 } from "lib/mtproto/client";
 import { enrichSavedMusicDocumentThumb } from "lib/mtproto/refresh";
@@ -21,6 +21,29 @@ function coverContentType(format: string): string {
   if (format.includes("png")) return "image/png";
   if (format.includes("webp")) return "image/webp";
   return "image/jpeg";
+}
+
+function thumbnailResponseHeaders(
+  contentType: string,
+  contentLength?: number,
+): Record<string, string> {
+  const headers: Record<string, string> = {
+    "Content-Type": contentType,
+    "Cache-Control": "private, max-age=86400",
+  };
+  if (contentLength !== undefined && contentLength > 0) {
+    headers["Content-Length"] = String(contentLength);
+  }
+  return headers;
+}
+
+function bufferToStream(buffer: Buffer): ReadableStream<Uint8Array> {
+  return new ReadableStream({
+    start(controller) {
+      controller.enqueue(new Uint8Array(buffer));
+      controller.close();
+    },
+  });
 }
 
 export async function GET(
@@ -75,39 +98,34 @@ export async function GET(
     }
   }
 
+  const onDocumentRefreshed = (refreshedDocument: string) => {
+    updateTrackMtprotoDocument(track.id, session.tgUserId, refreshedDocument);
+  };
+
   try {
     if (stored.thumbSize) {
-      const thumbnail = await downloadMtprotoDocumentThumbnail(
+      const thumbnailStream = createMtprotoThumbnailStream(
         mtprotoSession.session_data,
         storedJson,
-        (refreshedDocument) => {
-          updateTrackMtprotoDocument(
-            track.id,
-            session.tgUserId,
-            refreshedDocument,
-          );
-        },
+        onDocumentRefreshed,
       );
 
-      if (thumbnail && thumbnail.length > 0) {
-        return new Response(new Uint8Array(thumbnail), {
+      if (thumbnailStream) {
+        return new Response(thumbnailStream.stream, {
           status: 200,
-          headers: {
-            "Content-Type": "image/jpeg",
-            "Cache-Control": "private, max-age=86400",
-          },
+          headers: thumbnailResponseHeaders(
+            "image/jpeg",
+            thumbnailStream.contentLength,
+          ),
         });
       }
     }
 
     if (stored.thumbData) {
       const thumbnail = Buffer.from(stored.thumbData, "base64");
-      return new Response(new Uint8Array(thumbnail), {
+      return new Response(bufferToStream(thumbnail), {
         status: 200,
-        headers: {
-          "Content-Type": "image/jpeg",
-          "Cache-Control": "private, max-age=86400",
-        },
+        headers: thumbnailResponseHeaders("image/jpeg", thumbnail.length),
       });
     }
 
@@ -115,13 +133,7 @@ export async function GET(
       mtprotoSession.session_data,
       storedJson,
       { start: 0, end: 512 * 1024 - 1 },
-      (refreshedDocument) => {
-        updateTrackMtprotoDocument(
-          track.id,
-          session.tgUserId,
-          refreshedDocument,
-        );
-      },
+      onDocumentRefreshed,
     );
     const audioPrefix = await readStreamPrefix(stream);
     const embedded = await extractEmbeddedCover(
@@ -133,12 +145,12 @@ export async function GET(
       return NextResponse.json({ error: "No thumbnail" }, { status: 404 });
     }
 
-    return new Response(new Uint8Array(embedded.data), {
+    return new Response(bufferToStream(embedded.data), {
       status: 200,
-      headers: {
-        "Content-Type": coverContentType(embedded.format),
-        "Cache-Control": "private, max-age=86400",
-      },
+      headers: thumbnailResponseHeaders(
+        coverContentType(embedded.format),
+        embedded.data.length,
+      ),
     });
   } catch {
     return NextResponse.json(

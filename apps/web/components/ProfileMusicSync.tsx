@@ -91,7 +91,7 @@ export function ProfileMusicSync({ trackCount }: ProfileMusicSyncProps) {
             </p>
           ) : status.lastSyncAt ? (
             <p className="mt-1 font-mono text-xs text-muted-foreground/70">
-              Last synced {new Date(status.lastSyncAt).toLocaleString()}
+              Last synced {new Date(status.lastSyncAt).toString()}
             </p>
           ) : null}
         </div>

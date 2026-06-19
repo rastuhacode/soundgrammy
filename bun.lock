@@ -16,6 +16,7 @@
       "version": "0.1.0",
       "dependencies": {
         "@tanstack/react-query": "catalog:frontend",
+        "@tanstack/react-virtual": "catalog:frontend",
         "@trpc/client": "catalog:frontend",
         "@trpc/server": "catalog:backend",
         "@trpc/tanstack-react-query": "catalog:frontend",
@@ -36,7 +37,7 @@
         "tailwind-merge": "catalog:frontend",
         "telegram": "catalog:backend",
         "zod": "catalog:frontend",
-        "zustand": "^5.0.8",
+        "zustand": "catalog:frontend",
       },
       "devDependencies": {
         "@repo/eslint-config": "*",
@@ -106,6 +107,7 @@
     },
     "frontend": {
       "@tanstack/react-query": "^5.101.0",
+      "@tanstack/react-virtual": "^3.13.12",
       "@trpc/client": "^11.18.0",
       "@trpc/tanstack-react-query": "^11.18.0",
       "class-variance-authority": "^0.7.1",
@@ -576,6 +578,10 @@
     "@tanstack/query-core": ["@tanstack/query-core@5.101.0", "", {}, "sha512-cQetA74EB+seWySv1TTKr828TnP0u39m6LykwDXIo84SNortpDkp30TMEjkqtYCNP9c40uT/iwl6MLiufEt0Ow=="],
 
     "@tanstack/react-query": ["@tanstack/react-query@5.101.0", "", { "dependencies": { "@tanstack/query-core": "5.101.0" }, "peerDependencies": { "react": "^18 || ^19" } }, "sha512-rLlJXSpkqfizLWgkR5+eLeIk0MvTx/meEIR7LRjxic+qxiQP8zVjq7BqQkiCMNLQBlLfuOLqqr6KO5GtrDlmSg=="],
+
+    "@tanstack/react-virtual": ["@tanstack/react-virtual@3.14.3", "", { "dependencies": { "@tanstack/virtual-core": "3.17.1" }, "peerDependencies": { "react": "^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0", "react-dom": "^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0" } }, "sha512-k/cnHPVaOfn46hSbiY6n4Dzf4QjCGWSF40zR5QIIYUqPAjpA6TN7InfYmcMiDVQGP2iUn9xsRbAl8u1v3UmeVQ=="],
+
+    "@tanstack/virtual-core": ["@tanstack/virtual-core@3.17.1", "", {}, "sha512-VZyW2Uiml5tmBZwPGrSD3Sz73OxzljQMCmzYHsUTPEuTsERf5xwa+uWb01xEzkz3ZSYTjj8NEb/mKHvgKxyZdA=="],
 
     "@tokenizer/inflate": ["@tokenizer/inflate@0.4.1", "", { "dependencies": { "debug": "^4.4.3", "token-types": "^6.1.1" } }, "sha512-2mAv+8pkG6GIZiF1kNg1jAjh27IDxEPKwdGul3snfztFerfPGI1LjDezZp3i7BElXompqEtPmoPx6c2wgtWsOA=="],
 

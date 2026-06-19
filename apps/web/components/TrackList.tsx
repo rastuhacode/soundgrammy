@@ -1,9 +1,13 @@
 "use client";
 
-import { useState } from "react";
+import { useRef } from "react";
+import { useVirtualizer } from "@tanstack/react-virtual";
 import { Music, Play } from "lucide-react";
+import { useCachedThumbnail } from "@/hooks/use-cached-thumbnail";
 import { usePlayerStore } from "@/stores/player-store";
 import type { Track } from "@/lib/db";
+
+const TRACK_ROW_HEIGHT = 70;
 
 function formatDuration(seconds: number | null): string {
   if (seconds === null) return "--:--";
@@ -12,9 +16,30 @@ function formatDuration(seconds: number | null): string {
   return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
 
+function TrackThumbnail({ trackId }: { trackId: number }) {
+  const { url, loaded, failed } = useCachedThumbnail(trackId);
+
+  return (
+    <div className="relative size-12 shrink-0 overflow-hidden rounded-lg bg-muted">
+      <div className="absolute inset-0 flex items-center justify-center text-muted-foreground">
+        <Music className="size-5" />
+      </div>
+      {!failed && url && (
+        <img
+          src={url}
+          alt=""
+          decoding="async"
+          className={`absolute inset-0 size-12 object-cover transition-opacity duration-200 ${
+            loaded ? "opacity-100" : "opacity-0"
+          }`}
+        />
+      )}
+    </div>
+  );
+}
+
 interface TrackRowProps {
   track: Track;
-  index: number;
   isActive: boolean;
   isPlaying: boolean;
   onTrackSelect: (track: Track) => void;
@@ -22,85 +47,67 @@ interface TrackRowProps {
 
 function TrackRow({
   track,
-  index,
   isActive,
   isPlaying,
   onTrackSelect,
 }: TrackRowProps) {
-  const [thumbError, setThumbError] = useState(false);
   const showEqualizer = isActive && isPlaying;
 
   return (
-    <li
-      className="animate-fade-up"
-      style={{ animationDelay: `${Math.min(index * 45, 600)}ms` }}
+    <div
+      className={`group relative flex items-center gap-4 rounded-xl border px-3 py-2.5 transition-colors duration-200 ${
+        isActive
+          ? "border-primary/40 bg-primary/10"
+          : "border-transparent hover:border-border hover:bg-card/70"
+      }`}
     >
-      <div
-        className={`group relative flex items-center gap-4 rounded-xl border px-3 py-2.5 transition-colors duration-200 ${
-          isActive
-            ? "border-primary/40 bg-primary/10"
-            : "border-transparent hover:border-border hover:bg-card/70"
-        }`}
+      <button
+        type="button"
+        onClick={() => onTrackSelect(track)}
+        aria-label={showEqualizer ? "Pause track" : "Play track"}
+        className="relative shrink-0"
       >
-        <button
-          type="button"
-          onClick={() => onTrackSelect(track)}
-          aria-label={showEqualizer ? "Pause track" : "Play track"}
-          className="relative size-12 shrink-0 overflow-hidden rounded-lg"
+        <TrackThumbnail trackId={track.id} />
+        <span
+          className={`absolute inset-0 flex items-center justify-center rounded-lg bg-background/65 backdrop-blur-[1px] transition-opacity duration-200 ${
+            isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100"
+          }`}
         >
-          {thumbError ? (
-            <div className="flex size-12 items-center justify-center bg-muted text-muted-foreground">
-              <Music className="size-5" />
-            </div>
+          {showEqualizer ? (
+            <span className="equalizer flex h-4 items-end gap-1">
+              <span className="w-[3px] rounded-[1px] bg-foreground" />
+              <span />
+              <span />
+            </span>
+          ) : isActive ? (
+            <Play className="size-5 fill-primary text-primary" />
           ) : (
-            <img
-              src={`/api/tracks/${track.id}/thumbnail`}
-              alt="Thumbnail"
-              className="size-12 object-cover"
-              onError={() => setThumbError(true)}
-            />
+            <Play className="size-5 fill-foreground text-foreground" />
           )}
-          <span
-            className={`absolute inset-0 flex items-center justify-center bg-background/65 backdrop-blur-[1px] transition-opacity duration-200 ${
-              isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100"
-            }`}
-          >
-            {showEqualizer ? (
-              <span className="equalizer flex h-4 items-end gap-1">
-                <span className="w-[3px] rounded-[1px] bg-foreground" />
-                <span />
-                <span />
-              </span>
-            ) : isActive ? (
-              <Play className="size-5 fill-primary text-primary" />
-            ) : (
-              <Play className="size-5 fill-foreground text-foreground" />
-            )}
-          </span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => onTrackSelect(track)}
-          className="flex min-w-0 flex-1 flex-col items-start text-left"
-        >
-          <span
-            className={`max-w-full truncate text-sm font-medium ${
-              isActive ? "text-primary" : "text-foreground"
-            }`}
-          >
-            {track.title ?? "Unknown Title"}
-          </span>
-          <span className="max-w-full truncate text-sm text-muted-foreground">
-            {track.performer ?? "Unknown Artist"}
-          </span>
-        </button>
-
-        <span className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
-          {formatDuration(track.duration)}
         </span>
-      </div>
-    </li>
+      </button>
+
+      <button
+        type="button"
+        onClick={() => onTrackSelect(track)}
+        className="flex min-w-0 flex-1 flex-col items-start text-left"
+      >
+        <span
+          className={`max-w-full truncate text-sm font-medium ${
+            isActive ? "text-primary" : "text-foreground"
+          }`}
+        >
+          {track.title ?? "Unknown Title"}
+        </span>
+        <span className="max-w-full truncate text-sm text-muted-foreground">
+          {track.performer ?? "Unknown Artist"}
+        </span>
+      </button>
+
+      <span className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
+        {formatDuration(track.duration)}
+      </span>
+    </div>
   );
 }
 
@@ -111,6 +118,14 @@ export function TrackList() {
   );
   const isPlaying = usePlayerStore((state) => state.isPlaying);
   const selectTrack = usePlayerStore((state) => state.selectTrack);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  const virtualizer = useVirtualizer({
+    count: tracks.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => TRACK_ROW_HEIGHT,
+    overscan: 8,
+  });
 
   if (tracks.length === 0) {
     return (
@@ -128,25 +143,44 @@ export function TrackList() {
   }
 
   return (
-    <div>
-      <div className="mb-3 flex items-center gap-3 px-3">
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="mb-3 flex shrink-0 items-center gap-3 px-3">
         <h2 className="font-mono text-xs uppercase tracking-[0.28em] text-muted-foreground">
           Library
         </h2>
         <span className="dial-divider h-3 flex-1" />
       </div>
-      <ul className="flex list-none flex-col gap-0.5">
-        {tracks.map((track, index) => (
-          <TrackRow
-            key={track.id}
-            track={track}
-            index={index}
-            isActive={currentTrackId === track.id}
-            isPlaying={isPlaying}
-            onTrackSelect={selectTrack}
-          />
-        ))}
-      </ul>
+      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
+        <ul
+          className="relative w-full list-none"
+          style={{ height: `${virtualizer.getTotalSize()}px` }}
+        >
+          {virtualizer.getVirtualItems().map((virtualRow) => {
+            const track = tracks[virtualRow.index];
+            if (!track) {
+              return null;
+            }
+
+            return (
+              <li
+                key={track.id}
+                className="absolute left-0 top-0 w-full px-0"
+                style={{
+                  height: `${virtualRow.size}px`,
+                  transform: `translateY(${virtualRow.start}px)`,
+                }}
+              >
+                <TrackRow
+                  track={track}
+                  isActive={currentTrackId === track.id}
+                  isPlaying={isPlaying}
+                  onTrackSelect={selectTrack}
+                />
+              </li>
+            );
+          })}
+        </ul>
+      </div>
     </div>
   );
 }

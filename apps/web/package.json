@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@tanstack/react-query": "catalog:frontend",
+    "@tanstack/react-virtual": "catalog:frontend",
     "@trpc/client": "catalog:frontend",
     "@trpc/server": "catalog:backend",
     "@trpc/tanstack-react-query": "catalog:frontend",

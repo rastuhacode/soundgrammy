@@ -28,17 +28,20 @@ function buildDocumentLocation(
   });
 }
 
-async function downloadDocumentRange(
+async function downloadFileRange(
   client: TelegramClient,
   data: StoredDocument,
   byteRange: { start: number; end: number },
   onChunk: (chunk: Uint8Array) => void,
+  thumbSize = "",
 ): Promise<void> {
-  const totalSize = Number(data.size ?? 0);
+  const totalSize = thumbSize
+    ? Number(data.thumbFileSize ?? 0)
+    : Number(data.size ?? 0);
   const start = byteRange.start;
   const end = byteRange.end;
   const byteCount = end - start + 1;
-  const location = buildDocumentLocation(data);
+  const location = buildDocumentLocation(data, thumbSize);
   const chunkCount = Math.ceil(byteCount / TELEGRAM_REQUEST_SIZE);
 
   const iter = client.iterDownload({
@@ -107,7 +110,7 @@ export function createMtprotoDocumentStream(
         const byteRange = { start, end };
 
         const tryDownload = async (json: string) => {
-          await downloadDocumentRange(
+          await downloadFileRange(
             client!,
             parseStoredDocument(json),
             byteRange,
@@ -149,6 +152,91 @@ export function createMtprotoDocumentStream(
   });
 
   return { stream, mimeType, totalSize, contentLength: byteCount };
+}
+
+/**
+ * Builds a {@link ReadableStream} for a stored document thumbnail. Inline
+ * `thumbData` is not handled here — callers should stream that directly.
+ */
+export function createMtprotoThumbnailStream(
+  encryptedSession: string,
+  storedJson: string,
+  onDocumentRefreshed?: (storedJson: string) => void,
+): MtprotoDocumentStream | null {
+  const stored = parseStoredDocument(storedJson);
+  if (!stored.thumbSize) {
+    return null;
+  }
+
+  let currentJson = storedJson;
+  const totalSize = Number(stored.thumbFileSize ?? 0);
+  const start = 0;
+  const end =
+    totalSize > 0 ? totalSize - 1 : Number.MAX_SAFE_INTEGER;
+  const byteCount = end - start + 1;
+  const sessionString = decryptSession(encryptedSession);
+  let client: TelegramClient | null = null;
+
+  const stream = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      try {
+        client = await createMtprotoClient(sessionString);
+        const byteRange = { start, end };
+
+        const tryDownload = async (json: string) => {
+          const data = parseStoredDocument(json);
+          if (!data.thumbSize) {
+            return;
+          }
+
+          await downloadFileRange(
+            client!,
+            data,
+            byteRange,
+            (chunk) => controller.enqueue(chunk),
+            data.thumbSize,
+          );
+        };
+
+        try {
+          await tryDownload(currentJson);
+        } catch (error) {
+          if (!isFileReferenceError(error)) {
+            throw error;
+          }
+
+          currentJson = await refreshSavedMusicDocumentJson(
+            client!,
+            currentJson,
+          );
+          onDocumentRefreshed?.(currentJson);
+          await tryDownload(currentJson);
+        }
+
+        controller.close();
+      } catch (error) {
+        controller.error(error);
+      } finally {
+        if (client) {
+          await client.disconnect();
+          client = null;
+        }
+      }
+    },
+    async cancel() {
+      if (client) {
+        await client.disconnect();
+        client = null;
+      }
+    },
+  });
+
+  return {
+    stream,
+    mimeType: "image/jpeg",
+    totalSize,
+    contentLength: byteCount,
+  };
 }
 
 /**
