@@ -29,7 +29,7 @@
         "music-metadata": "^11.13.0",
         "next": "catalog:frontend",
         "qrcode": "catalog:backend",
-        "radix-ui": "catalog:frontend",
+        "radix-ui": "^1.6.0",
         "react": "catalog:frontend",
         "react-dom": "catalog:frontend",
         "server-only": "catalog:frontend",

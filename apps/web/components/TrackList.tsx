@@ -27,7 +27,7 @@ function TrackThumbnail({ trackId }: { trackId: number }) {
       {!failed && url && (
         <img
           src={url}
-          alt=""
+          alt="Thumbnail"
           decoding="async"
           className={`absolute inset-0 size-12 object-cover transition-opacity duration-200 ${
             loaded ? "opacity-100" : "opacity-0"
@@ -90,7 +90,7 @@ function TrackRow({
       <button
         type="button"
         onClick={() => onTrackSelect(track)}
-        className="flex min-w-0 flex-1 flex-col items-start text-left"
+        className="flex min-w-0 grow flex-col items-start text-left"
       >
         <span
           className={`max-w-full truncate text-sm font-medium ${
@@ -143,44 +143,36 @@ export function TrackList() {
   }
 
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div className="mb-3 flex shrink-0 items-center gap-3 px-3">
-        <h2 className="font-mono text-xs uppercase tracking-[0.28em] text-muted-foreground">
-          Library
-        </h2>
-        <span className="dial-divider h-3 flex-1" />
-      </div>
-      <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto">
-        <ul
-          className="relative w-full list-none"
-          style={{ height: `${virtualizer.getTotalSize()}px` }}
-        >
-          {virtualizer.getVirtualItems().map((virtualRow) => {
-            const track = tracks[virtualRow.index];
-            if (!track) {
-              return null;
-            }
+    <div ref={scrollRef} className="min-h-0 grow overflow-y-auto px-2">
+      <ul
+        className="relative w-full list-none"
+        style={{ height: `${virtualizer.getTotalSize()}px` }}
+      >
+        {virtualizer.getVirtualItems().map((virtualRow) => {
+          const track = tracks[virtualRow.index];
+          if (!track) {
+            return null;
+          }
 
-            return (
-              <li
-                key={track.id}
-                className="absolute left-0 top-0 w-full px-0"
-                style={{
-                  height: `${virtualRow.size}px`,
-                  transform: `translateY(${virtualRow.start}px)`,
-                }}
-              >
-                <TrackRow
-                  track={track}
-                  isActive={currentTrackId === track.id}
-                  isPlaying={isPlaying}
-                  onTrackSelect={selectTrack}
-                />
-              </li>
-            );
-          })}
-        </ul>
-      </div>
+          return (
+            <li
+              key={track.id}
+              className="absolute left-0 top-0 w-full px-0"
+              style={{
+                height: `${virtualRow.size}px`,
+                transform: `translateY(${virtualRow.start}px)`,
+              }}
+            >
+              <TrackRow
+                track={track}
+                isActive={currentTrackId === track.id}
+                isPlaying={isPlaying}
+                onTrackSelect={selectTrack}
+              />
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }

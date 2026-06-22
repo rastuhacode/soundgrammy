@@ -10,7 +10,6 @@ export interface SessionPayload {
   firstName: string;
   lastName?: string;
   username?: string;
-  photoUrl?: string;
 }
 
 function getJwtSecret(): Uint8Array {
