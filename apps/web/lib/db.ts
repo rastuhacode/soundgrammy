@@ -101,6 +101,31 @@ function createDatabase(): Database.Database {
     )
   `);
 
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS playlists (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      tg_user_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      kind TEXT NOT NULL CHECK (kind IN ('liked', 'custom')),
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    )
+  `);
+
+  db.exec(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_playlists_user_liked
+    ON playlists (tg_user_id) WHERE kind = 'liked'
+  `);
+
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS playlist_tracks (
+      playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+      track_id INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+      position INTEGER NOT NULL DEFAULT 0,
+      added_at TEXT NOT NULL DEFAULT (datetime('now')),
+      PRIMARY KEY (playlist_id, track_id)
+    )
+  `);
+
   return db;
 }
 
@@ -385,4 +410,224 @@ export function deleteMtprotoAuthPending(authToken: string) {
   db.prepare("DELETE FROM mtproto_auth_pending WHERE auth_token = ?").run(
     authToken,
   );
+}
+
+export type PlaylistKind = "liked" | "custom";
+
+export interface Playlist {
+  id: number;
+  tg_user_id: number;
+  name: string;
+  kind: PlaylistKind;
+  created_at: string;
+}
+
+export interface PlaylistsBundle {
+  liked: { id: number; trackIds: number[] };
+  custom: { id: number; name: string; trackIds: number[] }[];
+}
+
+function getPlaylistTrackIdsForPlaylist(playlistId: number): number[] {
+  const db = getDb();
+  const rows = db
+    .prepare(
+      `SELECT track_id FROM playlist_tracks
+       WHERE playlist_id = ?
+       ORDER BY position ASC, added_at ASC`,
+    )
+    .all(playlistId) as { track_id: number }[];
+  return rows.map((row) => row.track_id);
+}
+
+function getPlaylistById(
+  playlistId: number,
+  tgUserId: number,
+): Playlist | undefined {
+  const db = getDb();
+  return db
+    .prepare("SELECT * FROM playlists WHERE id = ? AND tg_user_id = ?")
+    .get(playlistId, tgUserId) as Playlist | undefined;
+}
+
+export function ensureLikedPlaylist(tgUserId: number): Playlist {
+  const db = getDb();
+  const existing = db
+    .prepare(
+      "SELECT * FROM playlists WHERE tg_user_id = ? AND kind = 'liked'",
+    )
+    .get(tgUserId) as Playlist | undefined;
+
+  if (existing) {
+    return existing;
+  }
+
+  const result = db
+    .prepare(
+      `INSERT INTO playlists (tg_user_id, name, kind)
+       VALUES (?, 'Liked', 'liked')`,
+    )
+    .run(tgUserId);
+
+  return db
+    .prepare<[number | bigint], Playlist>("SELECT * FROM playlists WHERE id = ?")
+    .get(result.lastInsertRowid)!;
+}
+
+export function getPlaylistsBundle(tgUserId: number): PlaylistsBundle {
+  const liked = ensureLikedPlaylist(tgUserId);
+  const db = getDb();
+
+  const customPlaylists = db
+    .prepare(
+      `SELECT * FROM playlists
+       WHERE tg_user_id = ? AND kind = 'custom'
+       ORDER BY created_at ASC`,
+    )
+    .all(tgUserId) as Playlist[];
+
+  return {
+    liked: {
+      id: liked.id,
+      trackIds: getPlaylistTrackIdsForPlaylist(liked.id),
+    },
+    custom: customPlaylists.map((playlist) => ({
+      id: playlist.id,
+      name: playlist.name,
+      trackIds: getPlaylistTrackIdsForPlaylist(playlist.id),
+    })),
+  };
+}
+
+export function createPlaylist(
+  tgUserId: number,
+  name: string,
+): { id: number; name: string; trackIds: number[] } {
+  const db = getDb();
+  const trimmedName = name.trim();
+  if (!trimmedName) {
+    throw new Error("Playlist name is required");
+  }
+
+  const result = db
+    .prepare(
+      `INSERT INTO playlists (tg_user_id, name, kind)
+       VALUES (?, ?, 'custom')`,
+    )
+    .run(tgUserId, trimmedName);
+
+  const id = Number(result.lastInsertRowid);
+  return { id, name: trimmedName, trackIds: [] };
+}
+
+export function deletePlaylist(playlistId: number, tgUserId: number): void {
+  const playlist = getPlaylistById(playlistId, tgUserId);
+  if (!playlist) {
+    throw new Error("Playlist not found");
+  }
+  if (playlist.kind === "liked") {
+    throw new Error("Cannot delete the Liked playlist");
+  }
+
+  const db = getDb();
+  db.prepare("DELETE FROM playlists WHERE id = ? AND tg_user_id = ?").run(
+    playlistId,
+    tgUserId,
+  );
+}
+
+function getNextPlaylistTrackPosition(playlistId: number): number {
+  const db = getDb();
+  const row = db
+    .prepare(
+      "SELECT COALESCE(MAX(position), -1) + 1 AS next_position FROM playlist_tracks WHERE playlist_id = ?",
+    )
+    .get(playlistId) as { next_position: number };
+  return row.next_position;
+}
+
+export function addTrackToPlaylist(
+  playlistId: number,
+  trackId: number,
+  tgUserId: number,
+): void {
+  const playlist = getPlaylistById(playlistId, tgUserId);
+  if (!playlist) {
+    throw new Error("Playlist not found");
+  }
+  if (playlist.kind === "liked") {
+    throw new Error("Use toggleLike for the Liked playlist");
+  }
+
+  const track = getTrackById(trackId, tgUserId);
+  if (!track) {
+    throw new Error("Track not found");
+  }
+
+  const db = getDb();
+  const position = getNextPlaylistTrackPosition(playlistId);
+  db.prepare(
+    `INSERT INTO playlist_tracks (playlist_id, track_id, position)
+     VALUES (?, ?, ?)
+     ON CONFLICT (playlist_id, track_id) DO NOTHING`,
+  ).run(playlistId, trackId, position);
+}
+
+export function removeTrackFromPlaylist(
+  playlistId: number,
+  trackId: number,
+  tgUserId: number,
+): void {
+  const playlist = getPlaylistById(playlistId, tgUserId);
+  if (!playlist) {
+    throw new Error("Playlist not found");
+  }
+
+  const db = getDb();
+  db.prepare(
+    "DELETE FROM playlist_tracks WHERE playlist_id = ? AND track_id = ?",
+  ).run(playlistId, trackId);
+}
+
+export function isTrackInPlaylist(
+  playlistId: number,
+  trackId: number,
+): boolean {
+  const db = getDb();
+  const row = db
+    .prepare(
+      "SELECT 1 FROM playlist_tracks WHERE playlist_id = ? AND track_id = ?",
+    )
+    .get(playlistId, trackId);
+  return Boolean(row);
+}
+
+export function toggleLikedTrack(
+  trackId: number,
+  tgUserId: number,
+): { liked: boolean; trackIds: number[] } {
+  const likedPlaylist = ensureLikedPlaylist(tgUserId);
+  const track = getTrackById(trackId, tgUserId);
+  if (!track) {
+    throw new Error("Track not found");
+  }
+
+  const db = getDb();
+  const alreadyLiked = isTrackInPlaylist(likedPlaylist.id, trackId);
+
+  if (alreadyLiked) {
+    db.prepare(
+      "DELETE FROM playlist_tracks WHERE playlist_id = ? AND track_id = ?",
+    ).run(likedPlaylist.id, trackId);
+  } else {
+    const position = getNextPlaylistTrackPosition(likedPlaylist.id);
+    db.prepare(
+      `INSERT INTO playlist_tracks (playlist_id, track_id, position)
+       VALUES (?, ?, ?)`,
+    ).run(likedPlaylist.id, trackId, position);
+  }
+
+  return {
+    liked: !alreadyLiked,
+    trackIds: getPlaylistTrackIdsForPlaylist(likedPlaylist.id),
+  };
 }

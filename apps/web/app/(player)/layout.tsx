@@ -1,8 +1,9 @@
 import { redirect } from "next/navigation";
 import { getSession } from "@/lib/auth";
-import { getMtprotoSession, getTracksByUser } from "@/lib/db";
+import { getMtprotoSession, getPlaylistsBundle, getTracksByUser } from "@/lib/db";
 import { ensureProfileMusicSynced } from "@/lib/mtproto/sync";
 import { PlayerTracksHydrator } from "@/components/hydrators/PlayerTracksHydrator";
+import { PlaylistsHydrator } from "@/components/hydrators/PlaylistsHydrator";
 import { SessionHydrator } from "@/components/hydrators/SessionHydrator";
 
 export type PlayerLayoutProps = Readonly<{
@@ -29,20 +30,23 @@ export default async function PlayerLayout({
 
   await ensureProfileMusicSynced(session.tgUserId);
   const tracks = getTracksByUser(session.tgUserId);
+  const playlists = getPlaylistsBundle(session.tgUserId);
 
   return (
     <SessionHydrator session={session}>
-      <PlayerTracksHydrator tracks={tracks}>
-        <div className="flex h-full w-full flex-col">
-          <div className="flex w-full grow overflow-hidden">
-            <aside className="h-full w-96 shrink-0 overflow-y-auto border-r border-border bg-background">
-              {sidebar}
-            </aside>
-            <main className="max-h-full grow overflow-y-auto">{children}</main>
+      <PlaylistsHydrator playlists={playlists}>
+        <PlayerTracksHydrator tracks={tracks}>
+          <div className="flex h-full w-full flex-col">
+            <div className="flex w-full grow overflow-hidden">
+              <aside className="h-full w-96 shrink-0 overflow-y-auto border-r border-border bg-background">
+                {sidebar}
+              </aside>
+              <main className="max-h-full grow overflow-y-auto">{children}</main>
+            </div>
+            <div className="shrink-0">{player}</div>
           </div>
-          <div className="shrink-0">{player}</div>
-        </div>
-      </PlayerTracksHydrator>
+        </PlayerTracksHydrator>
+      </PlaylistsHydrator>
     </SessionHydrator>
   );
 }

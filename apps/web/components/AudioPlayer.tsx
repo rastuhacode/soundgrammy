@@ -1,7 +1,17 @@
 "use client";
 
 import { useRef, useState, useEffect, useLayoutEffect } from "react";
-import { Pause, Play, Volume2, Music } from "lucide-react";
+import {
+  Pause,
+  Play,
+  Volume2,
+  Music,
+  SkipBack,
+  SkipForward,
+  Repeat,
+  Repeat1,
+  Shuffle,
+} from "lucide-react";
 import { AudioProgressBar } from "@/components/audio/AudioProgressBar";
 import { usePlayerStore } from "@/stores/player-store";
 
@@ -27,6 +37,11 @@ export function AudioPlayer() {
   const isPlaying = usePlayerStore((state) => state.isPlaying);
   const setPlaying = usePlayerStore((state) => state.setPlaying);
   const playNext = usePlayerStore((state) => state.playNext);
+  const playPrevious = usePlayerStore((state) => state.playPrevious);
+  const repeat = usePlayerStore((state) => state.repeat);
+  const shuffle = usePlayerStore((state) => state.shuffle);
+  const toggleRepeat = usePlayerStore((state) => state.toggleRepeat);
+  const toggleShuffle = usePlayerStore((state) => state.toggleShuffle);
 
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
@@ -133,6 +148,27 @@ export function AudioPlayer() {
     setBufferedTime(audio.buffered.end(audio.buffered.length - 1));
   };
 
+  function handlePreviousTrack() {
+    const PREVIOUS_TRACK_THRESHOLD = 5; // 5s
+    if (currentTime < PREVIOUS_TRACK_THRESHOLD) {
+      playPrevious();
+    } else {
+      audioRef.current && (audioRef.current.currentTime = 0);
+      setCurrentTime(0);
+    }
+  }
+
+  function handleTrackEnded() {
+    if (repeat === "one") {
+      const audio = audioRef.current;
+      if (!audio) return;
+      audio.currentTime = 0;
+      audio.play().catch(() => setPlaying(false));
+      return;
+    }
+    playNext();
+  }
+
   return (
     <>
       <audio
@@ -143,7 +179,7 @@ export function AudioPlayer() {
         onTimeUpdate={onTimeUpdate}
         onDurationChange={onDurationChange}
         onProgress={onProgress}
-        onEnded={playNext}
+        onEnded={handleTrackEnded}
         aria-hidden={true}
         className="hidden"
       />
@@ -199,18 +235,58 @@ export function AudioPlayer() {
             </div>
 
             <div className="flex w-1/3 flex-col items-center gap-2">
-              <button
-                type="button"
-                onClick={togglePlay}
-                aria-label={isPlaying ? "Pause" : "Play"}
-                className="flex size-11 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-[0_0_24px_-4px_var(--primary)] transition-transform hover:scale-105 active:scale-95"
-              >
-                {isPlaying ? (
-                  <Pause className="size-5 fill-current" />
-                ) : (
-                  <Play className="size-5 translate-x-px fill-current" />
-                )}
-              </button>
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={toggleRepeat}
+                  aria-label="Toggle repeat"
+                  className="text-primary"
+                >
+                  {repeat === "none" || repeat === "all" ? (
+                    <Repeat
+                      className={`size-4 ${repeat === "none" && "text-muted-foreground"}`}
+                    />
+                  ) : (
+                    <Repeat1 className="size-4" />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={handlePreviousTrack}
+                  aria-label="Previous track"
+                >
+                  <SkipBack className="size-5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={togglePlay}
+                  aria-label={isPlaying ? "Pause" : "Play"}
+                  className="flex size-11 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-[0_0_24px_-4px_var(--primary)] transition-transform hover:scale-105 active:scale-95"
+                >
+                  {isPlaying ? (
+                    <Pause className="size-5 fill-current" />
+                  ) : (
+                    <Play className="size-5 translate-x-px fill-current" />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={playNext}
+                  aria-label="Next track"
+                >
+                  <SkipForward className="size-5" />
+                </button>
+                <button
+                  type="button"
+                  aria-label="Shuffle mode"
+                  className={
+                    shuffle === "on" ? "text-primary" : "text-muted-foreground"
+                  }
+                  onClick={toggleShuffle}
+                >
+                  <Shuffle className="size-4" />
+                </button>
+              </div>
               <div className="font-mono text-xs tabular-nums text-muted-foreground">
                 {formatTime(currentTime)}
                 <span className="mx-1 text-muted-foreground/60">/</span>
@@ -235,9 +311,7 @@ export function AudioPlayer() {
             </div>
           </div>
         </div>
-      ) : (
-        <></>
-      )}
+      ) : null}
     </>
   );
 }

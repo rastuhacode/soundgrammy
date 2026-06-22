@@ -1,11 +1,34 @@
 "use client";
 
-import { useRef } from "react";
+import { useMemo, useRef } from "react";
+import { useMutation } from "@tanstack/react-query";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { Music, Play } from "lucide-react";
+import { Heart, ListPlus, Music, Play } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import { useCachedThumbnail } from "@/hooks/use-cached-thumbnail";
-import { usePlayerStore } from "@/stores/player-store";
 import type { Track } from "@/lib/db";
+import {
+  ALL_TRACKS_PLAYLIST_ID,
+  isTrackLiked,
+  resolvePlaylistTracks,
+  usePlaylistsStore,
+} from "@/stores/playlists-store";
+import { useLibraryStore } from "@/stores/library-store";
+import { usePlayerStore } from "@/stores/player-store";
+import { useTRPC } from "@/trpc/client";
 
 const TRACK_ROW_HEIGHT = 70;
 
@@ -42,20 +65,34 @@ interface TrackRowProps {
   track: Track;
   isActive: boolean;
   isPlaying: boolean;
+  isLiked: boolean;
+  customPlaylists: { id: number; name: string; trackIds: number[] }[];
   onTrackSelect: (track: Track) => void;
+  onToggleLike: (trackId: number) => void;
+  onAddToPlaylist: (playlistId: number, trackId: number) => void;
+  isTogglingLike: boolean;
 }
 
 function TrackRow({
   track,
   isActive,
   isPlaying,
+  isLiked,
+  customPlaylists,
   onTrackSelect,
+  onToggleLike,
+  onAddToPlaylist,
+  isTogglingLike,
 }: TrackRowProps) {
   const showEqualizer = isActive && isPlaying;
+  const availablePlaylists = customPlaylists.filter(
+    (playlist) => !playlist.trackIds.includes(track.id),
+  );
+  const hasCustomPlaylists = customPlaylists.length > 0;
 
   return (
     <div
-      className={`group relative flex items-center gap-4 rounded-xl border px-3 py-2.5 transition-colors duration-200 ${
+      className={`group relative flex items-center gap-3 rounded-xl border px-3 py-2.5 transition-colors duration-200 ${
         isActive
           ? "border-primary/40 bg-primary/10"
           : "border-transparent hover:border-border hover:bg-card/70"
@@ -104,52 +141,232 @@ function TrackRow({
         </span>
       </button>
 
-      <span className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
-        {formatDuration(track.duration)}
-      </span>
+      <div className="flex shrink-0 items-center gap-1">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          onClick={() => onToggleLike(track.id)}
+          disabled={isTogglingLike}
+          aria-label={isLiked ? "Unlike track" : "Like track"}
+          className={
+            isLiked
+              ? "text-primary hover:text-primary"
+              : "text-muted-foreground opacity-0 group-hover:opacity-100"
+          }
+        >
+          <Heart className={isLiked ? "fill-current" : undefined} />
+        </Button>
+
+        <TooltipProvider>
+          {hasCustomPlaylists ? (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-xs"
+                  aria-label="Add to playlist"
+                  className="text-muted-foreground opacity-0 group-hover:opacity-100"
+                >
+                  <ListPlus />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end">
+                <DropdownMenuLabel>Add to playlist</DropdownMenuLabel>
+                {availablePlaylists.length === 0 ? (
+                  <DropdownMenuItem disabled>
+                    Already in all playlists
+                  </DropdownMenuItem>
+                ) : (
+                  availablePlaylists.map((playlist) => (
+                    <DropdownMenuItem
+                      key={playlist.id}
+                      onClick={() => onAddToPlaylist(playlist.id, track.id)}
+                    >
+                      {playlist.name}
+                    </DropdownMenuItem>
+                  ))
+                )}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          ) : (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="icon-xs"
+                  disabled
+                  aria-label="Add to playlist"
+                  className="text-muted-foreground opacity-0 group-hover:opacity-100"
+                >
+                  <ListPlus />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                You need to create the playlist first
+              </TooltipContent>
+            </Tooltip>
+          )}
+        </TooltipProvider>
+
+        <span className="w-10 shrink-0 text-right font-mono text-xs tabular-nums text-muted-foreground">
+          {formatDuration(track.duration)}
+        </span>
+      </div>
     </div>
   );
 }
 
+function getEmptyStateCopy(
+  libraryTrackCount: number,
+  selectedPlaylistId: typeof ALL_TRACKS_PLAYLIST_ID | number,
+  likedPlaylistId: number | undefined,
+): { title: string; description: string } {
+  if (libraryTrackCount === 0) {
+    return {
+      title: "No tracks yet",
+      description:
+        "Pin music to your Telegram profile and it will tune in here automatically.",
+    };
+  }
+
+  if (selectedPlaylistId === likedPlaylistId) {
+    return {
+      title: "No liked tracks yet",
+      description: "Tap the heart on any track to save it here.",
+    };
+  }
+
+  if (selectedPlaylistId !== ALL_TRACKS_PLAYLIST_ID) {
+    return {
+      title: "This playlist is empty",
+      description: "Add tracks from your library using the list button.",
+    };
+  }
+
+  return {
+    title: "No tracks yet",
+    description:
+      "Pin music to your Telegram profile and it will tune in here automatically.",
+  };
+}
+
 export function TrackList() {
-  const tracks = usePlayerStore((state) => state.tracks);
+  const trpc = useTRPC();
+  const libraryTracks = useLibraryStore((state) => state.tracks);
   const currentTrackId = usePlayerStore(
     (state) => state.currentTrack?.id ?? null,
   );
   const isPlaying = usePlayerStore((state) => state.isPlaying);
   const selectTrack = usePlayerStore((state) => state.selectTrack);
+  const data = usePlaylistsStore((state) => state.data);
+  const selectedPlaylistId = usePlaylistsStore(
+    (state) => state.selectedPlaylistId,
+  );
+  const activateSelectedPlaylist = usePlaylistsStore(
+    (state) => state.activateSelectedPlaylist,
+  );
+  const setData = usePlaylistsStore((state) => state.setData);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  const displayTracks = useMemo(
+    () => resolvePlaylistTracks(libraryTracks, data, selectedPlaylistId),
+    [libraryTracks, data, selectedPlaylistId],
+  );
+
+  const toggleLikeMutation = useMutation(
+    trpc.playlists.toggleLike.mutationOptions(),
+  );
+  const addTrackMutation = useMutation(
+    trpc.playlists.addTrack.mutationOptions(),
+  );
+
   const virtualizer = useVirtualizer({
-    count: tracks.length,
+    count: displayTracks.length,
     getScrollElement: () => scrollRef.current,
     estimateSize: () => TRACK_ROW_HEIGHT,
     overscan: 8,
   });
 
-  if (tracks.length === 0) {
+  const handleTrackSelect = (track: Track) => {
+    activateSelectedPlaylist(track.id);
+    selectTrack(track);
+  };
+
+  const handleToggleLike = async (trackId: number) => {
+    if (!data) {
+      return;
+    }
+
+    try {
+      const result = await toggleLikeMutation.mutateAsync({ trackId });
+      const nextData = {
+        ...data,
+        liked: { ...data.liked, trackIds: result.trackIds },
+      };
+      setData(nextData);
+    } catch {
+      // keep UI unchanged on failure
+    }
+  };
+
+  const handleAddToPlaylist = async (playlistId: number, trackId: number) => {
+    if (!data) return;
+
+    try {
+      await addTrackMutation.mutateAsync({ playlistId, trackId });
+      setData({
+        ...data,
+        custom: data.custom.map((playlist) =>
+          playlist.id === playlistId
+            ? {
+                ...playlist,
+                trackIds: playlist.trackIds.includes(trackId)
+                  ? playlist.trackIds
+                  : [...playlist.trackIds, trackId],
+              }
+            : playlist,
+        ),
+      });
+    } catch {
+      // keep UI unchanged on failure
+    }
+  };
+
+  if (displayTracks.length === 0) {
+    const emptyState = getEmptyStateCopy(
+      libraryTracks.length,
+      selectedPlaylistId,
+      data?.liked.id,
+    );
+
     return (
-      <div className="animate-fade-up flex flex-col items-center justify-center gap-3 rounded-2xl border border-dashed border-border px-6 py-20 text-center">
+      <div className="animate-fade-up flex flex-col items-center justify-center gap-3 px-6 py-20 text-center">
         <div className="flex size-14 items-center justify-center rounded-full border border-border bg-card text-muted-foreground">
           <Music className="size-6" />
         </div>
-        <p className="text-base font-medium text-foreground">No tracks yet</p>
+        <p className="text-base font-medium text-foreground">
+          {emptyState.title}
+        </p>
         <p className="max-w-xs text-sm text-muted-foreground">
-          Pin music to your Telegram profile and it will tune in here
-          automatically.
+          {emptyState.description}
         </p>
       </div>
     );
   }
 
+  const customPlaylists = data?.custom ?? [];
+
   return (
-    <div ref={scrollRef} className="min-h-0 grow overflow-y-auto px-2">
+    <div ref={scrollRef} className="min-h-0 grow overflow-y-auto p-4">
       <ul
         className="relative w-full list-none"
         style={{ height: `${virtualizer.getTotalSize()}px` }}
       >
         {virtualizer.getVirtualItems().map((virtualRow) => {
-          const track = tracks[virtualRow.index];
+          const track = displayTracks[virtualRow.index];
           if (!track) {
             return null;
           }
@@ -167,7 +384,14 @@ export function TrackList() {
                 track={track}
                 isActive={currentTrackId === track.id}
                 isPlaying={isPlaying}
-                onTrackSelect={selectTrack}
+                isLiked={isTrackLiked(data, track.id)}
+                customPlaylists={customPlaylists}
+                onTrackSelect={handleTrackSelect}
+                onToggleLike={(trackId) => void handleToggleLike(trackId)}
+                onAddToPlaylist={(playlistId, trackId) =>
+                  void handleAddToPlaylist(playlistId, trackId)
+                }
+                isTogglingLike={toggleLikeMutation.isPending}
               />
             </li>
           );
