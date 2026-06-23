@@ -11,6 +11,7 @@ import { AudioTrackDescription } from "./AudioTrackDescription";
 import { AudioVolume } from "./AudioVolume";
 
 const VOLUME_STORAGE_KEY = "soundgrammy-volume";
+const VOLUME_DEFAULT = 25; // 25% (Hate when players scream by default)
 
 function formatTime(seconds: number): string {
   if (!Number.isFinite(seconds)) return "0:00";
@@ -20,7 +21,7 @@ function formatTime(seconds: number): string {
 }
 
 function parseStoredVolume(stored: string | undefined): number {
-  if (stored === undefined) return 100;
+  if (stored === undefined) return VOLUME_DEFAULT;
   let value: unknown;
   try {
     value = JSON.parse(stored);
@@ -28,7 +29,7 @@ function parseStoredVolume(stored: string | undefined): number {
     value = Number(stored);
   }
   const n = typeof value === "number" ? value : Number(value);
-  return Number.isFinite(n) && n >= 0 && n <= 100 ? n : 100;
+  return Number.isFinite(n) && n >= 0 && n <= 100 ? n : VOLUME_DEFAULT;
 }
 
 export function AudioPlayer() {
@@ -50,7 +51,7 @@ export function AudioPlayer() {
   const [bufferedTime, setBufferedTime] = useState(0);
   const [volume, setVolume] = useLocalStorage<number>({
     key: VOLUME_STORAGE_KEY,
-    defaultValue: 100,
+    defaultValue: VOLUME_DEFAULT,
     getInitialValueInEffect: false,
     deserialize: parseStoredVolume,
   });
@@ -125,13 +126,8 @@ export function AudioPlayer() {
     applyVolume();
   };
 
-  useEffect(() => {
-    hydratePreferences();
-  }, [hydratePreferences]);
-
-  useEffect(() => {
-    applyVolume();
-  }, [volume]);
+  useEffect(hydratePreferences, [hydratePreferences]);
+  useEffect(applyVolume, [volume]);
 
   useEffect(() => {
     const audio = audioRef.current;

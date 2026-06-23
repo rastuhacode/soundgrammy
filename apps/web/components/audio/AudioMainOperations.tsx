@@ -26,30 +26,33 @@ type AudioMainOperationsProps = {
 
 export function AudioMainOperations(props: AudioMainOperationsProps) {
   return (
-    <div className="flex items-center gap-3">
-      <button
-        type="button"
-        onClick={props.onRepeatToggle}
-        aria-label="Toggle repeat"
-        className="text-primary"
-      >
-        {props.repeatState === "none" || props.repeatState === "all"
-          ? (
-              <Repeat
-                className={`size-4 ${props.repeatState === "none" && "text-muted-foreground"}`}
-              />
-            )
-          : (
-              <Repeat1 className="size-4" />
-            )}
-      </button>
-      <button
-        type="button"
-        onClick={props.onPreviousTrack}
-        aria-label="Previous track"
-      >
-        <SkipBack className="size-5" />
-      </button>
+    <div className="flex items-center gap-6">
+      <div className="flex items-center gap-4">
+        <button
+          type="button"
+          onClick={props.onRepeatToggle}
+          aria-label="Toggle repeat"
+          className="text-primary"
+        >
+          {props.repeatState === "none" || props.repeatState === "all"
+            ? (
+                <Repeat
+                  className={`size-4 ${props.repeatState === "none" && "text-muted-foreground"}`}
+                />
+              )
+            : (
+                <Repeat1 className="size-4" />
+              )}
+        </button>
+        <button
+          type="button"
+          onClick={props.onPreviousTrack}
+          aria-label="Previous track"
+        >
+          <SkipBack className="size-5" />
+        </button>
+      </div>
+
       <button
         type="button"
         onClick={props.onPlayToggle}
@@ -64,19 +67,22 @@ export function AudioMainOperations(props: AudioMainOperationsProps) {
               <Play className="size-5 translate-x-px fill-current" />
             )}
       </button>
-      <button type="button" onClick={props.onNextTrack} aria-label="Next track">
-        <SkipForward className="size-5" />
-      </button>
-      <button
-        type="button"
-        aria-label="Shuffle mode"
-        className={
-          props.shuffleState === "on" ? "text-primary" : "text-muted-foreground"
-        }
-        onClick={props.onShuffleToggle}
-      >
-        <Shuffle className="size-4" />
-      </button>
+
+      <div className="flex items-center gap-4">
+        <button type="button" onClick={props.onNextTrack} aria-label="Next track">
+          <SkipForward className="size-5" />
+        </button>
+        <button
+          type="button"
+          aria-label="Shuffle mode"
+          className={
+            props.shuffleState === "on" ? "text-primary" : "text-muted-foreground"
+          }
+          onClick={props.onShuffleToggle}
+        >
+          <Shuffle className="size-4" />
+        </button>
+      </div>
     </div>
   );
 }

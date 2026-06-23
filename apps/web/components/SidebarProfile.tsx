@@ -41,6 +41,7 @@ export function SidebarProfile({ trackCount }: SidebarProfileProps) {
   const initials = formatInitials(session);
 
   const handleLogout = async () => {
+    console.log("handleLogout");
     await logoutMutation.mutateAsync();
     clearSession();
     router.push("/login");
@@ -49,23 +50,26 @@ export function SidebarProfile({ trackCount }: SidebarProfileProps) {
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger className="group flex shrink-0 items-center outline-none focus-visible:ring-2 focus-visible:ring-ring/50 rounded-full">
-        <div className="relative shrink-0">
-          <Avatar size="lg" className="ring ring-primary/25">
-            {avatarSrc
-              ? (
-                  <AvatarImage src={avatarSrc} alt={displayName} />
-                )
-              : null}
-            <AvatarFallback className="bg-primary/15 text-sm font-medium text-primary">
-              {initials}
-            </AvatarFallback>
-          </Avatar>
-          <SyncStatusDot phase={phase} />
-        </div>
-      </DropdownMenuTrigger>
+      <DropdownMenuTrigger
+        className="group flex shrink-0 items-center outline-none focus-visible:ring-2 focus-visible:ring-ring/50 rounded-full"
+        render={(
+          <button type="button" className="relative shrink-0">
+            <Avatar size="lg" className="ring ring-primary/25">
+              {avatarSrc
+                ? (
+                    <AvatarImage src={avatarSrc} alt={displayName} />
+                  )
+                : null}
+              <AvatarFallback className="bg-primary/15 text-sm font-medium text-primary">
+                {initials}
+              </AvatarFallback>
+            </Avatar>
+            <SyncStatusDot phase={phase} />
+          </button>
+        )}
+      />
 
-      <DropdownMenuContent className="overflow-hidden rounded-xl border-border/80 bg-popover/95 p-0 shadow-lg backdrop-blur-md">
+      <DropdownMenuContent align="center" className="overflow-hidden rounded-xl border-border/80 bg-popover/95 p-0 shadow-lg backdrop-blur-md w-full">
         <div className="border-b border-border/60 bg-primary/6 px-3 py-3">
           <div className="flex items-center gap-3">
             <div className="relative shrink-0">
@@ -177,7 +181,7 @@ export function SidebarProfile({ trackCount }: SidebarProfileProps) {
           <DropdownMenuItem
             variant="destructive"
             disabled={logoutMutation.isPending}
-            onSelect={(event) => {
+            onClick={(event) => {
               event.preventDefault();
               void handleLogout();
             }}

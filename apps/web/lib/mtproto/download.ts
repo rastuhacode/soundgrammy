@@ -18,8 +18,21 @@ import {
 
 /** Telegram MTProto default per-request download chunk size (256 KiB). */
 const TELEGRAM_REQUEST_SIZE = 256 * 1024;
-/** Telegram requires upload.GetFile limit to be a 4 KiB multiple, at least 4 KiB. */
-const MIN_CHUNK_SIZE = 4096;
+/** Telegram upload.GetFile limit 2048 KiB. */
+const MIN_CHUNK_SIZE = 2048;
+
+/** teleproto routes file downloads through an internal pool with retries and idle reconnect. */
+type FilePoolCapableClient = TelegramClient & {
+  _filePool: {
+    getFile(
+      dcId: number,
+      location: Api.TypeInputFileLocation,
+      offset: bigInt.BigInteger,
+      limit: number,
+      signal?: AbortSignal,
+    ): Promise<Buffer>;
+  };
+};
 
 function normalizeGetFileLimit(remaining: number): number {
   let limit = Math.min(TELEGRAM_REQUEST_SIZE, remaining);
@@ -36,22 +49,15 @@ async function getFileChunk(
   location: Api.TypeInputFileLocation,
   offset: number,
   limit: number,
+  signal?: AbortSignal,
 ): Promise<Buffer> {
-  const sender = await client.getSender(dcId);
-  const result = await client.invokeWithSender(
-    new Api.upload.GetFile({
-      location,
-      offset: bigInt(offset),
-      limit,
-    }),
-    sender,
+  return (client as FilePoolCapableClient)._filePool.getFile(
+    dcId,
+    location,
+    bigInt(offset),
+    limit,
+    signal,
   );
-
-  if (result instanceof Api.upload.FileCdnRedirect) {
-    throw new Error("CDN downloads are not supported");
-  }
-
-  return result.bytes;
 }
 
 function buildDocumentLocation(
@@ -77,6 +83,7 @@ async function* iterateDocumentRange(
   data: StoredDocument,
   byteRange: { start: number; end: number },
   thumbSize = "",
+  signal?: AbortSignal,
 ): AsyncGenerator<Uint8Array> {
   const start = byteRange.start;
   const end = byteRange.end;
@@ -100,6 +107,7 @@ async function* iterateDocumentRange(
       location,
       poolOffset,
       partSize,
+      signal,
     );
 
     if (chunk.length === 0) {
@@ -157,6 +165,7 @@ function createDocumentRangeStream(params: {
   let iterator: AsyncGenerator<Uint8Array> | null = null;
   let emitted = 0;
   let refreshed = false;
+  const abortController = new AbortController();
 
   const newIterator = () =>
     iterateDocumentRange(
@@ -164,6 +173,7 @@ function createDocumentRangeStream(params: {
       parseStoredDocument(currentJson),
       { start: range.start + emitted, end: range.end },
       thumbSize,
+      abortController.signal,
     );
 
   const cleanup = async () => {
@@ -222,6 +232,7 @@ function createDocumentRangeStream(params: {
       }
     },
     async cancel() {
+      abortController.abort();
       await cleanup();
     },
   });

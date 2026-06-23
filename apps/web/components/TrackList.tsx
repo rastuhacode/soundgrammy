@@ -31,7 +31,7 @@ import { useLibraryStore } from "@/stores/library-store";
 import { usePlayerStore } from "@/stores/player-store";
 import { useTRPC } from "@/trpc/client";
 
-const TRACK_ROW_HEIGHT = 90;
+const TRACK_ROW_HEIGHT = 70;
 
 function formatDuration(seconds: number | null): string {
   if (seconds === null) return "--:--";
@@ -50,7 +50,7 @@ function TrackThumbnail({ trackId }: { trackId: number }) {
   return (
     <div
       ref={ref}
-      className="relative size-16 shrink-0 overflow-hidden rounded-lg bg-muted"
+      className="relative size-12 shrink-0 overflow-hidden rounded-lg bg-muted"
     >
       <div className="absolute inset-0 flex items-center justify-center text-muted-foreground">
         <Music className="size-5" />
@@ -60,7 +60,7 @@ function TrackThumbnail({ trackId }: { trackId: number }) {
           src={url}
           alt="Thumbnail"
           decoding="async"
-          className={`absolute inset-0 size-16 object-cover transition-opacity duration-200 ${
+          className={`absolute inset-0 size-12 object-cover transition-opacity duration-200 ${
             loaded ? "opacity-100" : "opacity-0"
           }`}
         />

@@ -19,10 +19,10 @@ export function AudioVolume(props: AudioVolumeProps) {
       >
         {isMuted
           ? (
-              <VolumeX className="size-4 shrink-0 text-muted-foreground" />
+              <VolumeX className="size-5 shrink-0 text-muted-foreground" />
             )
           : (
-              <Volume2 className="size-4 shrink-0 text-muted-foreground" />
+              <Volume2 className="size-5 shrink-0 text-muted-foreground" />
             )}
       </button>
       <input
