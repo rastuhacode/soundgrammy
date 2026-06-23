@@ -11,12 +11,12 @@
     "check-types": "next typegen && tsc --noEmit"
   },
   "dependencies": {
+    "@mantine/hooks": "catalog:frontend",
     "@tanstack/react-query": "catalog:frontend",
     "@tanstack/react-virtual": "catalog:frontend",
     "@trpc/client": "catalog:frontend",
     "@trpc/server": "catalog:backend",
     "@trpc/tanstack-react-query": "catalog:frontend",
-    "@mantine/hooks": "catalog:frontend",
     "better-sqlite3": "catalog:backend",
     "big-integer": "catalog:backend",
     "class-variance-authority": "catalog:frontend",
@@ -26,7 +26,7 @@
     "music-metadata": "catalog:frontend",
     "next": "catalog:frontend",
     "qrcode": "catalog:backend",
-    "radix-ui": "catalog:frontend",
+    "@base-ui/react": "catalog:frontend",
     "react": "catalog:frontend",
     "react-dom": "catalog:frontend",
     "server-only": "catalog:frontend",

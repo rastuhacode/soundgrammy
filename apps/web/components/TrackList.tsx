@@ -162,17 +162,19 @@ function TrackRow({
         <TooltipProvider>
           {hasCustomPlaylists ? (
             <DropdownMenu>
-              <DropdownMenuTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-xs"
-                  aria-label="Add to playlist"
-                  className="text-muted-foreground opacity-0 group-hover:opacity-100"
-                >
-                  <ListPlus />
-                </Button>
-              </DropdownMenuTrigger>
+              <DropdownMenuTrigger
+                render={
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-xs"
+                    aria-label="Add to playlist"
+                    className="text-muted-foreground opacity-0 group-hover:opacity-100"
+                  >
+                    <ListPlus />
+                  </Button>
+                }
+              />
               <DropdownMenuContent align="end">
                 <DropdownMenuLabel>Add to playlist</DropdownMenuLabel>
                 {availablePlaylists.length === 0 ? (
@@ -193,18 +195,20 @@ function TrackRow({
             </DropdownMenu>
           ) : (
             <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-xs"
-                  disabled
-                  aria-label="Add to playlist"
-                  className="text-muted-foreground opacity-0 group-hover:opacity-100"
-                >
-                  <ListPlus />
-                </Button>
-              </TooltipTrigger>
+              <TooltipTrigger
+                render={
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon-xs"
+                    disabled
+                    aria-label="Add to playlist"
+                    className="text-muted-foreground opacity-0 group-hover:opacity-100"
+                  >
+                    <ListPlus />
+                  </Button>
+                }
+              />
               <TooltipContent>
                 You need to create the playlist first
               </TooltipContent>

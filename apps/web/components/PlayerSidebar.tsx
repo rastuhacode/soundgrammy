@@ -2,7 +2,7 @@
 
 import { SidebarProfile } from "@/components/SidebarProfile";
 import { SidebarPlaylists } from "@/components/SidebarPlaylists";
-import { Separator } from "@/components/ui/separetor";
+import { Separator } from "@/components/ui/separator";
 import { useLibraryStore } from "@/stores/library-store";
 
 export function PlayerSidebar() {
