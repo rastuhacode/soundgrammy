@@ -1,7 +1,11 @@
 import type { TelegramClient } from "telegram";
 import { Api } from "telegram";
 import { getMtprotoCredentials } from "./config";
-import { createMtprotoClient, saveClientSession } from "./client";
+import {
+  createMtprotoClient,
+  destroyMtprotoClient,
+  saveClientSession,
+} from "./client";
 import { saveMtprotoSession } from "../db";
 import type { MtprotoUserInfo } from "./login";
 
@@ -46,7 +50,7 @@ function cleanupSession(authToken: string) {
   const sessions = getQrSessions();
   const session = sessions.get(authToken);
   if (session) {
-    void session.client.disconnect().catch(() => undefined);
+    void destroyMtprotoClient(session.client);
     sessions.delete(authToken);
   }
 }
@@ -119,7 +123,7 @@ export async function startQrAuth(authToken: string) {
       session.error
         = error instanceof Error ? error.message : "QR login failed";
     } finally {
-      await client.disconnect().catch(() => undefined);
+      await destroyMtprotoClient(client);
     }
   })();
 

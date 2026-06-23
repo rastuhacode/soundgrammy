@@ -36,6 +36,13 @@ export async function createMtprotoClient(
   return client;
 }
 
+/** Stops the background update loop and tears down a short-lived client. */
+export async function destroyMtprotoClient(
+  client: TelegramClient,
+): Promise<void> {
+  await client.destroy().catch(() => undefined);
+}
+
 /**
  * Runs `fn` with a pooled client built from an encrypted session, releasing it
  * afterwards so later requests reuse the same MTProto connection. Use this for

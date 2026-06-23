@@ -1,6 +1,10 @@
 import { Api } from "telegram";
 import { computeCheck } from "telegram/Password";
-import { createMtprotoClient, saveClientSession } from "./session";
+import {
+  createMtprotoClient,
+  destroyMtprotoClient,
+  saveClientSession,
+} from "./session";
 import { decryptSession } from "./crypto";
 import { getMtprotoCredentials } from "./config";
 import { isSessionPasswordNeeded } from "./errors";
@@ -23,7 +27,7 @@ export async function sendAuthCode(phoneNumber: string, forceSms = false) {
       codeDelivery: getCodeDelivery(result.isCodeViaApp),
     };
   } finally {
-    await client.disconnect();
+    await destroyMtprotoClient(client);
   }
 }
 
@@ -59,7 +63,7 @@ export async function resendAuthCode(
       ),
     };
   } finally {
-    await client.disconnect();
+    await destroyMtprotoClient(client);
   }
 }
 
@@ -96,7 +100,7 @@ export async function signInWithCode(
       sessionData: saveClientSession(client),
     };
   } finally {
-    await client.disconnect();
+    await destroyMtprotoClient(client);
   }
 }
 
@@ -118,6 +122,6 @@ export async function signInWithPassword(
       sessionData: saveClientSession(client),
     };
   } finally {
-    await client.disconnect();
+    await destroyMtprotoClient(client);
   }
 }

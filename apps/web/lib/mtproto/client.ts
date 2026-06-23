@@ -7,6 +7,7 @@
 
 export {
   createMtprotoClient,
+  destroyMtprotoClient,
   saveClientSession,
   withMtprotoClient,
 } from "./session";
