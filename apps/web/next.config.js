@@ -2,7 +2,7 @@
 const nextConfig = {
   serverExternalPackages: [
     "better-sqlite3",
-    "telegram",
+    "teleproto",
     "big-integer",
     "async-mutex",
     "socks",

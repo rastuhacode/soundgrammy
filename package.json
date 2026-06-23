@@ -63,7 +63,7 @@
         "@trpc/server": "^11.18.0",
         "better-sqlite3": "^12.11.1",
         "jose": "^6.2.3",
-        "telegram": "^2.26.22",
+        "teleproto": "^1.227.1",
         "big-integer": "^1.6.52",
         "qrcode": "^1.5.4",
         "superjson": "^2.2.6"

@@ -41,7 +41,9 @@ export default async function PlayerLayout({
               <aside className="h-full w-96 shrink-0 overflow-y-auto border-r border-border bg-background">
                 {sidebar}
               </aside>
-              <main className="max-h-full grow overflow-y-auto">{children}</main>
+              <main className="flex min-h-0 grow flex-col overflow-hidden">
+                {children}
+              </main>
             </div>
             <div className="shrink-0">{player}</div>
           </div>

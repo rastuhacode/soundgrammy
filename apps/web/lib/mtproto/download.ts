@@ -1,4 +1,4 @@
-import { TelegramClient, Api } from "telegram";
+import { TelegramClient, Api } from "teleproto";
 import bigInt from "big-integer";
 import { decryptSession } from "./crypto";
 import { isFileReferenceError } from "./errors";
@@ -18,6 +18,41 @@ import {
 
 /** Telegram MTProto default per-request download chunk size (256 KiB). */
 const TELEGRAM_REQUEST_SIZE = 256 * 1024;
+/** Telegram requires upload.GetFile limit to be a 4 KiB multiple, at least 4 KiB. */
+const MIN_CHUNK_SIZE = 4096;
+
+function normalizeGetFileLimit(remaining: number): number {
+  let limit = Math.min(TELEGRAM_REQUEST_SIZE, remaining);
+  limit -= limit % MIN_CHUNK_SIZE;
+  if (limit < MIN_CHUNK_SIZE) {
+    limit = MIN_CHUNK_SIZE;
+  }
+  return limit;
+}
+
+async function getFileChunk(
+  client: TelegramClient,
+  dcId: number,
+  location: Api.TypeInputFileLocation,
+  offset: number,
+  limit: number,
+): Promise<Buffer> {
+  const sender = await client.getSender(dcId);
+  const result = await client.invokeWithSender(
+    new Api.upload.GetFile({
+      location,
+      offset: bigInt(offset),
+      limit,
+    }),
+    sender,
+  );
+
+  if (result instanceof Api.upload.FileCdnRedirect) {
+    throw new Error("CDN downloads are not supported");
+  }
+
+  return result.bytes;
+}
 
 function buildDocumentLocation(
   data: StoredDocument,
@@ -43,9 +78,6 @@ async function* iterateDocumentRange(
   byteRange: { start: number; end: number },
   thumbSize = "",
 ): AsyncGenerator<Uint8Array> {
-  const totalSize = thumbSize
-    ? Number(data.thumbFileSize ?? 0)
-    : Number(data.size ?? 0);
   const start = byteRange.start;
   const end = byteRange.end;
   const byteCount = end - start + 1;
@@ -53,33 +85,42 @@ async function* iterateDocumentRange(
     return;
   }
   const location = buildDocumentLocation(data, thumbSize);
-  const chunkCount = Math.ceil(byteCount / TELEGRAM_REQUEST_SIZE);
-
-  const iter = client.iterDownload({
-    file: location,
-    offset: bigInt(start),
-    limit: chunkCount,
-    requestSize: TELEGRAM_REQUEST_SIZE,
-    chunkSize: TELEGRAM_REQUEST_SIZE,
-    fileSize: totalSize > 0 ? bigInt(totalSize) : undefined,
-    dcId: data.dcId,
-  });
-
+  const partSize = normalizeGetFileLimit(
+    Math.min(byteCount, TELEGRAM_REQUEST_SIZE),
+  );
+  let poolOffset = start - (start % partSize);
+  let skipLeading = start - poolOffset;
   let bytesSent = 0;
-  for await (const chunk of iter) {
-    const buffer = chunk as Buffer;
+
+  while (bytesSent < byteCount) {
     const remaining = byteCount - bytesSent;
-    if (remaining <= 0) {
+    const chunk = await getFileChunk(
+      client,
+      data.dcId,
+      location,
+      poolOffset,
+      partSize,
+    );
+
+    if (chunk.length === 0) {
       break;
     }
 
-    if (buffer.length > remaining) {
-      yield new Uint8Array(buffer.subarray(0, remaining));
-      return;
+    const usable = skipLeading > 0 ? chunk.subarray(skipLeading) : chunk;
+    skipLeading = 0;
+
+    const trimmed
+      = usable.length > remaining ? usable.subarray(0, remaining) : usable;
+    if (trimmed.length > 0) {
+      yield new Uint8Array(trimmed);
+      bytesSent += trimmed.length;
     }
 
-    yield new Uint8Array(buffer);
-    bytesSent += buffer.length;
+    poolOffset += partSize;
+
+    if (chunk.length < partSize) {
+      break;
+    }
   }
 }
 

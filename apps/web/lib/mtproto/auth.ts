@@ -1,5 +1,5 @@
-import { Api } from "telegram";
-import { computeCheck } from "telegram/Password";
+import { Api } from "teleproto";
+import { computeCheck } from "teleproto/Password";
 import {
   createMtprotoClient,
   destroyMtprotoClient,
@@ -53,6 +53,10 @@ export async function resendAuthCode(
 
     if (result instanceof Api.auth.SentCodeSuccess) {
       throw new Error("Already logged in");
+    }
+
+    if (!(result instanceof Api.auth.SentCode)) {
+      throw new Error("Unexpected resend code response");
     }
 
     return {

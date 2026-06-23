@@ -1,4 +1,4 @@
-import { TelegramClient, sessions } from "telegram";
+import { TelegramClient, sessions } from "teleproto";
 import {
   acquirePooledMtprotoClient,
   releasePooledMtprotoClient,

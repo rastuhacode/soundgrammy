@@ -18,6 +18,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { useIntersection } from "@mantine/hooks";
 import { useCachedThumbnail } from "@/hooks/use-cached-thumbnail";
 import type { Track } from "@/lib/db";
 import {
@@ -40,10 +41,17 @@ function formatDuration(seconds: number | null): string {
 }
 
 function TrackThumbnail({ trackId }: { trackId: number }) {
-  const { url, loaded, failed } = useCachedThumbnail(trackId);
+  const { ref, entry } = useIntersection({ rootMargin: "400px" });
+  const inView = entry?.isIntersecting ?? false;
+  const { url, loaded, failed } = useCachedThumbnail(trackId, {
+    enabled: inView,
+  });
 
   return (
-    <div className="relative size-16 shrink-0 overflow-hidden rounded-lg bg-muted">
+    <div
+      ref={ref}
+      className="relative size-16 shrink-0 overflow-hidden rounded-lg bg-muted"
+    >
       <div className="absolute inset-0 flex items-center justify-center text-muted-foreground">
         <Music className="size-5" />
       </div>
@@ -310,9 +318,7 @@ export function TrackList() {
   };
 
   const handleToggleLike = async (trackId: number) => {
-    if (!data) {
-      return;
-    }
+    if (!data) return;
 
     try {
       const result = await toggleLikeMutation.mutateAsync({ trackId });
@@ -374,42 +380,42 @@ export function TrackList() {
   const customPlaylists = data?.custom ?? [];
 
   return (
-    <div ref={scrollRef} className="min-h-0 grow overflow-y-auto p-4">
-      <ul
-        className="relative w-full list-none"
-        style={{ height: `${virtualizer.getTotalSize()}px` }}
-      >
-        {virtualizer.getVirtualItems().map((virtualRow) => {
-          const track = displayTracks[virtualRow.index];
-          if (!track) {
-            return null;
-          }
+    <div className="flex min-h-0 grow flex-col">
+      <div ref={scrollRef} className="min-h-0 grow overflow-y-auto p-4">
+        <ul
+          className="relative w-full list-none"
+          style={{ height: `${virtualizer.getTotalSize()}px` }}
+        >
+          {virtualizer.getVirtualItems().map((virtualRow) => {
+            const track = displayTracks[virtualRow.index];
+            if (!track) return null;
 
-          return (
-            <li
-              key={track.id}
-              className="absolute left-0 top-0 w-full px-0"
-              style={{
-                height: `${virtualRow.size}px`,
-                transform: `translateY(${virtualRow.start}px)`,
-              }}
-            >
-              <TrackRow
-                track={track}
-                isActive={currentTrackId === track.id}
-                isPlaying={isPlaying}
-                isLiked={isTrackLiked(data, track.id)}
-                customPlaylists={customPlaylists}
-                onTrackSelect={handleTrackSelect}
-                onToggleLike={(trackId) => void handleToggleLike(trackId)}
-                onAddToPlaylist={(playlistId, trackId) =>
-                  void handleAddToPlaylist(playlistId, trackId)}
-                isTogglingLike={toggleLikeMutation.isPending}
-              />
-            </li>
-          );
-        })}
-      </ul>
+            return (
+              <li
+                key={track.id}
+                className="absolute left-0 top-0 w-full px-0"
+                style={{
+                  height: `${virtualRow.size}px`,
+                  transform: `translateY(${virtualRow.start}px)`,
+                }}
+              >
+                <TrackRow
+                  track={track}
+                  isActive={currentTrackId === track.id}
+                  isPlaying={isPlaying}
+                  isLiked={isTrackLiked(data, track.id)}
+                  customPlaylists={customPlaylists}
+                  onTrackSelect={handleTrackSelect}
+                  onToggleLike={(trackId) => void handleToggleLike(trackId)}
+                  onAddToPlaylist={(playlistId, trackId) =>
+                    void handleAddToPlaylist(playlistId, trackId)}
+                  isTogglingLike={toggleLikeMutation.isPending}
+                />
+              </li>
+            );
+          })}
+        </ul>
+      </div>
     </div>
   );
 }

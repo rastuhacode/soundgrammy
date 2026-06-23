@@ -10,6 +10,11 @@ interface CachedThumbnailState {
   failed: boolean;
 }
 
+interface UseCachedThumbnailOptions {
+  /** When false, skips the network fetch until enabled (e.g. row is in view). */
+  enabled?: boolean;
+}
+
 function stateFromCache(trackId: number): CachedThumbnailState {
   const cached = getCachedThumbnail(trackId);
   if (cached?.status === "ready") {
@@ -21,10 +26,18 @@ function stateFromCache(trackId: number): CachedThumbnailState {
   return { url: null, loaded: false, failed: false };
 }
 
-export function useCachedThumbnail(trackId: number): CachedThumbnailState {
+export function useCachedThumbnail(
+  trackId: number,
+  options: UseCachedThumbnailOptions = {},
+): CachedThumbnailState {
+  const enabled = options.enabled ?? true;
   const [state, setState] = useState(() => stateFromCache(trackId));
 
   useEffect(() => {
+    if (!enabled) {
+      return;
+    }
+
     const cached = getCachedThumbnail(trackId);
     if (cached) {
       setState(stateFromCache(trackId));
@@ -49,7 +62,7 @@ export function useCachedThumbnail(trackId: number): CachedThumbnailState {
     return () => {
       cancelled = true;
     };
-  }, [trackId]);
+  }, [trackId, enabled]);
 
   return state;
 }

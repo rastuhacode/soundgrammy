@@ -1,7 +1,7 @@
 /**
  * Helpers for interpreting errors thrown by the Telegram MTProto client.
  *
- * GramJS surfaces RPC errors in two shapes depending on the call path: some
+ * teleproto surfaces RPC errors in two shapes depending on the call path: some
  * carry a structured `errorMessage` property, while others only embed the code
  * in the standard `Error.message`. These helpers normalize both so callers can
  * react to specific server errors without re-implementing the inspection logic.

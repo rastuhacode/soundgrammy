@@ -33,7 +33,7 @@
     "server-only": "catalog:frontend",
     "superjson": "catalog:backend",
     "tailwind-merge": "catalog:frontend",
-    "telegram": "catalog:backend",
+    "teleproto": "catalog:backend",
     "zod": "catalog:frontend",
     "zustand": "catalog:frontend"
   },

@@ -1,5 +1,5 @@
-import type { TelegramClient } from "telegram";
-import { Api } from "telegram";
+import type { TelegramClient } from "teleproto";
+import { Api } from "teleproto";
 import { getMtprotoCredentials } from "./config";
 import {
   createMtprotoClient,

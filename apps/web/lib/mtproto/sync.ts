@@ -1,4 +1,4 @@
-import type { Api, TelegramClient } from "telegram";
+import { Api, type TelegramClient } from "teleproto";
 import {
   deleteMtprotoTracksNotIn,
   getMtprotoSession,
@@ -9,7 +9,7 @@ import {
   type TrackSource,
 } from "../db";
 import { withMtprotoClient } from "./client";
-import { computeSavedMusicHash, parseDocumentMetadata } from "./document";
+import { computeSavedMusicHash, isDocument, parseDocumentMetadata } from "./document";
 import { getSavedMusic, SAVED_MUSIC_PAGE_SIZE } from "./saved-music-tl";
 
 export interface SyncProfileMusicOptions {
@@ -41,11 +41,11 @@ async function fetchAllProfileMusic(
       hash,
     });
 
-    if (result.className === "users.savedMusicNotModified") {
+    if (result instanceof Api.users.SavedMusicNotModified) {
       return { notModified: true, count: result.count };
     }
 
-    documents.push(...result.documents);
+    documents.push(...result.documents.filter(isDocument));
     if (result.documents.length < SAVED_MUSIC_PAGE_SIZE) break;
     offset += result.documents.length;
   }

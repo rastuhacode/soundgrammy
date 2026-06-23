@@ -1,7 +1,8 @@
-import type { Api, TelegramClient } from "telegram";
+import { Api, type TelegramClient } from "teleproto";
 import {
   documentToStoredJson,
   extractThumbFromDocument,
+  isDocument,
   mergeStoredDocumentThumb,
   shouldUpgradeStoredThumb,
   toInputDocument,
@@ -26,10 +27,11 @@ async function findSavedMusicDocument(
       hash: "0", // "0" = no client-side cache hash
     });
 
-    if (result.className === "users.savedMusicNotModified") return;
+    if (result instanceof Api.users.SavedMusicNotModified) return;
 
     const found = result.documents.find(
-      (doc) => doc.id.toString() === stored.id,
+      (doc): doc is Api.Document =>
+        isDocument(doc) && doc.id.toString() === stored.id,
     );
     if (found) return found;
 
@@ -61,12 +63,13 @@ export async function refreshSavedMusicDocument(
 ): Promise<StoredDocument> {
   const result = await getSavedMusicByID(client, [toInputDocument(stored)]);
 
-  if (result.className === "users.savedMusicNotModified") {
+  if (result instanceof Api.users.SavedMusicNotModified) {
     throw new Error("Saved music document is no longer on profile");
   }
 
   const refreshed = result.documents.find(
-    (doc) => doc.id.toString() === stored.id,
+    (doc): doc is Api.Document =>
+      isDocument(doc) && doc.id.toString() === stored.id,
   );
   if (!refreshed) {
     throw new Error("Saved music document is no longer on profile");

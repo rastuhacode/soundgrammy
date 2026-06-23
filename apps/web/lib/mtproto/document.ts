@@ -1,6 +1,6 @@
 import bigInt from "big-integer";
-import { Api } from "telegram";
-import { strippedPhotoToJpg } from "telegram/Utils";
+import { Api } from "teleproto";
+import { strippedPhotoToJpg } from "teleproto/Utils";
 import { z } from "zod";
 
 /**
@@ -22,6 +22,10 @@ export const StoredDocumentSchema = z.object({
 });
 
 export type StoredDocument = z.infer<typeof StoredDocumentSchema>;
+
+export function isDocument(doc: Api.TypeDocument): doc is Api.Document {
+  return doc instanceof Api.Document;
+}
 
 /**
  * Parses and validates a stored document JSON string. Throws if the payload is

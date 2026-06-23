@@ -8,7 +8,7 @@ import {
 } from "@/lib/db";
 import {
   createMtprotoDocumentStream,
-  createMtprotoThumbnailStream,
+  downloadMtprotoDocumentThumbnail,
   withMtprotoClient,
 } from "@/lib/mtproto/client";
 import { enrichSavedMusicDocumentThumb } from "@/lib/mtproto/refresh";
@@ -104,19 +104,16 @@ export async function GET(
 
   try {
     if (stored.thumbSize) {
-      const thumbnailStream = createMtprotoThumbnailStream(
+      const thumbnail = await downloadMtprotoDocumentThumbnail(
         mtprotoSession.session_data,
         storedJson,
         onDocumentRefreshed,
       );
 
-      if (thumbnailStream) {
-        return new Response(thumbnailStream.stream, {
+      if (thumbnail) {
+        return new Response(bufferToStream(thumbnail), {
           status: 200,
-          headers: thumbnailResponseHeaders(
-            "image/jpeg",
-            thumbnailStream.contentLength,
-          ),
+          headers: thumbnailResponseHeaders("image/jpeg", thumbnail.length),
         });
       }
     }
