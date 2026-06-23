@@ -144,10 +144,10 @@ export const usePlaylistsStore = create<PlaylistsState>((set, get) => ({
     const libraryTracks = useLibraryStore.getState().tracks;
     const currentTrackId = usePlayerStore.getState().currentTrack?.id ?? null;
 
-    const needsNewSnapshot =
-      !queueSnapshot ||
-      queueSnapshot.playlistId !== selectedPlaylistId ||
-      currentTrackId !== trackId;
+    const needsNewSnapshot
+      = !queueSnapshot
+        || queueSnapshot.playlistId !== selectedPlaylistId
+        || currentTrackId !== trackId;
 
     if (needsNewSnapshot) {
       set({
@@ -176,8 +176,8 @@ export const usePlaylistsStore = create<PlaylistsState>((set, get) => ({
 
     let nextQueueSnapshot = queueSnapshot;
     if (
-      nextQueueSnapshot &&
-      !isValidPlaylistId(data, nextQueueSnapshot.playlistId)
+      nextQueueSnapshot
+      && !isValidPlaylistId(data, nextQueueSnapshot.playlistId)
     ) {
       nextQueueSnapshot = null;
     }

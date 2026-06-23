@@ -111,17 +111,21 @@ function TrackRow({
             isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100"
           }`}
         >
-          {showEqualizer ? (
-            <span className="equalizer flex h-4 items-end gap-1">
-              <span className="w-[3px] rounded-[1px] bg-foreground" />
-              <span />
-              <span />
-            </span>
-          ) : isActive ? (
-            <Play className="size-5 fill-primary text-primary" />
-          ) : (
-            <Play className="size-5 fill-foreground text-foreground" />
-          )}
+          {showEqualizer
+            ? (
+                <span className="equalizer flex h-4 items-end gap-1">
+                  <span className="w-[3px] rounded-[1px] bg-foreground" />
+                  <span />
+                  <span />
+                </span>
+              )
+            : isActive
+              ? (
+                  <Play className="size-5 fill-primary text-primary" />
+                )
+              : (
+                  <Play className="size-5 fill-foreground text-foreground" />
+                )}
         </span>
       </button>
 
@@ -160,60 +164,64 @@ function TrackRow({
         </Button>
 
         <TooltipProvider>
-          {hasCustomPlaylists ? (
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                render={
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-xs"
-                    aria-label="Add to playlist"
-                    className="text-muted-foreground opacity-0 group-hover:opacity-100"
-                  >
-                    <ListPlus />
-                  </Button>
-                }
-              />
-              <DropdownMenuContent align="end">
-                <DropdownMenuLabel>Add to playlist</DropdownMenuLabel>
-                {availablePlaylists.length === 0 ? (
-                  <DropdownMenuItem disabled>
-                    Already in all playlists
-                  </DropdownMenuItem>
-                ) : (
-                  availablePlaylists.map((playlist) => (
-                    <DropdownMenuItem
-                      key={playlist.id}
-                      onClick={() => onAddToPlaylist(playlist.id, track.id)}
-                    >
-                      {playlist.name}
-                    </DropdownMenuItem>
-                  ))
-                )}
-              </DropdownMenuContent>
-            </DropdownMenu>
-          ) : (
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-xs"
-                    disabled
-                    aria-label="Add to playlist"
-                    className="text-muted-foreground opacity-0 group-hover:opacity-100"
-                  >
-                    <ListPlus />
-                  </Button>
-                }
-              />
-              <TooltipContent>
-                You need to create the playlist first
-              </TooltipContent>
-            </Tooltip>
-          )}
+          {hasCustomPlaylists
+            ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    render={(
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-xs"
+                        aria-label="Add to playlist"
+                        className="text-muted-foreground opacity-0 group-hover:opacity-100"
+                      >
+                        <ListPlus />
+                      </Button>
+                    )}
+                  />
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuLabel>Add to playlist</DropdownMenuLabel>
+                    {availablePlaylists.length === 0
+                      ? (
+                          <DropdownMenuItem disabled>
+                            Already in all playlists
+                          </DropdownMenuItem>
+                        )
+                      : (
+                          availablePlaylists.map((playlist) => (
+                            <DropdownMenuItem
+                              key={playlist.id}
+                              onClick={() => onAddToPlaylist(playlist.id, track.id)}
+                            >
+                              {playlist.name}
+                            </DropdownMenuItem>
+                          ))
+                        )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )
+            : (
+                <Tooltip>
+                  <TooltipTrigger
+                    render={(
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-xs"
+                        disabled
+                        aria-label="Add to playlist"
+                        className="text-muted-foreground opacity-0 group-hover:opacity-100"
+                      >
+                        <ListPlus />
+                      </Button>
+                    )}
+                  />
+                  <TooltipContent>
+                    You need to create the playlist first
+                  </TooltipContent>
+                </Tooltip>
+              )}
         </TooltipProvider>
 
         <span className="w-10 shrink-0 text-right font-mono text-xs tabular-nums text-muted-foreground">
@@ -395,8 +403,7 @@ export function TrackList() {
                 onTrackSelect={handleTrackSelect}
                 onToggleLike={(trackId) => void handleToggleLike(trackId)}
                 onAddToPlaylist={(playlistId, trackId) =>
-                  void handleAddToPlaylist(playlistId, trackId)
-                }
+                  void handleAddToPlaylist(playlistId, trackId)}
                 isTogglingLike={toggleLikeMutation.isPending}
               />
             </li>

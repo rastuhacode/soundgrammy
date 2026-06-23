@@ -1,6 +1,14 @@
 {
   "$schema": "https://turborepo.dev/schema.json",
   "ui": "tui",
+  "globalEnv": [
+    "JWT_SECRET",
+    "NODE_ENV",
+    "TELEGRAM_API_ID",
+    "TELEGRAM_API_HASH",
+    "MTPROTO_SESSION_SECRET",
+    "PORT"
+  ],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
@@ -9,6 +17,9 @@
     },
     "lint": {
       "dependsOn": ["^lint"]
+    },
+    "format": {
+      "dependsOn": ["^format"]
     },
     "typecheck": {
       "dependsOn": ["^typecheck"]

@@ -24,10 +24,10 @@ export function AudioProgressBar({
 }: AudioProgressBarProps) {
   const [isDragging, setIsDragging] = useState(false);
 
-  const progress =
-    duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0;
-  const bufferedProgress =
-    duration > 0 ? Math.min(100, (bufferedTime / duration) * 100) : 0;
+  const progress
+    = duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0;
+  const bufferedProgress
+    = duration > 0 ? Math.min(100, (bufferedTime / duration) * 100) : 0;
 
   const handleSeek = (
     e: React.InputEvent<HTMLInputElement> | React.ChangeEvent<HTMLInputElement>,

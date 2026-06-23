@@ -24,9 +24,9 @@ const VECTOR_CONSTRUCTOR_ID = 0x1cb5c415; // vector constructor (TL built-in)
 /** Telegram saved-music page size (max documents returned per request). */
 export const SAVED_MUSIC_PAGE_SIZE = 100;
 
-export type SavedMusicResult =
-  | { className: "users.savedMusic"; count: number; documents: Api.Document[] }
-  | { className: "users.savedMusicNotModified"; count: number };
+export type SavedMusicResult
+  = | { className: "users.savedMusic"; count: number; documents: Api.Document[] }
+    | { className: "users.savedMusicNotModified"; count: number };
 
 /**
  * Minimal subset of the GramJS request contract that `client.invoke` relies on

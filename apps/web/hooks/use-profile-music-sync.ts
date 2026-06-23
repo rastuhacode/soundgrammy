@@ -57,20 +57,20 @@ export function useProfileMusicSync(trackCount: number) {
     void runSync();
   }, [status?.connected, runSync]);
 
-  const phase: SyncPhase =
-    status === null ? "connecting" : syncing ? "syncing" : "live";
+  const phase: SyncPhase
+    = status === null ? "connecting" : syncing ? "syncing" : "live";
 
   const lastSynced = formatLastSync(status?.lastSyncAt);
 
-  const statusLabel =
-    phase === "connecting"
+  const statusLabel
+    = phase === "connecting"
       ? "connecting"
       : phase === "syncing"
         ? "syncing"
         : "live";
 
-  const statusDetail =
-    phase === "connecting"
+  const statusDetail
+    = phase === "connecting"
       ? "Connecting to Telegram…"
       : phase === "syncing"
         ? "Pulling your library…"

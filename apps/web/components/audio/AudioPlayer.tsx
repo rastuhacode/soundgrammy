@@ -151,7 +151,6 @@ export function AudioPlayer() {
     if (isPlaying) {
       playAudio(audio, generation);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- only reload audio when track changes
   }, [track?.id]);
 
   useEffect(() => {
@@ -191,7 +190,10 @@ export function AudioPlayer() {
     if (currentTime < PREVIOUS_TRACK_THRESHOLD) {
       playPrevious();
     } else {
-      audioRef.current && (audioRef.current.currentTime = 0);
+      const audio = audioRef.current;
+      if (audio) {
+        audio.currentTime = 0;
+      }
       setCurrentTime(0);
     }
   }
@@ -219,57 +221,59 @@ export function AudioPlayer() {
         className="hidden"
       />
 
-      {track ? (
-        <div className="relative flex h-24 w-full flex-col border-t border-border bg-card/80 backdrop-blur-xl">
-          <AudioProgressBar
-            currentTime={currentTime}
-            duration={duration}
-            bufferedTime={bufferedTime}
-            onSeek={(time) => {
-              if (!audioRef.current) return;
-              isSeekingRef.current = true;
-              audioRef.current.currentTime = time;
-              setCurrentTime(time);
-            }}
-            onSeekStart={() => {
-              isSeekingRef.current = true;
-            }}
-            onSeekEnd={handleSeekEnd}
-          />
-
-          <div className="flex h-full w-full items-center gap-2 px-4">
-            <div className="flex w-1/3 items-center gap-3">
-              <AudioTrackDescription track={track} />
-            </div>
-
-            <div className="flex w-1/3 flex-col items-center gap-2">
-              <AudioMainOperations
-                isPlaying={isPlaying}
-                onPlayToggle={togglePlay}
-                onPreviousTrack={handlePreviousTrack}
-                onNextTrack={playNext}
-                repeatState={repeat}
-                onRepeatToggle={toggleRepeat}
-                shuffleState={shuffle}
-                onShuffleToggle={toggleShuffle}
+      {track
+        ? (
+            <div className="relative flex h-24 w-full flex-col border-t border-border bg-card/80 backdrop-blur-xl">
+              <AudioProgressBar
+                currentTime={currentTime}
+                duration={duration}
+                bufferedTime={bufferedTime}
+                onSeek={(time) => {
+                  if (!audioRef.current) return;
+                  isSeekingRef.current = true;
+                  audioRef.current.currentTime = time;
+                  setCurrentTime(time);
+                }}
+                onSeekStart={() => {
+                  isSeekingRef.current = true;
+                }}
+                onSeekEnd={handleSeekEnd}
               />
-              <div className="font-mono text-xs tabular-nums text-muted-foreground">
-                {formatTime(currentTime)}
-                <span className="mx-1 text-muted-foreground/60">/</span>
-                {formatTime(duration)}
+
+              <div className="flex h-full w-full items-center gap-2 px-4">
+                <div className="flex w-1/3 items-center gap-3">
+                  <AudioTrackDescription track={track} />
+                </div>
+
+                <div className="flex w-1/3 flex-col items-center gap-2">
+                  <AudioMainOperations
+                    isPlaying={isPlaying}
+                    onPlayToggle={togglePlay}
+                    onPreviousTrack={handlePreviousTrack}
+                    onNextTrack={playNext}
+                    repeatState={repeat}
+                    onRepeatToggle={toggleRepeat}
+                    shuffleState={shuffle}
+                    onShuffleToggle={toggleShuffle}
+                  />
+                  <div className="font-mono text-xs tabular-nums text-muted-foreground">
+                    {formatTime(currentTime)}
+                    <span className="mx-1 text-muted-foreground/60">/</span>
+                    {formatTime(duration)}
+                  </div>
+                </div>
+
+                <div className="w-1/3 items-center gap-2 flex justify-end">
+                  <AudioVolume
+                    volume={volume}
+                    onVolumeChange={handleVolumeChange}
+                    onMuteToggle={handleMuteToggle}
+                  />
+                </div>
               </div>
             </div>
-
-            <div className="w-1/3 items-center gap-2 flex justify-end">
-              <AudioVolume
-                volume={volume}
-                onVolumeChange={handleVolumeChange}
-                onMuteToggle={handleMuteToggle}
-              />
-            </div>
-          </div>
-        </div>
-      ) : null}
+          )
+        : null}
     </>
   );
 }

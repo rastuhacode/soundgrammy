@@ -210,8 +210,8 @@ export function createMtprotoDocumentStream(
   const totalSize = Number(data.size ?? 0);
   const mimeType = data.mimeType ?? "audio/mpeg";
   const start = range?.start ?? 0;
-  const end =
-    range?.end ?? (totalSize > 0 ? totalSize - 1 : Number.MAX_SAFE_INTEGER); // inclusive end byte; unknown size → stream until EOF
+  const end
+    = range?.end ?? (totalSize > 0 ? totalSize - 1 : Number.MAX_SAFE_INTEGER); // inclusive end byte; unknown size → stream until EOF
   const byteCount = end - start + 1;
 
   const stream = createDocumentRangeStream({

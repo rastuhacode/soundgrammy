@@ -52,9 +52,11 @@ export function SidebarProfile({ trackCount }: SidebarProfileProps) {
       <DropdownMenuTrigger className="group flex shrink-0 items-center outline-none focus-visible:ring-2 focus-visible:ring-ring/50 rounded-full">
         <div className="relative shrink-0">
           <Avatar size="lg" className="ring ring-primary/25">
-            {avatarSrc ? (
-              <AvatarImage src={avatarSrc} alt={displayName} />
-            ) : null}
+            {avatarSrc
+              ? (
+                  <AvatarImage src={avatarSrc} alt={displayName} />
+                )
+              : null}
             <AvatarFallback className="bg-primary/15 text-sm font-medium text-primary">
               {initials}
             </AvatarFallback>
@@ -68,9 +70,11 @@ export function SidebarProfile({ trackCount }: SidebarProfileProps) {
           <div className="flex items-center gap-3">
             <div className="relative shrink-0">
               <Avatar className="size-11 ring-2 ring-primary/20">
-                {avatarSrc ? (
-                  <AvatarImage src={avatarSrc} alt={displayName} />
-                ) : null}
+                {avatarSrc
+                  ? (
+                      <AvatarImage src={avatarSrc} alt={displayName} />
+                    )
+                  : null}
                 <AvatarFallback className="bg-primary/15 font-serif text-base font-medium text-primary">
                   {initials}
                 </AvatarFallback>
@@ -81,11 +85,14 @@ export function SidebarProfile({ trackCount }: SidebarProfileProps) {
               <p className="truncate font-serif text-sm font-semibold text-foreground">
                 {displayName}
               </p>
-              {session.username ? (
-                <p className="truncate font-mono text-[10px] uppercase tracking-[0.14em] text-primary/80">
-                  @{session.username}
-                </p>
-              ) : null}
+              {session.username
+                ? (
+                    <p className="truncate font-mono text-[10px] uppercase tracking-[0.14em] text-primary/80">
+                      @
+                      {session.username}
+                    </p>
+                  )
+                : null}
             </div>
           </div>
         </div>
@@ -110,22 +117,25 @@ export function SidebarProfile({ trackCount }: SidebarProfileProps) {
             </span>
           </DropdownMenuItem>
 
-          {session.username ? (
-            <DropdownMenuItem
-              disabled
-              className="cursor-default gap-2.5 rounded-lg px-2.5 py-2 focus:bg-transparent"
-            >
-              <span className="flex size-3.5 items-center justify-center font-mono text-[10px] text-primary/80">
-                @
-              </span>
-              <span className="flex min-w-0 flex-col gap-0.5">
-                <span className="text-xs text-muted-foreground">Username</span>
-                <span className="truncate font-mono text-sm text-foreground">
-                  @{session.username}
-                </span>
-              </span>
-            </DropdownMenuItem>
-          ) : null}
+          {session.username
+            ? (
+                <DropdownMenuItem
+                  disabled
+                  className="cursor-default gap-2.5 rounded-lg px-2.5 py-2 focus:bg-transparent"
+                >
+                  <span className="flex size-3.5 items-center justify-center font-mono text-[10px] text-primary/80">
+                    @
+                  </span>
+                  <span className="flex min-w-0 flex-col gap-0.5">
+                    <span className="text-xs text-muted-foreground">Username</span>
+                    <span className="truncate font-mono text-sm text-foreground">
+                      @
+                      {session.username}
+                    </span>
+                  </span>
+                </DropdownMenuItem>
+              )
+            : null}
 
           <DropdownMenuItem
             disabled

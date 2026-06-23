@@ -25,8 +25,8 @@ export function PlayerTracksHydrator({
 
     const { currentTrack } = usePlayerStore.getState();
     if (currentTrack) {
-      const refreshed =
-        tracks.find((track) => track.id === currentTrack.id) ?? null;
+      const refreshed
+        = tracks.find((track) => track.id === currentTrack.id) ?? null;
       if (refreshed !== currentTrack) {
         usePlayerStore.setState({
           currentTrack: refreshed,

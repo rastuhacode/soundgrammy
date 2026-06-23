@@ -77,8 +77,8 @@ export async function syncProfileMusic(
   let imported = 0;
 
   for (const doc of documents) {
-    const { title, performer, duration, storedJson } =
-      parseDocumentMetadata(doc);
+    const { title, performer, duration, storedJson }
+      = parseDocumentMetadata(doc);
     const fileUniqueId = `mtproto:${doc.id.toString()}`;
     fileUniqueIds.push(fileUniqueId);
 

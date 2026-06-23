@@ -1,6 +1,6 @@
-type ThumbnailCacheEntry =
-  | { status: "ready"; url: string }
-  | { status: "failed" };
+type ThumbnailCacheEntry
+  = | { status: "ready"; url: string }
+    | { status: "failed" };
 
 const cache = new Map<number, ThumbnailCacheEntry>();
 const inflight = new Map<number, Promise<ThumbnailCacheEntry>>();

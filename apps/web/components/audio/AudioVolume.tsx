@@ -17,11 +17,13 @@ export function AudioVolume(props: AudioVolumeProps) {
         aria-label={isMuted ? "Unmute" : "Mute"}
         onClick={props.onMuteToggle}
       >
-        {isMuted ? (
-          <VolumeX className="size-4 shrink-0 text-muted-foreground" />
-        ) : (
-          <Volume2 className="size-4 shrink-0 text-muted-foreground" />
-        )}
+        {isMuted
+          ? (
+              <VolumeX className="size-4 shrink-0 text-muted-foreground" />
+            )
+          : (
+              <Volume2 className="size-4 shrink-0 text-muted-foreground" />
+            )}
       </button>
       <input
         type="range"

@@ -57,8 +57,8 @@ function pickBestRemoteThumb(
 ): Api.PhotoSize | Api.PhotoSizeProgressive | undefined {
   const remote = thumbs.filter(
     (thumb) =>
-      thumb instanceof Api.PhotoSize ||
-      thumb instanceof Api.PhotoSizeProgressive,
+      thumb instanceof Api.PhotoSize
+      || thumb instanceof Api.PhotoSizeProgressive,
   );
   if (remote.length === 0) {
     return undefined;

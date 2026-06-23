@@ -66,19 +66,21 @@ function PlaylistItem({
         <PlaylistCount count={count} />
       </div>
 
-      {onDelete ? (
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-xs"
-          onClick={onDelete}
-          disabled={isDeleting}
-          aria-label={`Delete ${name}`}
-          className="shrink-0 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
-        >
-          <Trash2 />
-        </Button>
-      ) : null}
+      {onDelete
+        ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon-xs"
+              onClick={onDelete}
+              disabled={isDeleting}
+              aria-label={`Delete ${name}`}
+              className="shrink-0 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
+            >
+              <Trash2 />
+            </Button>
+          )
+        : null}
     </div>
   );
 }
@@ -153,57 +155,61 @@ export function SidebarPlaylists() {
         <h2 className="text-lg font-semibold tracking-tight text-foreground">
           Library
         </h2>
-        {!isCreating ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-xs"
-            onClick={() => setIsCreating(true)}
-            aria-label="Create playlist"
-          >
-            <Plus />
-          </Button>
-        ) : null}
+        {!isCreating
+          ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                onClick={() => setIsCreating(true)}
+                aria-label="Create playlist"
+              >
+                <Plus />
+              </Button>
+            )
+          : null}
       </div>
 
-      {isCreating ? (
-        <div className="flex items-center gap-1 rounded-xl border border-border bg-card/70 px-2 py-1.5">
-          <Input
-            value={newPlaylistName}
-            onChange={(event) => setNewPlaylistName(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter") {
-                void handleCreate();
-              }
-              if (event.key === "Escape") {
-                cancelCreate();
-              }
-            }}
-            placeholder="Playlist name"
-            autoFocus
-            className="h-8 border-0 bg-transparent px-1 shadow-none focus-visible:ring-0"
-          />
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-xs"
-            onClick={() => void handleCreate()}
-            disabled={!newPlaylistName.trim() || createMutation.isPending}
-            aria-label="Create playlist"
-          >
-            <Check />
-          </Button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-xs"
-            onClick={cancelCreate}
-            aria-label="Cancel"
-          >
-            <X />
-          </Button>
-        </div>
-      ) : null}
+      {isCreating
+        ? (
+            <div className="flex items-center gap-1 rounded-xl border border-border bg-card/70 px-2 py-1.5">
+              <Input
+                value={newPlaylistName}
+                onChange={(event) => setNewPlaylistName(event.target.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    void handleCreate();
+                  }
+                  if (event.key === "Escape") {
+                    cancelCreate();
+                  }
+                }}
+                placeholder="Playlist name"
+                autoFocus
+                className="h-8 border-0 bg-transparent px-1 shadow-none focus-visible:ring-0"
+              />
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                onClick={() => void handleCreate()}
+                disabled={!newPlaylistName.trim() || createMutation.isPending}
+                aria-label="Create playlist"
+              >
+                <Check />
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                onClick={cancelCreate}
+                aria-label="Cancel"
+              >
+                <X />
+              </Button>
+            </div>
+          )
+        : null}
 
       <div className="flex flex-col gap-1">
         <PlaylistItem
@@ -215,16 +221,18 @@ export function SidebarPlaylists() {
           onSelect={() => setSelectedPlaylist(ALL_TRACKS_PLAYLIST_ID)}
         />
 
-        {data ? (
-          <PlaylistItem
-            id={data.liked.id}
-            name="Liked"
-            count={likedCount}
-            isActive={selectedPlaylistId === data.liked.id}
-            icon={<Heart className="size-4" />}
-            onSelect={() => setSelectedPlaylist(data.liked.id)}
-          />
-        ) : null}
+        {data
+          ? (
+              <PlaylistItem
+                id={data.liked.id}
+                name="Liked"
+                count={likedCount}
+                isActive={selectedPlaylistId === data.liked.id}
+                icon={<Heart className="size-4" />}
+                onSelect={() => setSelectedPlaylist(data.liked.id)}
+              />
+            )
+          : null}
 
         {data?.custom.map((playlist) => (
           <PlaylistItem

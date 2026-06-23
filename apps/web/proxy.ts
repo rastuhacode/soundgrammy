@@ -8,9 +8,9 @@ export async function proxy(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
   if (
-    PUBLIC_PATHS.some((p) => pathname.startsWith(p)) ||
-    pathname.startsWith("/_next") ||
-    pathname.includes(".")
+    PUBLIC_PATHS.some((p) => pathname.startsWith(p))
+    || pathname.startsWith("/_next")
+    || pathname.includes(".")
   ) {
     return NextResponse.next();
   }

@@ -12,8 +12,8 @@ export function getMtprotoCredentials() {
 }
 
 export function getSessionSecret(): string {
-  const secret =
-    process.env.MTPROTO_SESSION_SECRET ?? process.env.JWT_SECRET ?? "";
+  const secret
+    = process.env.MTPROTO_SESSION_SECRET ?? process.env.JWT_SECRET ?? "";
   if (!secret) {
     throw new Error("MTPROTO_SESSION_SECRET or JWT_SECRET must be set");
   }

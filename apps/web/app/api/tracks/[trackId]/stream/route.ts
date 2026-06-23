@@ -41,8 +41,8 @@ export async function GET(
   }
 
   const storedDocument = parseStoredDocument(track.mtproto_document);
-  const totalSize =
-    Number(storedDocument.size ?? 0) || Number(track.file_size ?? 0);
+  const totalSize
+    = Number(storedDocument.size ?? 0) || Number(track.file_size ?? 0);
   if (totalSize <= 0) {
     return NextResponse.json(
       { error: "Track file size is unknown" },
@@ -95,8 +95,8 @@ export async function GET(
     };
 
     if (isRangeRequest) {
-      headers["Content-Range"] =
-        `bytes ${byteRange.start}-${byteRange.end}/${totalSize}`;
+      headers["Content-Range"]
+        = `bytes ${byteRange.start}-${byteRange.end}/${totalSize}`;
       return new Response(stream, { status: 206, headers });
     }
 

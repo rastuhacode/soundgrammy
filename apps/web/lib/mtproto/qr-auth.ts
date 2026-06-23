@@ -5,11 +5,11 @@ import { createMtprotoClient, saveClientSession } from "./client";
 import { saveMtprotoSession } from "../db";
 import type { MtprotoUserInfo } from "./login";
 
-export type QrAuthStatus =
-  | "pending"
-  | "awaiting_password"
-  | "success"
-  | "error";
+export type QrAuthStatus
+  = | "pending"
+    | "awaiting_password"
+    | "success"
+    | "error";
 
 interface QrSession {
   status: QrAuthStatus;
@@ -116,8 +116,8 @@ export async function startQrAuth(authToken: string) {
       session.status = "success";
     } catch (error) {
       session.status = "error";
-      session.error =
-        error instanceof Error ? error.message : "QR login failed";
+      session.error
+        = error instanceof Error ? error.message : "QR login failed";
     } finally {
       await client.disconnect().catch(() => undefined);
     }

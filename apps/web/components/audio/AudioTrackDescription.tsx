@@ -16,18 +16,20 @@ export function AudioTrackDescription(props: AudioTrackDescriptionProps) {
   return (
     <>
       <div className="relative shrink-0">
-        {thumbError ? (
-          <div className="flex size-14 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-            <Music className="size-5" />
-          </div>
-        ) : (
-          <img
-            src={`/api/tracks/${props.track.id}/thumbnail`}
-            alt="Thumbnail"
-            className="size-16 rounded-lg object-cover ring-1 ring-border"
-            onError={() => setThumbError(true)}
-          />
-        )}
+        {thumbError
+          ? (
+              <div className="flex size-14 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                <Music className="size-5" />
+              </div>
+            )
+          : (
+              <img
+                src={`/api/tracks/${props.track.id}/thumbnail`}
+                alt="Thumbnail"
+                className="size-16 rounded-lg object-cover ring-1 ring-border"
+                onError={() => setThumbError(true)}
+              />
+            )}
       </div>
       <div className="hidden min-w-0 flex-col sm:flex">
         <span

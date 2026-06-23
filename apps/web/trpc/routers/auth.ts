@@ -1,5 +1,4 @@
-import { getSession } from "@/lib/auth";
-import { serializeClearSessionCookie } from "@/lib/auth";
+import { getSession, serializeClearSessionCookie } from "@/lib/auth";
 import { deleteMtprotoSession } from "@/lib/db";
 import { createTRPCRouter, protectedProcedure, publicProcedure } from "../init";
 
