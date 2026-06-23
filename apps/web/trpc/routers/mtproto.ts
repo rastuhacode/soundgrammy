@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import QRCode from "qrcode";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
-import { createSession, serializeSessionCookie } from "lib/auth";
+import { createSession, serializeSessionCookie } from "@/lib/auth";
 import {
   createMtprotoAuthPending,
   deleteMtprotoAuthPending,
@@ -12,23 +12,26 @@ import {
   updateMtprotoAuthPendingSession,
   updateMtprotoLastSync,
   updateMtprotoSavedMusicHash,
-} from "lib/db";
+} from "@/lib/db";
 import {
   resendAuthCode,
   sendAuthCode,
   signInWithCode,
   signInWithPassword,
-} from "lib/mtproto/auth";
-import { withMtprotoClient } from "lib/mtproto/client";
-import { finalizeMtprotoLogin, type MtprotoUserInfo } from "lib/mtproto/login";
-import { normalizePhoneNumber } from "lib/mtproto/phone";
+} from "@/lib/mtproto/auth";
+import { withMtprotoClient } from "@/lib/mtproto/client";
+import {
+  finalizeMtprotoLogin,
+  type MtprotoUserInfo,
+} from "@/lib/mtproto/login";
+import { normalizePhoneNumber } from "@/lib/mtproto/phone";
 import {
   consumeQrSuccess,
   getQrAuthStatus,
   startQrAuth,
   submitQrPassword,
-} from "lib/mtproto/qr-auth";
-import { syncProfileMusic } from "lib/mtproto/sync";
+} from "@/lib/mtproto/qr-auth";
+import { syncProfileMusic } from "@/lib/mtproto/sync";
 import {
   createTRPCRouter,
   protectedProcedure,

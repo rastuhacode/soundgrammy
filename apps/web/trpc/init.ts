@@ -4,7 +4,7 @@ import { initTRPC, TRPCError } from "@trpc/server";
 import type { FetchCreateContextFnOptions } from "@trpc/server/adapters/fetch";
 import { cache } from "react";
 import superjson from "superjson";
-import { getSession } from "lib/auth";
+import { getSession } from "@/lib/auth";
 
 /**
  * tRPC backend initialization: context, transformer, and the procedure

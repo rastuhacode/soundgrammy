@@ -7,12 +7,12 @@ import {
   removeTrackFromPlaylist,
   toggleLikedTrack,
   type PlaylistsBundle,
-} from "lib/db";
+} from "@/lib/db";
 import { createTRPCRouter, protectedProcedure, toTRPCError } from "../init";
 
 export const playlistsRouter = createTRPCRouter({
-  list: protectedProcedure.query(({ ctx }): PlaylistsBundle =>
-    getPlaylistsBundle(ctx.session.tgUserId),
+  list: protectedProcedure.query(
+    ({ ctx }): PlaylistsBundle => getPlaylistsBundle(ctx.session.tgUserId),
   ),
 
   create: protectedProcedure

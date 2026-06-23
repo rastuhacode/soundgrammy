@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { deleteTrack, getTracksByUser, type Track } from "lib/db";
+import { deleteTrack, getTracksByUser, type Track } from "@/lib/db";
 import { createTRPCRouter, protectedProcedure } from "../init";
 
 export const tracksRouter = createTRPCRouter({

@@ -1,15 +1,15 @@
 import { NextResponse } from "next/server";
-import { getSession } from "lib/auth";
+import { getSession } from "@/lib/auth";
 import {
   getMtprotoSession,
   getTrackById,
   updateTrackMtprotoDocument,
-} from "lib/db";
+} from "@/lib/db";
 import {
   createMtprotoDocumentStream,
   parseStoredDocument,
-} from "lib/mtproto/client";
-import { parseByteRange } from "lib/stream/range";
+} from "@/lib/mtproto/client";
+import { parseByteRange } from "@/lib/stream/range";
 
 export async function GET(
   request: Request,

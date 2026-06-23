@@ -1,21 +1,21 @@
 import { NextResponse } from "next/server";
-import { getSession } from "lib/auth";
-import { extractEmbeddedCover, readStreamPrefix } from "lib/audio/cover";
+import { getSession } from "@/lib/auth";
+import { extractEmbeddedCover, readStreamPrefix } from "@/lib/audio/cover";
 import {
   getMtprotoSession,
   getTrackById,
   updateTrackMtprotoDocument,
-} from "lib/db";
+} from "@/lib/db";
 import {
   createMtprotoDocumentStream,
   createMtprotoThumbnailStream,
   withMtprotoClient,
-} from "lib/mtproto/client";
-import { enrichSavedMusicDocumentThumb } from "lib/mtproto/refresh";
+} from "@/lib/mtproto/client";
+import { enrichSavedMusicDocumentThumb } from "@/lib/mtproto/refresh";
 import {
   parseStoredDocument,
   shouldUpgradeStoredThumb,
-} from "lib/mtproto/document";
+} from "@/lib/mtproto/document";
 
 function coverContentType(format: string): string {
   if (format.includes("png")) return "image/png";

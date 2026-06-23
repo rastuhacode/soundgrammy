@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { getSession } from "lib/auth";
-import { getMtprotoSession } from "lib/db";
-import { downloadUserProfilePhoto } from "lib/mtproto/profile-photo";
+import { getSession } from "@/lib/auth";
+import { getMtprotoSession } from "@/lib/db";
+import { downloadUserProfilePhoto } from "@/lib/mtproto/profile-photo";
 
 function avatarResponseHeaders(contentLength: number): Record<string, string> {
   return {
