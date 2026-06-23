@@ -1,4 +1,8 @@
 import { TelegramClient, sessions } from "telegram";
+import {
+  acquirePooledMtprotoClient,
+  releasePooledMtprotoClient,
+} from "./client-pool";
 import { getMtprotoCredentials } from "./config";
 import { decryptSession, encryptSession } from "./crypto";
 
@@ -33,19 +37,20 @@ export async function createMtprotoClient(
 }
 
 /**
- * Runs `fn` with a connected client built from an encrypted session, always
- * disconnecting afterwards. Use this for short request/response interactions;
- * for long-lived streaming, manage the client lifecycle manually.
+ * Runs `fn` with a pooled client built from an encrypted session, releasing it
+ * afterwards so later requests reuse the same MTProto connection. Use this for
+ * short request/response interactions; for long-lived streaming, acquire and
+ * release from the pool manually around the stream lifecycle.
  */
 export async function withMtprotoClient<T>(
   encryptedSession: string,
   fn: (client: TelegramClient) => Promise<T>,
 ): Promise<T> {
   const sessionString = decryptSession(encryptedSession);
-  const client = await createMtprotoClient(sessionString);
+  const client = await acquirePooledMtprotoClient(sessionString);
   try {
     return await fn(client);
   } finally {
-    await client.disconnect();
+    releasePooledMtprotoClient(sessionString);
   }
 }

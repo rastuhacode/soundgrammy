@@ -5,7 +5,6 @@ import { isFileReferenceError } from "./errors";
 import { parseStoredDocument } from "./document";
 import type { StoredDocument } from "./document";
 import { refreshSavedMusicDocumentJson } from "./refresh";
-import { createMtprotoClient } from "./session";
 import {
   acquirePooledMtprotoClient,
   releasePooledMtprotoClient,
@@ -280,7 +279,7 @@ export async function downloadMtprotoDocumentThumbnail(
 
   let currentJson = storedJson;
   const sessionString = decryptSession(encryptedSession);
-  const client = await createMtprotoClient(sessionString);
+  const client = await acquirePooledMtprotoClient(sessionString);
 
   try {
     const tryDownload = async (json: string) => {
@@ -314,6 +313,6 @@ export async function downloadMtprotoDocumentThumbnail(
       return await tryDownload(currentJson);
     }
   } finally {
-    await client.disconnect();
+    releasePooledMtprotoClient(sessionString);
   }
 }

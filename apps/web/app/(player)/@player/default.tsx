@@ -1,4 +1,4 @@
-import { AudioPlayer } from "@/components/AudioPlayer";
+import { AudioPlayer } from "@/components/audio/AudioPlayer";
 
 export default function PlayerBar() {
   return <AudioPlayer />;

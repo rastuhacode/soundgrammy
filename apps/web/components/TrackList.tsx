@@ -30,7 +30,7 @@ import { useLibraryStore } from "@/stores/library-store";
 import { usePlayerStore } from "@/stores/player-store";
 import { useTRPC } from "@/trpc/client";
 
-const TRACK_ROW_HEIGHT = 70;
+const TRACK_ROW_HEIGHT = 90;
 
 function formatDuration(seconds: number | null): string {
   if (seconds === null) return "--:--";
@@ -43,7 +43,7 @@ function TrackThumbnail({ trackId }: { trackId: number }) {
   const { url, loaded, failed } = useCachedThumbnail(trackId);
 
   return (
-    <div className="relative size-12 shrink-0 overflow-hidden rounded-lg bg-muted">
+    <div className="relative size-16 shrink-0 overflow-hidden rounded-lg bg-muted">
       <div className="absolute inset-0 flex items-center justify-center text-muted-foreground">
         <Music className="size-5" />
       </div>
@@ -52,7 +52,7 @@ function TrackThumbnail({ trackId }: { trackId: number }) {
           src={url}
           alt="Thumbnail"
           decoding="async"
-          className={`absolute inset-0 size-12 object-cover transition-opacity duration-200 ${
+          className={`absolute inset-0 size-16 object-cover transition-opacity duration-200 ${
             loaded ? "opacity-100" : "opacity-0"
           }`}
         />
@@ -97,6 +97,7 @@ function TrackRow({
           ? "border-primary/40 bg-primary/10"
           : "border-transparent hover:border-border hover:bg-card/70"
       }`}
+      style={{ height: `${TRACK_ROW_HEIGHT}px` }}
     >
       <button
         type="button"
@@ -285,6 +286,7 @@ export function TrackList() {
 
   const virtualizer = useVirtualizer({
     count: displayTracks.length,
+    gap: 8,
     getScrollElement: () => scrollRef.current,
     estimateSize: () => TRACK_ROW_HEIGHT,
     overscan: 8,

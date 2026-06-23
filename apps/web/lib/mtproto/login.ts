@@ -1,5 +1,4 @@
-import { createMtprotoClient, saveClientSession } from "./client";
-import { decryptSession } from "./crypto";
+import { saveClientSession, withMtprotoClient } from "./client";
 import { saveMtprotoSession } from "../db";
 
 export interface MtprotoUserInfo {
@@ -13,10 +12,7 @@ export async function finalizeMtprotoLogin(
   encryptedSession: string,
   phoneNumber: string,
 ): Promise<MtprotoUserInfo> {
-  const sessionString = decryptSession(encryptedSession);
-  const client = await createMtprotoClient(sessionString);
-
-  try {
+  return withMtprotoClient(encryptedSession, async (client) => {
     const me = await client.getMe();
     const sessionData = saveClientSession(client);
     const tgUserId = Number(me.id.toString());
@@ -29,7 +25,5 @@ export async function finalizeMtprotoLogin(
       lastName: me.lastName ?? undefined,
       username: me.username ?? undefined,
     };
-  } finally {
-    await client.disconnect();
-  }
+  });
 }
