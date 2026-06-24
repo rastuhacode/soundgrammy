@@ -52,7 +52,8 @@ export function AudioPlayer() {
   const hydratePreferences = usePlayerStore(
     (state) => state.hydratePreferences,
   );
-  const likedPlaylist = usePlaylistsStore((state) => state.data?.liked);
+  const playlistsData = usePlaylistsStore((state) => state.data);
+  const setPlaylistsData = usePlaylistsStore((state) => state.setData);
   const toggleLikeMutation = useMutation(
     trpc.playlists.toggleLike.mutationOptions(),
   );
@@ -75,8 +76,8 @@ export function AudioPlayer() {
   const isPlayingRef = useRef(isPlaying);
 
   const isLiked = useMemo(() => {
-    return likedPlaylist?.trackIds.includes(track?.id ?? 0);
-  }, [likedPlaylist, track?.id]);
+    return playlistsData?.liked.trackIds.includes(track?.id ?? 0);
+  }, [playlistsData, track?.id]);
 
   volumeRef.current = volume;
   isPlayingRef.current = isPlaying;
@@ -221,9 +222,13 @@ export function AudioPlayer() {
   }
 
   async function handleToggleLike() {
-    if (!track) return;
+    if (!track || !playlistsData) return;
     try {
-      await toggleLikeMutation.mutateAsync({ trackId: track.id });
+      const result = await toggleLikeMutation.mutateAsync({ trackId: track.id });
+      setPlaylistsData({
+        ...playlistsData,
+        liked: { ...playlistsData.liked, trackIds: result.trackIds },
+      });
     } catch {
       // keep UI unchanged on failure
     }
