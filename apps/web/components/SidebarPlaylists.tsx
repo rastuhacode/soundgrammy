@@ -2,31 +2,37 @@
 
 import { useState } from "react";
 import { useMutation } from "@tanstack/react-query";
-import { Check, Heart, ListMusic, Plus, Trash2, X } from "lucide-react";
+import { Ellipsis, Pencil, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { PlaylistFormDialog } from "@/components/playlist/PlaylistFormDialog";
+import { SidebarPlaylistThumbnail } from "@/components/playlist/SidebarPlaylistThumbnail";
+import type { CustomPlaylistSummary } from "@/lib/db";
 import {
   ALL_TRACKS_PLAYLIST_ID,
+  LIKED_PLAYLIST_ID,
+  type PlaylistId,
   usePlaylistsStore,
 } from "@/stores/playlists-store";
 import { useLibraryStore } from "@/stores/library-store";
 import { useTRPC } from "@/trpc/client";
-
-function PlaylistCount({ count }: { count: number }) {
-  return (
-    <span className="shrink-0 font-mono text-xs tabular-nums text-muted-foreground">
-      {count}
-    </span>
-  );
-}
+import { cn } from "@/lib/utils";
 
 interface PlaylistItemProps {
-  id: typeof ALL_TRACKS_PLAYLIST_ID | number;
+  id: PlaylistId;
   name: string;
   count: number;
   isActive: boolean;
-  icon: React.ReactNode;
+  thumbnailVariant: typeof ALL_TRACKS_PLAYLIST_ID | typeof LIKED_PLAYLIST_ID | "custom";
+  playlistId?: number;
+  hasThumbnail?: boolean;
   onSelect: () => void;
+  onEdit?: () => void;
   onDelete?: () => void;
   isDeleting?: boolean;
 }
@@ -35,55 +41,115 @@ function PlaylistItem({
   name,
   count,
   isActive,
-  icon,
+  thumbnailVariant,
+  playlistId,
+  hasThumbnail,
   onSelect,
+  onEdit,
   onDelete,
   isDeleting,
 }: PlaylistItemProps) {
   return (
     <div
-      className={`group flex items-center gap-2 w-full justify-between rounded-xl border px-3 py-2 transition-colors cursor-pointer ${
+      className={cn(
+        "group flex w-full cursor-pointer items-center gap-3 rounded-lg px-2 py-2 transition-colors",
         isActive
-          ? "border-primary/40 bg-primary/10"
-          : "border-transparent hover:border-border hover:bg-card/70"
-      }`}
+          ? "bg-accent text-accent-foreground"
+          : "text-foreground hover:bg-muted/70",
+      )}
       role="button"
+      aria-label={`Select ${name} playlist`}
+      tabIndex={0}
       onClick={onSelect}
     >
-      <div className="flex items-center gap-2">
-        <span
-          className={`shrink-0 ${isActive ? "text-primary" : "text-muted-foreground"}`}
-        >
-          {icon}
-        </span>
-        <span
-          className={`min-w-0 truncate text-sm font-medium ${
-            isActive ? "text-primary" : "text-foreground"
-          }`}
+      <SidebarPlaylistThumbnail
+        variant={thumbnailVariant}
+        playlistId={playlistId}
+        hasThumbnail={hasThumbnail}
+        name={name}
+      />
+
+      <div className="min-w-0 grow">
+        <p
+          className={cn(
+            "truncate text-sm font-medium",
+            isActive ? "text-foreground" : "text-foreground/90",
+          )}
         >
           {name}
-        </span>
-        <PlaylistCount count={count} />
+        </p>
       </div>
 
-      {onDelete
-        ? (
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon-xs"
-              onClick={onDelete}
-              disabled={isDeleting}
-              aria-label={`Delete ${name}`}
-              className="shrink-0 text-muted-foreground opacity-0 transition-opacity hover:text-destructive group-hover:opacity-100"
-            >
-              <Trash2 />
-            </Button>
-          )
-        : null}
+      <div className="flex shrink-0 items-center gap-1">
+        <span className="min-w-6 text-right font-mono text-xs tabular-nums text-muted-foreground">
+          {count}
+        </span>
+
+        <div className="flex size-6 shrink-0 items-center justify-center">
+          {onEdit || onDelete
+            ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    render={(
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-xs"
+                        aria-label={`${name} options`}
+                        className="text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                        onClick={(event) => event.stopPropagation()}
+                      >
+                        <Ellipsis />
+                      </Button>
+                    )}
+                  />
+                  <DropdownMenuContent
+                    align="end"
+                    sideOffset={4}
+                    className="w-40"
+                    onClick={(event) => event.stopPropagation()}
+                  >
+                    {onEdit
+                      ? (
+                          <DropdownMenuItem
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              onEdit();
+                            }}
+                          >
+                            <Pencil />
+                            Edit playlist
+                          </DropdownMenuItem>
+                        )
+                      : null}
+                    {onDelete
+                      ? (
+                          <DropdownMenuItem
+                            variant="destructive"
+                            disabled={isDeleting}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              onDelete();
+                            }}
+                          >
+                            <Trash2 />
+                            Delete playlist
+                          </DropdownMenuItem>
+                        )
+                      : null}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )
+            : null}
+        </div>
+      </div>
     </div>
   );
 }
+
+type DialogState
+  = | { mode: "create" }
+    | { mode: "edit"; playlist: CustomPlaylistSummary };
 
 export function SidebarPlaylists() {
   const trpc = useTRPC();
@@ -97,38 +163,15 @@ export function SidebarPlaylists() {
   );
   const setData = usePlaylistsStore((state) => state.setData);
 
-  const [isCreating, setIsCreating] = useState(false);
-  const [newPlaylistName, setNewPlaylistName] = useState("");
+  const [dialogState, setDialogState] = useState<DialogState | null>(null);
   const [deletingId, setDeletingId] = useState<number | null>(null);
 
-  const createMutation = useMutation(trpc.playlists.create.mutationOptions());
   const deleteMutation = useMutation(trpc.playlists.delete.mutationOptions());
 
   const likedCount = data?.liked.trackIds.length ?? 0;
 
-  const handleCreate = async () => {
-    const name = newPlaylistName.trim();
-    if (!name || !data) {
-      return;
-    }
-
-    try {
-      const created = await createMutation.mutateAsync({ name });
-      setData({
-        ...data,
-        custom: [...data.custom, created],
-      });
-      setNewPlaylistName("");
-      setIsCreating(false);
-    } catch {
-      // mutation error surfaced by react-query if needed
-    }
-  };
-
   const handleDelete = async (id: number) => {
-    if (!data) {
-      return;
-    }
+    if (!data) return;
 
     setDeletingId(id);
     try {
@@ -144,92 +187,43 @@ export function SidebarPlaylists() {
     }
   };
 
-  const cancelCreate = () => {
-    setIsCreating(false);
-    setNewPlaylistName("");
-  };
-
   return (
-    <div className="flex min-h-0 flex-col gap-2 px-4">
-      <div className="flex items-center justify-between gap-2">
+    <div className="flex min-h-0 flex-col gap-4">
+      <div className="flex items-center justify-between gap-2 px-4">
         <h2 className="text-lg font-semibold tracking-tight text-foreground">
           Library
         </h2>
-        {!isCreating
-          ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-xs"
-                onClick={() => setIsCreating(true)}
-                aria-label="Create playlist"
-              >
-                <Plus />
-              </Button>
-            )
-          : null}
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-sm"
+          onClick={() => setDialogState({ mode: "create" })}
+          aria-label="Create playlist"
+          className="text-muted-foreground hover:text-foreground"
+        >
+          <Plus />
+        </Button>
       </div>
 
-      {isCreating
-        ? (
-            <div className="flex items-center gap-1 rounded-xl border border-border bg-card/70 px-2 py-1.5">
-              <Input
-                value={newPlaylistName}
-                onChange={(event) => setNewPlaylistName(event.target.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    void handleCreate();
-                  }
-                  if (event.key === "Escape") {
-                    cancelCreate();
-                  }
-                }}
-                placeholder="Playlist name"
-                autoFocus
-                className="h-8 border-0 bg-transparent px-1 shadow-none focus-visible:ring-0"
-              />
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-xs"
-                onClick={() => void handleCreate()}
-                disabled={!newPlaylistName.trim() || createMutation.isPending}
-                aria-label="Create playlist"
-              >
-                <Check />
-              </Button>
-              <Button
-                type="button"
-                variant="ghost"
-                size="icon-xs"
-                onClick={cancelCreate}
-                aria-label="Cancel"
-              >
-                <X />
-              </Button>
-            </div>
-          )
-        : null}
-
-      <div className="flex flex-col gap-1">
+      <div className="flex min-h-0 flex-col gap-0.5 overflow-y-auto px-2 pb-2">
         <PlaylistItem
           id={ALL_TRACKS_PLAYLIST_ID}
           name="All tracks"
           count={libraryTrackCount}
           isActive={selectedPlaylistId === ALL_TRACKS_PLAYLIST_ID}
-          icon={<ListMusic className="size-4" />}
+          thumbnailVariant={ALL_TRACKS_PLAYLIST_ID}
           onSelect={() => setSelectedPlaylist(ALL_TRACKS_PLAYLIST_ID)}
         />
 
         {data
           ? (
               <PlaylistItem
-                id={data.liked.id}
+                id={LIKED_PLAYLIST_ID}
                 name="Liked"
                 count={likedCount}
-                isActive={selectedPlaylistId === data.liked.id}
-                icon={<Heart className="size-4" />}
-                onSelect={() => setSelectedPlaylist(data.liked.id)}
+                isActive={selectedPlaylistId === LIKED_PLAYLIST_ID}
+                thumbnailVariant={LIKED_PLAYLIST_ID}
+                onSelect={() => setSelectedPlaylist(LIKED_PLAYLIST_ID)}
               />
             )
           : null}
@@ -241,13 +235,27 @@ export function SidebarPlaylists() {
             name={playlist.name}
             count={playlist.trackIds.length}
             isActive={selectedPlaylistId === playlist.id}
-            icon={<ListMusic className="size-4" />}
+            thumbnailVariant="custom"
+            playlistId={playlist.id}
+            hasThumbnail={playlist.hasThumbnail}
             onSelect={() => setSelectedPlaylist(playlist.id)}
-            onDelete={() => void handleDelete(playlist.id)}
+            onEdit={() => setDialogState({ mode: "edit", playlist })}
+            onDelete={() => handleDelete(playlist.id)}
             isDeleting={deletingId === playlist.id}
           />
         ))}
       </div>
+
+      <PlaylistFormDialog
+        open={dialogState !== null}
+        onOpenChange={(open) => {
+          if (!open) setDialogState(null);
+        }}
+        mode={dialogState?.mode ?? "create"}
+        playlist={
+          dialogState?.mode === "edit" ? dialogState.playlist : undefined
+        }
+      />
     </div>
   );
 }

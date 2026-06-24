@@ -1,4 +1,4 @@
-import { MtprotoLogin } from "@/components/MtprotoLogin";
+import { MtprotoLogin } from "@/components/auth/MtprotoLogin";
 
 export default function LoginPage() {
   return <MtprotoLogin />;

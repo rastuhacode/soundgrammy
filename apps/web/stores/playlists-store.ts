@@ -4,7 +4,12 @@ import { useLibraryStore } from "@/stores/library-store";
 import { usePlayerStore } from "@/stores/player-store";
 
 export const ALL_TRACKS_PLAYLIST_ID = "all" as const;
-export type PlaylistId = typeof ALL_TRACKS_PLAYLIST_ID | number;
+export const LIKED_PLAYLIST_ID = "liked" as const;
+
+export type CustomPlaylistId = number;
+export type CommonPlaylistId
+  = typeof ALL_TRACKS_PLAYLIST_ID | typeof LIKED_PLAYLIST_ID;
+export type PlaylistId = CustomPlaylistId | CommonPlaylistId;
 
 const SELECTED_PLAYLIST_STORAGE_KEY = "soundgrammy:selectedPlaylistId";
 
@@ -15,7 +20,38 @@ export interface QueueSnapshot {
   trackIds: number[];
 }
 
-function readPersistedSelectedPlaylistId(): PlaylistId {
+export type SelectedPlaylist = CustomSelectedPlaylist | CommonSelectedPlaylist;
+
+interface BaseSelectedPlaylist {
+  id: PlaylistId;
+  name: string;
+  trackIds: number[];
+  isCustom: boolean;
+}
+
+export interface CustomSelectedPlaylist extends BaseSelectedPlaylist {
+  id: CustomPlaylistId;
+  isCustom: true;
+}
+
+export interface CommonSelectedPlaylist extends BaseSelectedPlaylist {
+  id: CommonPlaylistId;
+  isCustom: false;
+}
+
+export interface ResolvedCustomSelectedPlaylist extends CustomSelectedPlaylist {
+  tracks: Track[];
+}
+
+export interface ResolvedCommonSelectedPlaylist extends CommonSelectedPlaylist {
+  tracks: Track[];
+}
+
+export type ResolvedSelectedPlaylist
+  = | ResolvedCustomSelectedPlaylist
+    | ResolvedCommonSelectedPlaylist;
+
+function readPersistedSelectedPlaylistId(): PlaylistId | number {
   if (typeof window === "undefined") {
     return ALL_TRACKS_PLAYLIST_ID;
   }
@@ -23,6 +59,10 @@ function readPersistedSelectedPlaylistId(): PlaylistId {
   const stored = localStorage.getItem(SELECTED_PLAYLIST_STORAGE_KEY);
   if (!stored || stored === ALL_TRACKS_PLAYLIST_ID) {
     return ALL_TRACKS_PLAYLIST_ID;
+  }
+
+  if (stored === LIKED_PLAYLIST_ID) {
+    return LIKED_PLAYLIST_ID;
   }
 
   const parsed = Number(stored);
@@ -38,19 +78,35 @@ function persistSelectedPlaylistId(id: PlaylistId) {
   localStorage.setItem(SELECTED_PLAYLIST_STORAGE_KEY, String(id));
 }
 
-function resolvePlaylistTrackIds(
+function normalizePlaylistId(
   data: PlaylistsData,
+  playlistId: PlaylistId | number,
+): PlaylistId {
+  if (playlistId === ALL_TRACKS_PLAYLIST_ID || playlistId === LIKED_PLAYLIST_ID) {
+    return playlistId;
+  }
+
+  if (typeof playlistId === "number" && playlistId === data.liked.id) {
+    return LIKED_PLAYLIST_ID;
+  }
+
+  return playlistId;
+}
+
+function resolvePlaylistTrackIds(
+  data: PlaylistsData | null,
   playlistId: PlaylistId,
+  libraryTracks: Track[] = [],
 ): number[] {
   if (playlistId === ALL_TRACKS_PLAYLIST_ID) {
-    return [];
+    return libraryTracks.map((track) => track.id);
   }
 
-  if (playlistId === data.liked.id) {
-    return data.liked.trackIds;
+  if (playlistId === LIKED_PLAYLIST_ID) {
+    return data?.liked.trackIds ?? [];
   }
 
-  const custom = data.custom.find((playlist) => playlist.id === playlistId);
+  const custom = data?.custom.find((playlist) => playlist.id === playlistId);
   return custom?.trackIds ?? [];
 }
 
@@ -59,11 +115,11 @@ export function resolvePlaylistTracks(
   data: PlaylistsData | null,
   playlistId: PlaylistId,
 ): Track[] {
-  if (!data || playlistId === ALL_TRACKS_PLAYLIST_ID) {
+  if (playlistId === ALL_TRACKS_PLAYLIST_ID) {
     return libraryTracks;
   }
 
-  const trackIds = resolvePlaylistTrackIds(data, playlistId);
+  const trackIds = resolvePlaylistTrackIds(data, playlistId, libraryTracks);
   if (trackIds.length === 0) {
     return [];
   }
@@ -74,16 +130,66 @@ export function resolvePlaylistTracks(
     .filter((track): track is Track => track !== undefined);
 }
 
+export function resolveSelectedPlaylist(
+  libraryTracks: Track[],
+  data: PlaylistsData | null,
+  playlistId: PlaylistId,
+): SelectedPlaylist {
+  const trackIds = resolvePlaylistTrackIds(data, playlistId, libraryTracks);
+
+  if (playlistId === ALL_TRACKS_PLAYLIST_ID) {
+    return {
+      id: ALL_TRACKS_PLAYLIST_ID,
+      name: "All tracks",
+      trackIds,
+      isCustom: false,
+    };
+  }
+
+  if (playlistId === LIKED_PLAYLIST_ID) {
+    return {
+      id: LIKED_PLAYLIST_ID,
+      name: "Liked",
+      trackIds,
+      isCustom: false,
+    };
+  }
+
+  const custom = data?.custom.find((playlist) => playlist.id === playlistId);
+  return {
+    id: playlistId,
+    name: custom?.name ?? "Playlist",
+    trackIds,
+    isCustom: true,
+  };
+}
+
+export function resolveSelectedPlaylistTracks(
+  libraryTracks: Track[],
+  data: PlaylistsData | null,
+  playlistId: PlaylistId,
+): ResolvedSelectedPlaylist {
+  const playlist = resolveSelectedPlaylist(libraryTracks, data, playlistId);
+  const tracks = resolvePlaylistTracks(libraryTracks, data, playlistId);
+
+  if (playlist.isCustom) {
+    return { ...playlist, tracks };
+  }
+
+  return { ...playlist, tracks };
+}
+
 function isValidPlaylistId(
   data: PlaylistsData,
   playlistId: PlaylistId,
 ): boolean {
-  if (playlistId === ALL_TRACKS_PLAYLIST_ID) {
+  if (
+    playlistId === ALL_TRACKS_PLAYLIST_ID
+    || playlistId === LIKED_PLAYLIST_ID
+  ) {
     return true;
   }
-  if (playlistId === data.liked.id) {
-    return true;
-  }
+
   return data.custom.some((playlist) => playlist.id === playlistId);
 }
 
@@ -117,7 +223,10 @@ export const usePlaylistsStore = create<PlaylistsState>((set, get) => ({
   queueSnapshot: null,
 
   hydrate: (data) => {
-    const persisted = readPersistedSelectedPlaylistId();
+    const persisted = normalizePlaylistId(
+      data,
+      readPersistedSelectedPlaylistId(),
+    );
     const selectedPlaylistId = isValidPlaylistId(data, persisted)
       ? persisted
       : ALL_TRACKS_PLAYLIST_ID;

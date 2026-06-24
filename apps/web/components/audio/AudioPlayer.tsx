@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useEffect } from "react";
+import { useRef, useState, useEffect, useMemo } from "react";
 import { useLocalStorage } from "@mantine/hooks";
 import { AudioProgressBar } from "@/components/audio/AudioProgressBar";
 import { usePlayerStore } from "@/stores/player-store";
@@ -9,6 +9,12 @@ import { useShuffleStore } from "@/stores/shuffle-store";
 import { AudioMainOperations } from "./AudioMainOperations";
 import { AudioTrackDescription } from "./AudioTrackDescription";
 import { AudioVolume } from "./AudioVolume";
+import { Heart } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { useMutation } from "@tanstack/react-query";
+import { useTRPC } from "@/trpc/client";
+import { usePlaylistsStore } from "@/stores/playlists-store";
+import { cn } from "@/lib/utils";
 
 const VOLUME_STORAGE_KEY = "soundgrammy-volume";
 const VOLUME_DEFAULT = 25; // 25% (Hate when players scream by default)
@@ -33,6 +39,7 @@ function parseStoredVolume(stored: string | undefined): number {
 }
 
 export function AudioPlayer() {
+  const trpc = useTRPC();
   const track = usePlayerStore((state) => state.currentTrack);
   const isPlaying = usePlayerStore((state) => state.isPlaying);
   const setPlaying = usePlayerStore((state) => state.setPlaying);
@@ -44,6 +51,10 @@ export function AudioPlayer() {
   const toggleShuffle = usePlayerStore((state) => state.toggleShuffle);
   const hydratePreferences = usePlayerStore(
     (state) => state.hydratePreferences,
+  );
+  const likedPlaylist = usePlaylistsStore((state) => state.data?.liked);
+  const toggleLikeMutation = useMutation(
+    trpc.playlists.toggleLike.mutationOptions(),
   );
 
   const [currentTime, setCurrentTime] = useState(0);
@@ -62,6 +73,10 @@ export function AudioPlayer() {
   const isSeekingRef = useRef(false);
   const loadGenerationRef = useRef(0);
   const isPlayingRef = useRef(isPlaying);
+
+  const isLiked = useMemo(() => {
+    return likedPlaylist?.trackIds.includes(track?.id ?? 0);
+  }, [likedPlaylist, track?.id]);
 
   volumeRef.current = volume;
   isPlayingRef.current = isPlaying;
@@ -205,6 +220,15 @@ export function AudioPlayer() {
     playNext();
   }
 
+  async function handleToggleLike() {
+    if (!track) return;
+    try {
+      await toggleLikeMutation.mutateAsync({ trackId: track.id });
+    } catch {
+      // keep UI unchanged on failure
+    }
+  }
+
   return (
     <>
       <audio
@@ -260,6 +284,9 @@ export function AudioPlayer() {
                 </div>
 
                 <div className="w-1/3 items-center gap-2 flex justify-end">
+                  <Button variant="ghost" size="icon-xs" onClick={handleToggleLike}>
+                    <Heart className={cn("size-5", isLiked ? "fill-current" : undefined)} />
+                  </Button>
                   <AudioVolume
                     volume={volume}
                     onVolumeChange={handleVolumeChange}

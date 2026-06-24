@@ -10,6 +10,8 @@ export interface AudioVolumeProps {
 export function AudioVolume(props: AudioVolumeProps) {
   const isMuted = props.volume === 0;
 
+  const VolumeIcon = isMuted ? VolumeX : Volume2;
+
   return (
     <>
       <button
@@ -17,13 +19,7 @@ export function AudioVolume(props: AudioVolumeProps) {
         aria-label={isMuted ? "Unmute" : "Mute"}
         onClick={props.onMuteToggle}
       >
-        {isMuted
-          ? (
-              <VolumeX className="size-5 shrink-0 text-muted-foreground" />
-            )
-          : (
-              <Volume2 className="size-5 shrink-0 text-muted-foreground" />
-            )}
+        <VolumeIcon className="size-5 shrink-0" />
       </button>
       <input
         type="range"

@@ -15,8 +15,8 @@ interface UseCachedThumbnailOptions {
   enabled?: boolean;
 }
 
-function stateFromCache(trackId: number): CachedThumbnailState {
-  const cached = getCachedThumbnail(trackId);
+function stateFromCache(fileUniqueId: string): CachedThumbnailState {
+  const cached = getCachedThumbnail(fileUniqueId);
   if (cached?.status === "ready") {
     return { url: cached.url, loaded: true, failed: false };
   }
@@ -27,26 +27,31 @@ function stateFromCache(trackId: number): CachedThumbnailState {
 }
 
 export function useCachedThumbnail(
+  fileUniqueId: string,
   trackId: number,
   options: UseCachedThumbnailOptions = {},
 ): CachedThumbnailState {
   const enabled = options.enabled ?? true;
-  const [state, setState] = useState(() => stateFromCache(trackId));
+  const [state, setState] = useState(() => stateFromCache(fileUniqueId));
+
+  useEffect(() => {
+    setState(stateFromCache(fileUniqueId));
+  }, [fileUniqueId]);
 
   useEffect(() => {
     if (!enabled) {
       return;
     }
 
-    const cached = getCachedThumbnail(trackId);
+    const cached = getCachedThumbnail(fileUniqueId);
     if (cached) {
-      setState(stateFromCache(trackId));
+      setState(stateFromCache(fileUniqueId));
       return;
     }
 
     let cancelled = false;
 
-    loadCachedThumbnail(trackId).then((entry) => {
+    loadCachedThumbnail(fileUniqueId, trackId).then((entry) => {
       if (cancelled) {
         return;
       }
@@ -62,7 +67,7 @@ export function useCachedThumbnail(
     return () => {
       cancelled = true;
     };
-  }, [trackId, enabled]);
+  }, [fileUniqueId, trackId, enabled]);
 
   return state;
 }

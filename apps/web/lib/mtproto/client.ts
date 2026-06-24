@@ -20,3 +20,7 @@ export {
 } from "./download";
 
 export { parseStoredDocument, type StoredDocument } from "./document";
+export {
+  resolveTrackDocumentMetadata,
+  type TrackDocumentMetadata,
+} from "./metadata";

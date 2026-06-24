@@ -6,9 +6,15 @@ import {
   getPlaylistsBundle,
   removeTrackFromPlaylist,
   toggleLikedTrack,
+  updatePlaylist,
   type PlaylistsBundle,
 } from "@/lib/db";
 import { createTRPCRouter, protectedProcedure, toTRPCError } from "../init";
+
+const playlistThumbnailSchema = z.object({
+  data: z.string().min(1).max(700_000),
+  mime: z.enum(["image/jpeg", "image/png", "image/webp"]),
+});
 
 export const playlistsRouter = createTRPCRouter({
   list: protectedProcedure.query(
@@ -16,10 +22,38 @@ export const playlistsRouter = createTRPCRouter({
   ),
 
   create: protectedProcedure
-    .input(z.object({ name: z.string().min(1).max(100) }))
+    .input(
+      z.object({
+        name: z.string().min(1).max(100),
+        thumbnail: playlistThumbnailSchema.optional(),
+      }),
+    )
     .mutation(({ ctx, input }) => {
       try {
-        return createPlaylist(ctx.session.tgUserId, input.name);
+        return createPlaylist(
+          ctx.session.tgUserId,
+          input.name,
+          input.thumbnail,
+        );
+      } catch (error) {
+        throw toTRPCError(error);
+      }
+    }),
+
+  update: protectedProcedure
+    .input(
+      z.object({
+        id: z.number().int().positive(),
+        name: z.string().min(1).max(100).optional(),
+        thumbnail: playlistThumbnailSchema.nullable().optional(),
+      }),
+    )
+    .mutation(({ ctx, input }) => {
+      try {
+        return updatePlaylist(input.id, ctx.session.tgUserId, {
+          name: input.name,
+          thumbnail: input.thumbnail,
+        });
       } catch (error) {
         throw toTRPCError(error);
       }

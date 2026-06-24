@@ -5,34 +5,6 @@ import path from "node:path";
 const DATA_DIR = path.join(process.cwd(), "data");
 const DB_PATH = path.join(DATA_DIR, "soundgrammy.db");
 
-function migrateMtprotoSessionsTable(db: Database.Database) {
-  const columns = db.prepare("PRAGMA table_info(mtproto_sessions)").all() as {
-    name: string;
-  }[];
-  const columnNames = new Set(columns.map((c) => c.name));
-
-  if (!columnNames.has("saved_music_hash")) {
-    db.exec("ALTER TABLE mtproto_sessions ADD COLUMN saved_music_hash TEXT");
-  }
-}
-
-function migrateTracksTable(db: Database.Database) {
-  const columns = db.prepare("PRAGMA table_info(tracks)").all() as {
-    name: string;
-  }[];
-  const columnNames = new Set(columns.map((c) => c.name));
-
-  if (!columnNames.has("source")) {
-    db.exec("ALTER TABLE tracks ADD COLUMN source TEXT NOT NULL DEFAULT 'bot'");
-  }
-  if (!columnNames.has("mime_type")) {
-    db.exec("ALTER TABLE tracks ADD COLUMN mime_type TEXT");
-  }
-  if (!columnNames.has("mtproto_document")) {
-    db.exec("ALTER TABLE tracks ADD COLUMN mtproto_document TEXT");
-  }
-}
-
 function ensureWritableDataDir() {
   fs.mkdirSync(DATA_DIR, { recursive: true });
   const probe = path.join(DATA_DIR, ".write-test");
@@ -69,8 +41,6 @@ function createDatabase(): Database.Database {
     )
   `);
 
-  migrateTracksTable(db);
-
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_tracks_tg_user_id ON tracks (tg_user_id)
   `);
@@ -86,8 +56,6 @@ function createDatabase(): Database.Database {
       saved_music_hash TEXT
     )
   `);
-
-  migrateMtprotoSessionsTable(db);
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS mtproto_auth_pending (
@@ -107,6 +75,8 @@ function createDatabase(): Database.Database {
       tg_user_id INTEGER NOT NULL,
       name TEXT NOT NULL,
       kind TEXT NOT NULL CHECK (kind IN ('liked', 'custom')),
+      thumbnail_data TEXT,
+      thumbnail_mime TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     )
   `);
@@ -414,17 +384,63 @@ export function deleteMtprotoAuthPending(authToken: string) {
 
 export type PlaylistKind = "liked" | "custom";
 
+export type PlaylistThumbnailMime = "image/jpeg" | "image/png" | "image/webp";
+
+export interface PlaylistThumbnailInput {
+  data: string;
+  mime: PlaylistThumbnailMime;
+}
+
 export interface Playlist {
   id: number;
   tg_user_id: number;
   name: string;
   kind: PlaylistKind;
+  thumbnail_data: string | null;
+  thumbnail_mime: string | null;
   created_at: string;
+}
+
+export interface CustomPlaylistSummary {
+  id: number;
+  name: string;
+  trackIds: number[];
+  hasThumbnail: boolean;
 }
 
 export interface PlaylistsBundle {
   liked: { id: number; trackIds: number[] };
-  custom: { id: number; name: string; trackIds: number[] }[];
+  custom: CustomPlaylistSummary[];
+}
+
+const MAX_PLAYLIST_THUMBNAIL_BYTES = 512 * 1024;
+
+function assertValidPlaylistThumbnail(thumbnail: PlaylistThumbnailInput): void {
+  const allowed: PlaylistThumbnailMime[] = [
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+  ];
+  if (!allowed.includes(thumbnail.mime)) {
+    throw new Error("Thumbnail must be JPEG, PNG, or WebP");
+  }
+
+  const bytes = Buffer.from(thumbnail.data, "base64");
+  if (bytes.length === 0) {
+    throw new Error("Thumbnail data is invalid");
+  }
+  if (bytes.length > MAX_PLAYLIST_THUMBNAIL_BYTES) {
+    throw new Error("Thumbnail must be smaller than 512KB");
+  }
+}
+
+function mapCustomPlaylistSummary(playlist: Playlist): CustomPlaylistSummary {
+  return {
+    id: playlist.id,
+    name: playlist.name,
+    trackIds: getPlaylistTrackIdsForPlaylist(playlist.id),
+    hasThumbnail: Boolean(playlist.thumbnail_data && playlist.thumbnail_mime),
+  };
 }
 
 function getPlaylistTrackIdsForPlaylist(playlistId: number): number[] {
@@ -490,33 +506,122 @@ export function getPlaylistsBundle(tgUserId: number): PlaylistsBundle {
       id: liked.id,
       trackIds: getPlaylistTrackIdsForPlaylist(liked.id),
     },
-    custom: customPlaylists.map((playlist) => ({
-      id: playlist.id,
-      name: playlist.name,
-      trackIds: getPlaylistTrackIdsForPlaylist(playlist.id),
-    })),
+    custom: customPlaylists.map(mapCustomPlaylistSummary),
+  };
+}
+
+export function getPlaylistThumbnail(
+  playlistId: number,
+  tgUserId: number,
+): { data: Buffer; mime: PlaylistThumbnailMime } | null {
+  const playlist = getPlaylistById(playlistId, tgUserId);
+  if (!playlist?.thumbnail_data || !playlist.thumbnail_mime) {
+    return null;
+  }
+
+  const mime = playlist.thumbnail_mime as PlaylistThumbnailMime;
+  if (
+    mime !== "image/jpeg"
+    && mime !== "image/png"
+    && mime !== "image/webp"
+  ) {
+    return null;
+  }
+
+  return {
+    data: Buffer.from(playlist.thumbnail_data, "base64"),
+    mime,
   };
 }
 
 export function createPlaylist(
   tgUserId: number,
   name: string,
-): { id: number; name: string; trackIds: number[] } {
+  thumbnail?: PlaylistThumbnailInput,
+): CustomPlaylistSummary {
   const db = getDb();
   const trimmedName = name.trim();
   if (!trimmedName) {
     throw new Error("Playlist name is required");
   }
 
+  if (thumbnail) {
+    assertValidPlaylistThumbnail(thumbnail);
+  }
+
   const result = db
     .prepare(
-      `INSERT INTO playlists (tg_user_id, name, kind)
-       VALUES (?, ?, 'custom')`,
+      `INSERT INTO playlists (tg_user_id, name, kind, thumbnail_data, thumbnail_mime)
+       VALUES (?, ?, 'custom', ?, ?)`,
     )
-    .run(tgUserId, trimmedName);
+    .run(
+      tgUserId,
+      trimmedName,
+      thumbnail?.data ?? null,
+      thumbnail?.mime ?? null,
+    );
 
   const id = Number(result.lastInsertRowid);
-  return { id, name: trimmedName, trackIds: [] };
+  return {
+    id,
+    name: trimmedName,
+    trackIds: [],
+    hasThumbnail: Boolean(thumbnail),
+  };
+}
+
+export function updatePlaylist(
+  playlistId: number,
+  tgUserId: number,
+  input: {
+    name?: string;
+    thumbnail?: PlaylistThumbnailInput | null;
+  },
+): CustomPlaylistSummary {
+  const playlist = getPlaylistById(playlistId, tgUserId);
+  if (!playlist) {
+    throw new Error("Playlist not found");
+  }
+  if (playlist.kind !== "custom") {
+    throw new Error("Only custom playlists can be edited");
+  }
+
+  const nextName = input.name !== undefined ? input.name.trim() : playlist.name;
+  if (!nextName) {
+    throw new Error("Playlist name is required");
+  }
+
+  let nextThumbnailData = playlist.thumbnail_data;
+  let nextThumbnailMime = playlist.thumbnail_mime;
+
+  if (input.thumbnail === null) {
+    nextThumbnailData = null;
+    nextThumbnailMime = null;
+  } else if (input.thumbnail) {
+    assertValidPlaylistThumbnail(input.thumbnail);
+    nextThumbnailData = input.thumbnail.data;
+    nextThumbnailMime = input.thumbnail.mime;
+  }
+
+  const db = getDb();
+  db.prepare(
+    `UPDATE playlists
+     SET name = ?, thumbnail_data = ?, thumbnail_mime = ?
+     WHERE id = ? AND tg_user_id = ?`,
+  ).run(
+    nextName,
+    nextThumbnailData,
+    nextThumbnailMime,
+    playlistId,
+    tgUserId,
+  );
+
+  const updated = getPlaylistById(playlistId, tgUserId);
+  if (!updated) {
+    throw new Error("Playlist not found");
+  }
+
+  return mapCustomPlaylistSummary(updated);
 }
 
 export function deletePlaylist(playlistId: number, tgUserId: number): void {

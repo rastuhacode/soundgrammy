@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { useTRPC } from "../trpc/client";
+import { useTRPC } from "@/trpc/client";
 
 type Step = "qr" | "phone" | "code" | "password" | "qr-password";
 

@@ -9,6 +9,16 @@ import { z } from "zod";
  * (ids/hashes as strings because they exceed JS safe-integer range), plus
  * optional thumbnail metadata.
  */
+export const SerializedDocumentAttributeSchema = z
+  .object({
+    type: z.string(),
+  })
+  .loose();
+
+export type SerializedDocumentAttribute = z.infer<
+  typeof SerializedDocumentAttributeSchema
+>;
+
 export const StoredDocumentSchema = z.object({
   id: z.string(),
   accessHash: z.string(),
@@ -19,10 +29,12 @@ export const StoredDocumentSchema = z.object({
   thumbSize: z.string().optional(),
   thumbFileSize: z.string().optional(),
   thumbData: z.string().optional(),
+  attributes: z.array(SerializedDocumentAttributeSchema).optional(),
 });
 
 export type StoredDocument = z.infer<typeof StoredDocumentSchema>;
 
+/** Narrows a Telegram {@link Api.TypeDocument} to a concrete {@link Api.Document}. */
 export function isDocument(doc: Api.TypeDocument): doc is Api.Document {
   return doc instanceof Api.Document;
 }
@@ -95,12 +107,14 @@ function pickBestRemoteThumb(
 /** Inline stripped thumbs below ~8 KiB are too blurry for display. */
 const LOW_QUALITY_INLINE_THUMB_BYTES = 8000;
 
+/** Returns true when an inline thumb is too small to use as cover art. */
 export function isLowQualityInlineThumb(thumbData: string): boolean {
   return (
     Buffer.from(thumbData, "base64").length < LOW_QUALITY_INLINE_THUMB_BYTES
   );
 }
 
+/** True when a stored document should fetch a higher-quality remote thumbnail. */
 export function shouldUpgradeStoredThumb(stored: StoredDocument): boolean {
   if (stored.thumbSize) {
     return false;
@@ -111,6 +125,10 @@ export function shouldUpgradeStoredThumb(stored: StoredDocument): boolean {
   return isLowQualityInlineThumb(stored.thumbData);
 }
 
+/**
+ * Picks the best thumbnail representation from a Telegram document for
+ * persistence: remote size ref when available, otherwise inline bytes.
+ */
 export function extractThumbFromDocument(doc: Api.Document): {
   thumbSize?: string;
   thumbFileSize?: string;
@@ -156,6 +174,7 @@ export function extractThumbFromDocument(doc: Api.Document): {
   return {};
 }
 
+/** Keeps a previous inline/remote thumb when a file-reference refresh drops it. */
 export function mergeStoredDocumentThumb(
   refreshed: StoredDocument,
   previous?: StoredDocument,
@@ -174,6 +193,62 @@ export function mergeStoredDocumentThumb(
   };
 }
 
+/**
+ * Converts Telegram document attributes into JSON-safe plain objects for
+ * storage and display (buffers and bigints are normalized to strings).
+ */
+export function serializeDocumentAttributes(
+  attributes: Api.TypeDocumentAttribute[] | undefined,
+): SerializedDocumentAttribute[] {
+  if (!attributes?.length) {
+    return [];
+  }
+
+  return attributes.map((attr) => {
+    const serialized: SerializedDocumentAttribute = {
+      type: attr.className,
+    };
+
+    for (const [key, value] of Object.entries(attr.originalArgs ?? {})) {
+      if (value === undefined || value === null) {
+        serialized[key] = value;
+        continue;
+      }
+      if (Buffer.isBuffer(value)) {
+        serialized[key] = value.toString("base64");
+        continue;
+      }
+      if (value instanceof Uint8Array) {
+        serialized[key] = Buffer.from(value).toString("base64");
+        continue;
+      }
+      if (typeof value === "bigint" || bigInt.isInstance(value)) {
+        serialized[key] = value.toString();
+        continue;
+      }
+      serialized[key] = value;
+    }
+
+    return serialized;
+  });
+}
+
+/** Reads the original filename from a serialized {@link DocumentAttributeFilename}. */
+export function getFilenameFromDocumentAttributes(
+  attributes?: SerializedDocumentAttribute[],
+): string | null {
+  const filenameAttr = attributes?.find(
+    (attr) => attr.type === "DocumentAttributeFilename",
+  );
+  const fileName = filenameAttr?.fileName;
+  if (typeof fileName !== "string") {
+    return null;
+  }
+  const trimmed = fileName.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+/** Serializes a Telegram document into the JSON blob stored on each track row. */
 export function documentToStoredJson(doc: Api.Document): string {
   const thumb = extractThumbFromDocument(doc);
   return JSON.stringify({
@@ -183,10 +258,15 @@ export function documentToStoredJson(doc: Api.Document): string {
     dcId: doc.dcId,
     mimeType: doc.mimeType ?? "audio/mpeg",
     size: doc.size?.toString() ?? "0", // unknown document size
+    attributes: serializeDocumentAttributes(doc.attributes),
     ...thumb,
   } satisfies StoredDocument);
 }
 
+/**
+ * Extracts display fields and the persisted document JSON from a Telegram
+ * document during profile-music sync.
+ */
 export function parseDocumentMetadata(doc: Api.Document): {
   title: string | null;
   performer: string | null;
@@ -216,6 +296,7 @@ export function parseDocumentMetadata(doc: Api.Document): {
   };
 }
 
+/** Client-side hash for Telegram saved-music sync short-circuiting. */
 export function computeSavedMusicHash(documentIds: string[]): string {
   let hash = bigInt.zero;
   for (const id of documentIds) {
@@ -224,6 +305,7 @@ export function computeSavedMusicHash(documentIds: string[]): string {
   return hash.toString();
 }
 
+/** Builds an {@link Api.InputDocument} for GetSavedMusicByID lookups. */
 export function toInputDocument(data: StoredDocument): Api.InputDocument {
   return new Api.InputDocument({
     id: bigInt(data.id),

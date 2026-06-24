@@ -12,7 +12,9 @@
     "typecheck": "next typegen && tsc --noEmit"
   },
   "dependencies": {
+    "@base-ui/react": "catalog:frontend",
     "@mantine/hooks": "catalog:frontend",
+    "@tanstack/react-form": "^1.33.0",
     "@tanstack/react-query": "catalog:frontend",
     "@tanstack/react-virtual": "catalog:frontend",
     "@trpc/client": "catalog:frontend",
@@ -27,7 +29,6 @@
     "music-metadata": "catalog:frontend",
     "next": "catalog:frontend",
     "qrcode": "catalog:backend",
-    "@base-ui/react": "catalog:frontend",
     "react": "catalog:frontend",
     "react-dom": "catalog:frontend",
     "server-only": "catalog:frontend",
