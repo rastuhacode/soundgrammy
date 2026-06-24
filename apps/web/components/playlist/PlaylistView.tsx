@@ -213,16 +213,10 @@ export function PlaylistView() {
               if (!track) return null;
 
               return (
-                // <li
-                //   key={track.id}
-                //   className="absolute left-0 top-0 w-full px-0"
-                //   style={{ height: `${virtualRow.size}px`, transform: `translateY(${virtualRow.start}px)` }}
-                // >
                 <PlaylistTrackRow
                   key={track.id}
                   className="absolute left-0 top-0 w-full"
                   style={{ height: `${virtualRow.size}px`, transform: `translateY(${virtualRow.start}px)` }}
-
                   currentPlaylist={selectedPlaylist}
                   track={track}
                   isActive={currentTrackId === track.id}
@@ -236,7 +230,6 @@ export function PlaylistView() {
                   onDownload={handleDownload}
                   onShowInfo={handleShowInfo}
                 />
-                // </li>
               );
             })}
           </ul>
