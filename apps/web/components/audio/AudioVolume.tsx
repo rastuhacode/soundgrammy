@@ -1,5 +1,6 @@
 import { Volume2, VolumeX } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Button } from "@/components/ui/button";
 
 export interface AudioVolumeProps {
   volume: number;
@@ -14,13 +15,14 @@ export function AudioVolume(props: AudioVolumeProps) {
 
   return (
     <>
-      <button
-        type="button"
+      <Button
         aria-label={isMuted ? "Unmute" : "Mute"}
         onClick={props.onMuteToggle}
+        variant="ghost"
+        size="icon-sm"
       >
         <VolumeIcon className="size-5 shrink-0" />
-      </button>
+      </Button>
       <input
         type="range"
         className={cn(

@@ -289,8 +289,8 @@ export function AudioPlayer() {
                 </div>
 
                 <div className="w-1/3 items-center gap-2 flex justify-end">
-                  <Button variant="ghost" size="icon-xs" onClick={handleToggleLike}>
-                    <Heart className={cn("size-5", isLiked ? "fill-current" : undefined)} />
+                  <Button variant="ghost" size="icon-sm" aria-label={isLiked ? "Remove from liked" : "Add to liked"} onClick={handleToggleLike}>
+                    <Heart className={cn("size-5", isLiked && "fill-current")} />
                   </Button>
                   <AudioVolume
                     volume={volume}
