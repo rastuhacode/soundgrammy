@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useFetch } from "@/lib/api/auth/client/use-fetch";
 
 const USER_AVATAR_URL = "/api/user/avatar";
 
@@ -18,7 +19,7 @@ export function useUserAvatar(enabled = true): string | null {
 
     void (async () => {
       try {
-        const response = await fetch(USER_AVATAR_URL);
+        const response = await useFetch(USER_AVATAR_URL);
         if (!response.ok || cancelled) {
           return;
         }

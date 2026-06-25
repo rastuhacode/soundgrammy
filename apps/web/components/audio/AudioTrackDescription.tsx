@@ -1,4 +1,5 @@
 import type { Track } from "@/lib/db";
+import { probeUnauthorized } from "@/lib/api/auth/client/use-fetch";
 import { Music } from "lucide-react";
 import { useEffect, useState } from "react";
 
@@ -13,6 +14,8 @@ export function AudioTrackDescription(props: AudioTrackDescriptionProps) {
     setThumbError(false);
   }, [props.track?.id]);
 
+  const thumbnailUrl = `/api/tracks/${props.track.id}/thumbnail`;
+
   return (
     <>
       <div className="relative shrink-0">
@@ -24,10 +27,13 @@ export function AudioTrackDescription(props: AudioTrackDescriptionProps) {
             )
           : (
               <img
-                src={`/api/tracks/${props.track.id}/thumbnail`}
+                src={thumbnailUrl}
                 alt="Thumbnail"
                 className="size-16 rounded-lg object-cover ring-1 ring-border"
-                onError={() => setThumbError(true)}
+                onError={() => {
+                  void probeUnauthorized(thumbnailUrl);
+                  setThumbError(true);
+                }}
               />
             )}
       </div>

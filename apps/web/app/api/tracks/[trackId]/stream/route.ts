@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
+import { mtprotoRouteErrorResponse } from "@/lib/api/auth/server/mtproto-route-error";
 import {
   getMtprotoSession,
   getTrackById,
@@ -10,6 +11,7 @@ import {
   parseStoredDocument,
 } from "@/lib/mtproto/client";
 import { parseByteRange } from "@/lib/stream/range";
+import { readFirstStreamChunk } from "@/lib/stream/preflight";
 
 export async function GET(
   request: Request,
@@ -87,6 +89,14 @@ export async function GET(
       },
     );
 
+    const opened = await readFirstStreamChunk(stream);
+    if (!opened.ok) {
+      return mtprotoRouteErrorResponse(
+        opened.error,
+        "Failed to stream audio from Telegram",
+      );
+    }
+
     const headers: Record<string, string> = {
       "Content-Type": mimeType,
       "Accept-Ranges": "bytes",
@@ -97,14 +107,14 @@ export async function GET(
     if (isRangeRequest) {
       headers["Content-Range"]
         = `bytes ${byteRange.start}-${byteRange.end}/${totalSize}`;
-      return new Response(stream, { status: 206, headers });
+      return new Response(opened.stream, { status: 206, headers });
     }
 
-    return new Response(stream, { status: 200, headers });
-  } catch {
-    return NextResponse.json(
-      { error: "Failed to stream audio from Telegram" },
-      { status: 502 },
+    return new Response(opened.stream, { status: 200, headers });
+  } catch (error) {
+    return mtprotoRouteErrorResponse(
+      error,
+      "Failed to stream audio from Telegram",
     );
   }
 }

@@ -5,6 +5,7 @@ import type { FetchCreateContextFnOptions } from "@trpc/server/adapters/fetch";
 import { cache } from "react";
 import superjson from "superjson";
 import { getSession } from "@/lib/auth";
+import { isMtprotoSessionError } from "@/lib/mtproto/errors";
 
 /**
  * tRPC backend initialization: context, transformer, and the procedure
@@ -68,6 +69,12 @@ export function toTRPCError(
 ): TRPCError {
   if (error instanceof TRPCError) {
     return error;
+  }
+  if (isMtprotoSessionError(error)) {
+    return new TRPCError({
+      code: "UNAUTHORIZED",
+      message: "Telegram session expired",
+    });
   }
   return new TRPCError({
     code,

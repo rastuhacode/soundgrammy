@@ -16,6 +16,15 @@ const FILE_REFERENCE_ERRORS = [
 /** Telegram error returned when a 2FA password is required to finish sign-in. */
 const SESSION_PASSWORD_NEEDED = "SESSION_PASSWORD_NEEDED";
 
+/** Telegram errors that mean the stored MTProto session is no longer valid. */
+const SESSION_ERRORS = [
+  "AUTH_KEY_UNREGISTERED",
+  "AUTH_KEY_INVALID",
+  "SESSION_REVOKED",
+  "SESSION_EXPIRED",
+  "USER_DEACTIVATED",
+] as const;
+
 /**
  * Extracts the Telegram error code from an unknown thrown value, checking both
  * the structured `errorMessage` field and the plain `Error.message`.
@@ -44,4 +53,26 @@ export function isFileReferenceError(error: unknown): boolean {
 /** True when Telegram is asking for the account's 2FA password to continue. */
 export function isSessionPasswordNeeded(error: unknown): boolean {
   return getTelegramErrorMessage(error) === SESSION_PASSWORD_NEEDED;
+}
+
+/** True when the encrypted MTProto session was revoked or is no longer accepted. */
+export function isMtprotoSessionError(error: unknown): boolean {
+  if (error && typeof error === "object") {
+    if ("code" in error && (error as { code: unknown }).code === 401) {
+      return true;
+    }
+    if ("name" in error) {
+      const name = String((error as { name: unknown }).name);
+      if (name.includes("AuthKey") || name.includes("Session")) {
+        return true;
+      }
+    }
+  }
+
+  const message = getTelegramErrorMessage(error);
+  if (!message) {
+    return false;
+  }
+
+  return SESSION_ERRORS.some((code) => message.includes(code));
 }

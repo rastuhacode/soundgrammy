@@ -5,7 +5,8 @@ import { createTRPCClient, httpBatchLink } from "@trpc/client";
 import { createTRPCContext } from "@trpc/tanstack-react-query";
 import { useState, type ReactNode } from "react";
 import superjson from "superjson";
-import { makeQueryClient } from "./query-client";
+import { handleTrpcError } from "@/lib/api/auth/errored-response";
+import { makeBrowserQueryClient, makeQueryClient } from "./query-client";
 import type { AppRouter } from "./routers/_app";
 
 /**
@@ -21,7 +22,7 @@ function getQueryClient(): QueryClient {
   if (typeof window === "undefined") {
     return makeQueryClient();
   }
-  browserQueryClient ??= makeQueryClient();
+  browserQueryClient ??= makeBrowserQueryClient(handleTrpcError);
   return browserQueryClient;
 }
 

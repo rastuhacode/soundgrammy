@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { Heart, ListMusic, Music } from "lucide-react";
 import { playlistThumbnailUrl } from "@/lib/playlist-thumbnail";
+import { probeUnauthorized } from "@/lib/api/auth/client/use-fetch";
 import {
   ALL_TRACKS_PLAYLIST_ID,
   LIKED_PLAYLIST_ID,
@@ -56,6 +57,8 @@ export function SidebarPlaylistThumbnail({
       && !imageFailed;
 
   const style = variantStyles[variant];
+  const coverUrl
+    = playlistId !== undefined ? playlistThumbnailUrl(playlistId) : null;
 
   return (
     <div
@@ -72,10 +75,15 @@ export function SidebarPlaylistThumbnail({
           )
         : (
             <img
-              src={playlistThumbnailUrl(playlistId)}
+              src={coverUrl ?? undefined}
               alt={`${name} cover`}
               className="size-full object-cover"
-              onError={() => setImageFailed(true)}
+              onError={() => {
+                if (coverUrl) {
+                  void probeUnauthorized(coverUrl);
+                }
+                setImageFailed(true);
+              }}
             />
           )}
     </div>

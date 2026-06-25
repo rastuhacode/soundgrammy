@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
+import { mtprotoRouteErrorResponse } from "@/lib/api/auth/server/mtproto-route-error";
 import { buildTrackDownloadFilename } from "@/lib/download-filename";
 import {
   getMtprotoSession,
@@ -12,6 +13,7 @@ import {
   resolveTrackDocumentMetadata,
 } from "@/lib/mtproto/client";
 import { getFilenameFromDocumentAttributes } from "@/lib/mtproto/document";
+import { readFirstStreamChunk } from "@/lib/stream/preflight";
 
 export async function GET(
   _request: Request,
@@ -79,6 +81,14 @@ export async function GET(
       },
     );
 
+    const opened = await readFirstStreamChunk(stream);
+    if (!opened.ok) {
+      return mtprotoRouteErrorResponse(
+        opened.error,
+        "Failed to download audio from Telegram",
+      );
+    }
+
     const filename = buildTrackDownloadFilename({
       attributeFileName,
       title: track.title,
@@ -87,7 +97,7 @@ export async function GET(
       mimeType: storedDocument.mimeType ?? track.mime_type ?? mimeType,
     });
 
-    return new Response(stream, {
+    return new Response(opened.stream, {
       status: 200,
       headers: {
         "Content-Type": mimeType,
@@ -96,10 +106,10 @@ export async function GET(
         "Cache-Control": "private, no-store",
       },
     });
-  } catch {
-    return NextResponse.json(
-      { error: "Failed to download audio from Telegram" },
-      { status: 502 },
+  } catch (error) {
+    return mtprotoRouteErrorResponse(
+      error,
+      "Failed to download audio from Telegram",
     );
   }
 }

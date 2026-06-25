@@ -13,6 +13,7 @@ import { Heart } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useMutation } from "@tanstack/react-query";
 import { useTRPC } from "@/trpc/client";
+import { probeUnauthorized } from "@/lib/api/auth/client/use-fetch";
 import { usePlaylistsStore } from "@/stores/playlists-store";
 import { cn } from "@/lib/utils";
 
@@ -234,6 +235,13 @@ export function AudioPlayer() {
     }
   }
 
+  function handleAudioError() {
+    if (!track) return;
+    void probeUnauthorized(`/api/tracks/${track.id}/stream`, {
+      headers: { Range: "bytes=0-1" },
+    });
+  }
+
   return (
     <>
       <audio
@@ -243,6 +251,7 @@ export function AudioPlayer() {
         onDurationChange={onDurationChange}
         onProgress={onProgress}
         onEnded={handleTrackEnded}
+        onError={handleAudioError}
         className="hidden"
       />
 

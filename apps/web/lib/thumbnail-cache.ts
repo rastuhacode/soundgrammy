@@ -1,3 +1,7 @@
+"use client";
+
+import { useFetch } from "@/lib/api/auth/client/use-fetch";
+
 type ThumbnailCacheEntry
   = | { status: "ready"; url: string }
     | { status: "failed" };
@@ -39,7 +43,7 @@ export function loadCachedThumbnail(
     return pending;
   }
 
-  const request = fetch(thumbnailUrl(trackId))
+  const request = useFetch(thumbnailUrl(trackId))
     .then(async (response): Promise<ThumbnailCacheEntry> => {
       if (!response.ok) {
         const entry: ThumbnailCacheEntry = { status: "failed" };

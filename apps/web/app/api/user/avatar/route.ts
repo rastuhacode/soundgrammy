@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
+import { mtprotoRouteErrorResponse } from "@/lib/api/auth/server/mtproto-route-error";
 import { getMtprotoSession } from "@/lib/db";
 import { downloadUserProfilePhoto } from "@/lib/mtproto/profile-photo";
 
@@ -36,10 +37,10 @@ export async function GET() {
       status: 200,
       headers: avatarResponseHeaders(photo.length),
     });
-  } catch {
-    return NextResponse.json(
-      { error: "Failed to load profile photo from Telegram" },
-      { status: 502 },
+  } catch (error) {
+    return mtprotoRouteErrorResponse(
+      error,
+      "Failed to load profile photo from Telegram",
     );
   }
 }

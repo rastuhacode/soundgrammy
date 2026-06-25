@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
+import { mtprotoRouteErrorResponse } from "@/lib/api/auth/server/mtproto-route-error";
 import { extractEmbeddedCover, readStreamPrefix } from "@/lib/audio/cover";
 import {
   getMtprotoSession,
@@ -16,6 +17,7 @@ import {
   parseStoredDocument,
   shouldUpgradeStoredThumb,
 } from "@/lib/mtproto/document";
+import { isMtprotoSessionError } from "@/lib/mtproto/errors";
 
 function coverContentType(format: string): string {
   if (format.includes("png")) return "image/png";
@@ -91,7 +93,13 @@ export async function GET(
       storedJson = JSON.stringify(enriched);
       stored = enriched;
       updateTrackMtprotoDocument(track.id, session.tgUserId, storedJson);
-    } catch {
+    } catch (error) {
+      if (isMtprotoSessionError(error)) {
+        return mtprotoRouteErrorResponse(
+          error,
+          "Failed to load thumbnail from Telegram",
+        );
+      }
       if (!stored.thumbSize && !stored.thumbData) {
         return NextResponse.json({ error: "No thumbnail" }, { status: 404 });
       }
@@ -149,10 +157,10 @@ export async function GET(
         embedded.data.length,
       ),
     });
-  } catch {
-    return NextResponse.json(
-      { error: "Failed to load thumbnail from Telegram" },
-      { status: 502 },
+  } catch (error) {
+    return mtprotoRouteErrorResponse(
+      error,
+      "Failed to load thumbnail from Telegram",
     );
   }
 }

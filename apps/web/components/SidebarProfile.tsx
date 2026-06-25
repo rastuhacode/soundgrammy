@@ -1,8 +1,8 @@
 "use client";
 
-import { useMutation } from "@tanstack/react-query";
 import { Hash, LogOut, RadioTower, UserRound } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
   DropdownMenu,
@@ -20,7 +20,7 @@ import {
   formatInitials,
   useSessionStore,
 } from "@/stores/session-store";
-import { useTRPC } from "@/trpc/client";
+import { performClientLogout } from "@/lib/api/auth/client/logout";
 
 interface SidebarProfileProps {
   trackCount: number;
@@ -28,12 +28,10 @@ interface SidebarProfileProps {
 
 export function SidebarProfile({ trackCount }: SidebarProfileProps) {
   const router = useRouter();
-  const trpc = useTRPC();
+  const [isLoggingOut, setIsLoggingOut] = useState(false);
   const session = useSessionStore((state) => state.session);
-  const clearSession = useSessionStore((state) => state.clearSession);
   const avatarSrc = useUserAvatar(Boolean(session));
   const { phase, statusLabel, statusDetail } = useProfileMusicSync(trackCount);
-  const logoutMutation = useMutation(trpc.auth.logout.mutationOptions());
 
   if (!session) return null;
 
@@ -41,11 +39,14 @@ export function SidebarProfile({ trackCount }: SidebarProfileProps) {
   const initials = formatInitials(session);
 
   const handleLogout = async () => {
-    console.log("handleLogout");
-    await logoutMutation.mutateAsync();
-    clearSession();
-    router.push("/login");
-    router.refresh();
+    setIsLoggingOut(true);
+    try {
+      await performClientLogout();
+      router.push("/login");
+      router.refresh();
+    } finally {
+      setIsLoggingOut(false);
+    }
   };
 
   return (
@@ -180,7 +181,7 @@ export function SidebarProfile({ trackCount }: SidebarProfileProps) {
 
           <DropdownMenuItem
             variant="destructive"
-            disabled={logoutMutation.isPending}
+            disabled={isLoggingOut}
             onClick={(event) => {
               event.preventDefault();
               void handleLogout();
@@ -188,7 +189,7 @@ export function SidebarProfile({ trackCount }: SidebarProfileProps) {
             className="gap-2.5 rounded-lg px-2.5 py-2"
           >
             <LogOut className="size-4" />
-            {logoutMutation.isPending ? "Signing out…" : "Log out"}
+            {isLoggingOut ? "Signing out…" : "Log out"}
           </DropdownMenuItem>
         </div>
       </DropdownMenuContent>
