@@ -6,7 +6,6 @@ import {
   insertTrack,
   updateMtprotoLastSync,
   updateMtprotoSavedMusicHash,
-  type TrackSource,
 } from "../db";
 import { withMtprotoClient } from "./client";
 import { computeSavedMusicHash, isDocument, parseDocumentMetadata } from "./document";
@@ -89,7 +88,7 @@ export async function syncProfileMusic(
       title: title ?? undefined,
       performer: performer ?? undefined,
       duration: duration ?? undefined,
-      source: "mtproto" satisfies TrackSource,
+      source: "mtproto",
       mime_type: doc.mimeType ?? "audio/mpeg",
       mtproto_document: storedJson,
       file_name: title ?? `track-${doc.id.toString()}`,

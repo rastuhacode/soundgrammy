@@ -108,8 +108,6 @@ export function getDb(): Database.Database {
   return dbInstance;
 }
 
-export type TrackSource = "bot" | "mtproto";
-
 export interface BotFile {
   file_id: string;
   file_unique_id: string;
@@ -134,7 +132,7 @@ export interface BotAudioPayload extends BotFile {
 export type Track = BotAudioPayload & {
   id: number;
   created_at: string;
-  source: TrackSource;
+  source: "mtproto";
   mtproto_document?: string | null;
 };
 
@@ -171,7 +169,7 @@ export interface InsertTrackInput {
   title?: string | null;
   performer?: string | null;
   duration?: number | null;
-  source?: TrackSource;
+  source?: "mtproto";
   mime_type?: string | null;
   mtproto_document?: string | null;
   file_name?: string;
