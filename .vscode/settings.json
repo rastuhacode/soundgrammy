@@ -2,5 +2,9 @@
   "editor.formatOnSave": false,
   "editor.codeActionsOnSave": {
     "source.fixAll.eslint": "explicit"
-  }
+  },
+
+  "rust-analyzer.linkedProjects": [
+    "apps/app/src-tauri/Cargo.toml"
+  ]
 }

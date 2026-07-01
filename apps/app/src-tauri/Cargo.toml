@@ -1,0 +1,56 @@
+[package]
+name = "soundgrammy"
+version = "0.1.0"
+description = "SoundGrammy — a native desktop player for your Telegram profile music"
+authors = ["SoundGrammy"]
+edition = "2021"
+rust-version = "1.80"
+
+[lib]
+name = "soundgrammy_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+# core2 was yanked upstream (RUSTSEC-2026-0105); pin to the pre-yank commit so
+# grammers-crypto's transitive dependency still resolves.
+[patch.crates-io]
+core2 = { git = "https://github.com/bbqsrc/core2", rev = "545e84bcb0f235b12e21351e0c69767958efe2a7" }
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = ["protocol-asset"] }
+tauri-plugin-opener = "2"
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+futures-util = "0.3"
+
+# Telegram MTProto (from git: crates.io 0.9.0 pulls a yanked transitive dep).
+# Pinned to a revision that builds alongside rusqlite (later revs hard-depend on
+# a conflicting `sqlite` native crate) and carries the saved-music TL methods.
+grammers-client = { git = "https://github.com/Lonami/grammers.git", rev = "fa7692e49f301f16dc671c2f305ac1a32cad1a8e", features = ["fs"] }
+grammers-session = { git = "https://github.com/Lonami/grammers.git", rev = "fa7692e49f301f16dc671c2f305ac1a32cad1a8e", default-features = false, features = ["serde"] }
+grammers-tl-types = { git = "https://github.com/Lonami/grammers.git", rev = "fa7692e49f301f16dc671c2f305ac1a32cad1a8e" }
+grammers-mtsender = { git = "https://github.com/Lonami/grammers.git", rev = "fa7692e49f301f16dc671c2f305ac1a32cad1a8e" }
+
+# Storage
+rusqlite = { version = "0.32", features = ["bundled"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Crypto / secure session at rest
+aes-gcm = "0.10"
+rand = "0.8"
+keyring = { version = "3", features = ["apple-native", "windows-native", "sync-secret-service"] }
+
+# Utilities
+thiserror = "2"
+anyhow = "1"
+base64 = "0.22"
+hex = "0.4"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+lofty = "0.21"

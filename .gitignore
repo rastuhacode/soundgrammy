@@ -27,6 +27,10 @@ out/
 build
 dist
 
+# Rust / Tauri
+target/
+apps/app/src-tauri/gen/
+
 
 # Debug
 npm-debug.log*
