@@ -1,26 +1,15 @@
 # SoundGrammy
 
-Personal music library from your Telegram profile.
+App which combines music streaming service with telegram providing features like playlists, smart shuffle, etc with local-first telegram mindset.
 
 ## Local development
 
+1. Install [bun]()
+2. Install dependencies
 ```bash
-bun dev
+bun i
 ```
-
-Open [http://localhost:3000](http://localhost:3000).
-
-### Env vars (`apps/web/.env.local`)
-
-```env
-TELEGRAM_API_ID=12345678
-TELEGRAM_API_HASH=your_api_hash
-JWT_SECRET=long-random-string
-MTPROTO_SESSION_SECRET=long-random-string  # optional, defaults to JWT_SECRET
+3. Run dev server via [tauri]()
+```bash
+bun tauri dev
 ```
-
-Get `TELEGRAM_API_ID` and `TELEGRAM_API_HASH` from [my.telegram.org](https://my.telegram.org).
-
-### Auth
-
-Sign in with your Telegram phone number (MTProto). Profile music syncs automatically on load.

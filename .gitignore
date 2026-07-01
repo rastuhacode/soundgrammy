@@ -2,8 +2,6 @@
 
 # Dependencies
 node_modules
-.pnp
-.pnp.js
 
 # Local env files
 .env
@@ -15,14 +13,7 @@ node_modules
 # Testing
 coverage
 
-# Turbo
-.turbo
-
-# Vercel
-.vercel
-
 # Build Outputs
-.next/
 out/
 build
 dist
@@ -34,8 +25,6 @@ apps/app/src-tauri/gen/
 
 # Debug
 npm-debug.log*
-yarn-debug.log*
-yarn-error.log*
 
 # Misc
 .DS_Store
