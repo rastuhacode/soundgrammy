@@ -100,7 +100,7 @@ pub async fn sync(state: &AppState, app: &AppHandle) -> AppResult<SyncResult> {
 
     let mut ids: Vec<i64> = Vec::with_capacity(collected.len());
     let mut keep_unique: Vec<String> = Vec::with_capacity(collected.len());
-    for document in &collected {
+    for (position, document) in collected.iter().enumerate() {
         let parsed = parse_document(document);
         ids.push(document.id);
         keep_unique.push(parsed.file_unique_id.clone());
@@ -113,6 +113,7 @@ pub async fn sync(state: &AppState, app: &AppHandle) -> AppResult<SyncResult> {
             duration: parsed.duration,
             mime_type: Some(parsed.mime_type),
             file_size: Some(parsed.size),
+            track_position: position as i64,
             mtproto_document: parsed.stored_json,
         })?;
     }

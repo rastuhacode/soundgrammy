@@ -97,7 +97,6 @@ export function TrackInfoDialog({
   }, [open, track]);
 
   const thumbnail = useCachedThumbnail(
-    track?.file_unique_id ?? "",
     track?.id ?? 0,
     { enabled: open && Boolean(track) },
   );

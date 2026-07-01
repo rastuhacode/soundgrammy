@@ -7,10 +7,7 @@ export interface AudioTrackDescriptionProps {
 }
 
 export function AudioTrackDescription(props: AudioTrackDescriptionProps) {
-  const { url, failed } = useCachedThumbnail(
-    props.track.file_unique_id,
-    props.track.id,
-  );
+  const { url, failed } = useCachedThumbnail(props.track.id);
 
   return (
     <>

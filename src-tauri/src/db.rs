@@ -70,6 +70,7 @@ pub struct UpsertTrack {
     pub duration: Option<i64>,
     pub mime_type: Option<String>,
     pub file_size: Option<i64>,
+    pub track_position: i64,
     pub mtproto_document: String,
 }
 
@@ -100,6 +101,7 @@ impl Db {
               mime_type TEXT,
               file_size INTEGER,
               mtproto_document TEXT,
+              track_position INTEGER,
               created_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
 
@@ -151,7 +153,8 @@ impl Db {
         let mut stmt = conn.prepare(
             "SELECT id, tg_user_id, file_id, file_unique_id, title, performer, duration, \
              source, mime_type, file_size, created_at, mtproto_document \
-             FROM tracks WHERE tg_user_id = ?1 ORDER BY created_at ASC, id ASC",
+             FROM tracks WHERE tg_user_id = ?1 \
+             ORDER BY track_position ASC, created_at DESC, id DESC",
         )?;
         let rows = stmt
             .query_map(params![tg_user_id], map_track)?
@@ -177,12 +180,13 @@ impl Db {
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "INSERT INTO tracks (tg_user_id, file_id, file_unique_id, title, performer, duration, \
-             source, mime_type, file_size, mtproto_document) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'mtproto', ?7, ?8, ?9) \
+             source, mime_type, file_size, track_position, mtproto_document) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'mtproto', ?7, ?8, ?9, ?10) \
              ON CONFLICT (file_unique_id) DO UPDATE SET \
                file_id = excluded.file_id, title = excluded.title, performer = excluded.performer, \
                duration = excluded.duration, mime_type = excluded.mime_type, \
-               file_size = excluded.file_size, mtproto_document = excluded.mtproto_document",
+               file_size = excluded.file_size, track_position = excluded.track_position, \
+               mtproto_document = excluded.mtproto_document",
             params![
                 t.tg_user_id,
                 t.file_id,
@@ -192,6 +196,7 @@ impl Db {
                 t.duration,
                 t.mime_type,
                 t.file_size,
+                t.track_position,
                 t.mtproto_document,
             ],
         )?;

@@ -14,10 +14,6 @@ use tauri::Manager;
 use crate::state::AppState;
 
 /// Builds and runs the Tauri application.
-///
-/// # Panics
-///
-/// Panics if the application fails to initialize or run, which is unrecoverable.
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())

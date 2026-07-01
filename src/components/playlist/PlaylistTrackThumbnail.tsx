@@ -8,11 +8,7 @@ export function TrackThumbnail(props: {
 }) {
   const { ref, entry } = useIntersection<HTMLDivElement>({ rootMargin: "400px" });
   const inView = entry?.isIntersecting ?? false;
-  const { url, loaded, failed } = useCachedThumbnail(
-    props.fileUniqueId,
-    props.trackId,
-    { enabled: inView },
-  );
+  const { url, loaded, failed } = useCachedThumbnail(props.trackId, { enabled: inView });
 
   return (
     <div

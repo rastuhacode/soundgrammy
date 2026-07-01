@@ -12,7 +12,6 @@ interface ThumbnailState {
 const pathCache = new Map<number, string | null>();
 
 export function useCachedThumbnail(
-  _fileUniqueId: string,
   trackId: number,
   options?: { enabled?: boolean },
 ): ThumbnailState {
