@@ -48,7 +48,7 @@ export function AudioProgressBar({
   return (
     <div
       className={cn(
-        "group/audiobar absolute h-8 -top-4 w-full cursor-pointer z-100",
+        "group/audiobar absolute h-8 -top-4 w-full z-100",
         className,
       )}
     >
@@ -75,7 +75,7 @@ export function AudioProgressBar({
 
       <input
         type="range"
-        className="absolute inset-0 h-full w-full cursor-pointer appearance-none opacity-0 [&::-moz-range-thumb]:size-4 [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-transparent [&::-moz-range-track]:bg-transparent [&::-webkit-slider-runnable-track]:bg-transparent [&::-webkit-slider-thumb]:size-4 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:bg-transparent"
+        className="absolute inset-0 h-full w-full appearance-none opacity-0 [&::-moz-range-thumb]:size-4 [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-transparent [&::-moz-range-track]:bg-transparent [&::-webkit-slider-runnable-track]:bg-transparent [&::-webkit-slider-thumb]:size-4 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:bg-transparent"
         min={0}
         max={duration || 0}
         step={0.1}

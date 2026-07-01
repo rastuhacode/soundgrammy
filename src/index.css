@@ -123,9 +123,6 @@
     -webkit-user-select: none;
     user-select: none;
   }
-  button {
-    @apply cursor-pointer;
-  }
 }
 
 /* ---------- Custom scrollbars ---------- */

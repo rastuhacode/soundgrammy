@@ -52,7 +52,7 @@ function PlaylistItem({
   return (
     <div
       className={cn(
-        "group flex w-full cursor-pointer items-center gap-3 rounded-lg px-2 py-2 transition-colors",
+        "group flex w-full items-center gap-3 rounded-lg px-2 py-2 transition-colors",
         isActive
           ? "bg-accent text-accent-foreground"
           : "text-foreground hover:bg-muted/70",

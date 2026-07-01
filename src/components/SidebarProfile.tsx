@@ -1,4 +1,4 @@
-import { Hash, LogOut, RadioTower, UserRound } from "lucide-react";
+import { LogOut, RadioTower, Settings } from "lucide-react";
 import { useState } from "react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import {
@@ -19,6 +19,7 @@ import {
   useSessionStore,
 } from "@/stores/session-store";
 import { api } from "@/lib/api";
+import { Button } from "@/components/ui/button";
 
 interface SidebarProfileProps {
   onLogout: () => void;
@@ -65,8 +66,9 @@ export function SidebarProfile({ onLogout }: SidebarProfileProps) {
       />
 
       <DropdownMenuContent
-        align="end"
-        className="w-64 overflow-hidden rounded-xl border-border/80 bg-popover/95 p-0 shadow-lg backdrop-blur-md"
+        sideOffset={5}
+        align="center"
+        className="w-64 overflow-hidden rounded-xl border-border/80 bg-popover/95 p-0 backdrop-blur-md"
       >
         <div className="border-b border-border/60 bg-primary/6 px-3 py-3">
           <div className="flex items-center gap-3">
@@ -101,72 +103,34 @@ export function SidebarProfile({ onLogout }: SidebarProfileProps) {
 
         <div className="p-1.5">
           <DropdownMenuGroup>
-            <DropdownMenuLabel>Account</DropdownMenuLabel>
-
-            <div className="flex items-center gap-2.5 rounded-lg px-2.5 py-2">
-              <UserRound className="size-3.5 text-primary/80" />
-              <span className="flex min-w-0 flex-col gap-0.5">
-                <span className="text-xs text-muted-foreground">Display name</span>
-                <span className="truncate text-sm text-foreground">
-                  {displayName}
-                </span>
-              </span>
-            </div>
-
-            {session.username
-              ? (
-                  <div className="flex items-center gap-2.5 rounded-lg px-2.5 py-2">
-                    <span className="flex size-3.5 items-center justify-center font-mono text-[10px] text-primary/80">
-                      @
-                    </span>
-                    <span className="flex min-w-0 flex-col gap-0.5">
-                      <span className="text-xs text-muted-foreground">Username</span>
-                      <span className="truncate font-mono text-sm text-foreground">
-                        @
-                        {session.username}
-                      </span>
-                    </span>
-                  </div>
-                )
-              : null}
-
-            <div className="flex items-center gap-2.5 rounded-lg px-2.5 py-2">
-              <Hash className="size-3.5 text-primary/80" />
-              <span className="flex min-w-0 flex-col gap-0.5">
-                <span className="text-xs text-muted-foreground">Telegram ID</span>
-                <span className="truncate font-mono text-sm text-foreground">
-                  {session.tgUserId}
-                </span>
-              </span>
-            </div>
-          </DropdownMenuGroup>
-          <DropdownMenuSeparator />
-          <DropdownMenuGroup>
             <DropdownMenuLabel>Telegram</DropdownMenuLabel>
 
-            <div className="flex items-center gap-2.5 rounded-lg px-2.5 py-2">
-              <RadioTower className="size-3.5 text-primary/80" />
+            <div className="flex items-center gap-2.5 rounded-lg py-2">
+              <Button variant="ghost" size="icon-sm">
+                <RadioTower className="text-primary/80" />
+              </Button>
               <span className="flex min-w-0 flex-col gap-0.5">
                 <span className="text-xs text-muted-foreground">Sync status</span>
                 <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-primary">
                   {statusLabel}
                 </span>
-                <span className="text-sm leading-snug text-foreground">
+                <span className="text-xs leading-snug text-foreground text-ellipsis">
                   {statusDetail}
                 </span>
               </span>
             </div>
+
           </DropdownMenuGroup>
 
           <DropdownMenuSeparator />
-
+          <DropdownMenuItem>
+            <Settings className="size-4" />
+            Settings
+          </DropdownMenuItem>
           <DropdownMenuItem
             variant="destructive"
             disabled={isLoggingOut}
-            onClick={(event) => {
-              event.preventDefault();
-              void handleLogout();
-            }}
+            onClick={handleLogout}
           >
             <LogOut className="size-4" />
             {isLoggingOut ? "Signing out…" : "Log out"}

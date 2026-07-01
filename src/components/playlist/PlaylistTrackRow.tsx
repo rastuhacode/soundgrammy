@@ -59,7 +59,7 @@ export function PlaylistTrackRow({
       onClick={() => onTrackSelect(track)}
       aria-label={showEqualizer ? "Pause track" : "Play track"}
       className={cn(
-        "group relative flex items-center gap-3 rounded-lg px-2.5 transition-colors duration-200 cursor-pointer hover:bg-card/70",
+        "group relative flex items-center gap-3 rounded-lg px-2.5 transition-colors duration-200 hover:bg-card/70",
         className,
       )}
       style={{ height: `${TRACK_ROW_HEIGHT}px`, ...style }}
