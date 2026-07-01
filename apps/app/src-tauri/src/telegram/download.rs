@@ -7,8 +7,8 @@
 
 use std::path::Path;
 
-use grammers_client::Client;
 use grammers_client::media::Downloadable;
+use grammers_client::Client;
 use grammers_mtsender::InvocationError;
 use grammers_tl_types as tl;
 use serde::Serialize;
@@ -18,7 +18,7 @@ use tokio::io::AsyncWriteExt;
 use crate::db::Track;
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
-use crate::telegram::document::{StoredDocument, parse_document};
+use crate::telegram::document::{parse_document, StoredDocument};
 
 /// A raw, location-based downloadable for documents and their thumbnails.
 struct RawDownloadable {
@@ -71,8 +71,16 @@ pub async fn download_audio(
 
     let total = doc.size_bytes();
     let location = doc.input_location();
-    match stream_to_file(&state.client, location, Some(total as usize), app, track.id, total, &part)
-        .await
+    match stream_to_file(
+        &state.client,
+        location,
+        Some(total as usize),
+        app,
+        track.id,
+        total,
+        &part,
+    )
+    .await
     {
         Ok(()) => {}
         Err(err) if is_file_reference_error(&err) => {
@@ -98,11 +106,7 @@ pub async fn download_audio(
 
 /// Downloads the remote thumbnail (if the document has one) to `dest`.
 /// Returns `false` when the document has no remote thumbnail.
-pub async fn download_thumbnail(
-    state: &AppState,
-    track: &Track,
-    dest: &Path,
-) -> AppResult<bool> {
+pub async fn download_thumbnail(state: &AppState, track: &Track, dest: &Path) -> AppResult<bool> {
     let doc = stored_document(track)?;
     let Some(location) = doc.thumb_input_location() else {
         return Ok(false);

@@ -1,9 +1,9 @@
 //! Authentication flows: phone + 2FA and QR login (raw `auth.ExportLoginToken`).
 
-use base64::Engine;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64URL;
-use grammers_client::SignInError;
+use base64::Engine;
 use grammers_client::client::PasswordToken;
+use grammers_client::SignInError;
 use grammers_mtsender::InvocationError;
 use grammers_session::Session;
 use grammers_tl_types as tl;
@@ -227,10 +227,11 @@ async fn handle_login_token(
 // ---- session lifecycle ---------------------------------------------------
 
 pub async fn logout(state: &AppState) -> AppResult<()> {
-    // Best-effort remote sign-out; local state is cleared regardless.
+    // Best-effort remote sign-out; local library data stays available for the
+    // same Telegram user on this device after they sign in again.
     let _ = state.client.sign_out().await;
     if let Ok(Some(profile)) = state.db.load_profile() {
-        state.db.clear_account(profile.tg_user_id)?;
+        state.db.clear_active_profile(profile.tg_user_id)?;
     }
     crate::session::clear(&state.data_dir)?;
     let mut pending = state.pending.lock().await;

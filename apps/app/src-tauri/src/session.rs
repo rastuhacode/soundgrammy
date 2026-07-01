@@ -11,11 +11,11 @@ use std::sync::Arc;
 
 use aes_gcm::aead::{Aead, KeyInit, OsRng};
 use aes_gcm::{AeadCore, Aes256Gcm, Key, Nonce};
-use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
+use base64::Engine;
+use grammers_session::storages::MemorySession;
 use grammers_session::Session;
 use grammers_session::SessionData;
-use grammers_session::storages::MemorySession;
 
 use crate::error::{AppError, AppResult};
 

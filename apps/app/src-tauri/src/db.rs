@@ -8,7 +8,7 @@
 use std::path::Path;
 use std::sync::Mutex;
 
-use rusqlite::{Connection, OptionalExtension, params};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
 
 use crate::error::AppResult;
@@ -279,16 +279,10 @@ impl Db {
         Ok(profile)
     }
 
-    pub fn clear_account(&self, tg_user_id: i64) -> AppResult<()> {
+    pub fn clear_active_profile(&self, tg_user_id: i64) -> AppResult<()> {
         let conn = self.conn.lock().unwrap();
-        conn.execute("DELETE FROM tracks WHERE tg_user_id = ?1", params![tg_user_id])?;
         conn.execute(
-            "DELETE FROM playlists WHERE tg_user_id = ?1",
-            params![tg_user_id],
-        )?;
-        conn.execute("DELETE FROM profile WHERE tg_user_id = ?1", params![tg_user_id])?;
-        conn.execute(
-            "DELETE FROM app_meta WHERE tg_user_id = ?1",
+            "DELETE FROM profile WHERE tg_user_id = ?1",
             params![tg_user_id],
         )?;
         Ok(())
@@ -534,7 +528,9 @@ impl Db {
             .optional()?
             .ok_or_else(|| crate::error::AppError::msg("Playlist not found"))?;
         if kind == "liked" {
-            return Err(crate::error::AppError::msg("Cannot delete the Liked playlist"));
+            return Err(crate::error::AppError::msg(
+                "Cannot delete the Liked playlist",
+            ));
         }
         conn.execute(
             "DELETE FROM playlists WHERE id = ?1 AND tg_user_id = ?2",
@@ -568,7 +564,9 @@ impl Db {
             .optional()?
             .ok_or_else(|| crate::error::AppError::msg("Playlist not found"))?;
         if kind == "liked" {
-            return Err(crate::error::AppError::msg("Use toggle_like for the Liked playlist"));
+            return Err(crate::error::AppError::msg(
+                "Use toggle_like for the Liked playlist",
+            ));
         }
         let position = Self::next_position(&conn, playlist_id)?;
         conn.execute(
@@ -658,4 +656,62 @@ fn map_track(row: &rusqlite::Row<'_>) -> rusqlite::Result<Track> {
         created_at: row.get(10)?,
         mtproto_document: row.get(11)?,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::{Path, PathBuf};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    use super::*;
+
+    fn temp_db_path() -> PathBuf {
+        let unique = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system clock should be after unix epoch")
+            .as_nanos();
+
+        std::env::temp_dir().join(format!(
+            "soundgrammy-db-test-{}-{unique}.sqlite",
+            std::process::id()
+        ))
+    }
+
+    fn remove_sqlite_files(path: &Path) {
+        let base = path.to_string_lossy();
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_file(format!("{base}-wal"));
+        let _ = std::fs::remove_file(format!("{base}-shm"));
+    }
+
+    #[test]
+    fn clearing_active_profile_keeps_user_scoped_playlists() -> AppResult<()> {
+        let path = temp_db_path();
+
+        {
+            let db = Db::open(&path)?;
+            let user_a = 1001;
+            let user_c = 2002;
+
+            db.save_profile(user_a, "User A", None, Some("user_a"), None)?;
+            let playlist = db.create_playlist(user_a, "Playlist B", None)?;
+            db.clear_active_profile(user_a)?;
+            assert!(db.load_profile()?.is_none());
+
+            db.save_profile(user_c, "User C", None, Some("user_c"), None)?;
+            let user_c_playlists = db.playlists_bundle(user_c)?;
+            assert!(user_c_playlists.custom.is_empty());
+
+            db.clear_active_profile(user_c)?;
+            db.save_profile(user_a, "User A", None, Some("user_a"), None)?;
+            let user_a_playlists = db.playlists_bundle(user_a)?;
+
+            assert_eq!(user_a_playlists.custom.len(), 1);
+            assert_eq!(user_a_playlists.custom[0].id, playlist.id);
+            assert_eq!(user_a_playlists.custom[0].name, "Playlist B");
+        }
+
+        remove_sqlite_files(&path);
+        Ok(())
+    }
 }

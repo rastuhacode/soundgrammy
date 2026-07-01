@@ -5,8 +5,8 @@
 //! file reference, home DC, and the chosen remote thumbnail size. This mirrors
 //! the web app's `lib/mtproto/document.ts`.
 
-use base64::Engine;
 use base64::engine::general_purpose::STANDARD as B64;
+use base64::Engine;
 use grammers_tl_types as tl;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -41,7 +41,8 @@ pub struct StoredDocument {
 
 impl StoredDocument {
     pub fn file_reference_bytes(&self) -> Vec<u8> {
-        B64.decode(self.file_reference.as_bytes()).unwrap_or_default()
+        B64.decode(self.file_reference.as_bytes())
+            .unwrap_or_default()
     }
 
     pub fn size_bytes(&self) -> i64 {
@@ -161,7 +162,9 @@ pub fn parse_document(doc: &tl::types::Document) -> ParsedDocument {
 
 /// Picks the best remote thumbnail (prefers a mid "m" size, else the largest
 /// declared byte size) and returns its `(type, file_size)`.
-fn pick_best_remote_thumb(thumbs: Option<&[tl::enums::PhotoSize]>) -> (Option<String>, Option<String>) {
+fn pick_best_remote_thumb(
+    thumbs: Option<&[tl::enums::PhotoSize]>,
+) -> (Option<String>, Option<String>) {
     let Some(thumbs) = thumbs else {
         return (None, None);
     };
@@ -170,18 +173,23 @@ fn pick_best_remote_thumb(thumbs: Option<&[tl::enums::PhotoSize]>) -> (Option<St
     for thumb in thumbs {
         let (type_, size, priority) = match thumb {
             tl::enums::PhotoSize::Size(s) => (s.r#type.clone(), s.size as i64, 2),
-            tl::enums::PhotoSize::Progressive(s) => {
-                (s.r#type.clone(), s.sizes.iter().copied().max().unwrap_or(0) as i64, 1)
-            }
+            tl::enums::PhotoSize::Progressive(s) => (
+                s.r#type.clone(),
+                s.sizes.iter().copied().max().unwrap_or(0) as i64,
+                1,
+            ),
             _ => continue,
         };
         // Prefer the "m" size when present; otherwise fall back to largest.
-        let this_priority = if type_ == "m" { priority + 10 } else { priority };
+        let this_priority = if type_ == "m" {
+            priority + 10
+        } else {
+            priority
+        };
         let take = match &best {
             None => true,
             Some((_, best_size, best_prio)) => {
-                this_priority > *best_prio
-                    || (this_priority == *best_prio && size > *best_size)
+                this_priority > *best_prio || (this_priority == *best_prio && size > *best_size)
             }
         };
         if take {
@@ -222,7 +230,9 @@ fn serialize_attributes(attributes: &[tl::enums::DocumentAttribute]) -> Vec<serd
                 "w": i.w,
                 "h": i.h,
             }),
-            tl::enums::DocumentAttribute::Animated => json!({ "type": "DocumentAttributeAnimated" }),
+            tl::enums::DocumentAttribute::Animated => {
+                json!({ "type": "DocumentAttributeAnimated" })
+            }
             tl::enums::DocumentAttribute::Sticker(_) => {
                 json!({ "type": "DocumentAttributeSticker" })
             }

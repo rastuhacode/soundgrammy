@@ -17,6 +17,12 @@ impl Config {
     /// Resolves credentials from the runtime environment first (dev override),
     /// then the values embedded at compile time.
     pub fn load() -> AppResult<Self> {
+        #[cfg(debug_assertions)]
+        {
+            // Optional: don't fail if file is missing
+            let _ = dotenvy::from_filename(".env.local");
+        }
+
         let api_id_raw = std::env::var("TELEGRAM_API_ID")
             .ok()
             .or_else(|| option_env!("TELEGRAM_API_ID").map(str::to_owned))

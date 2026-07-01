@@ -47,13 +47,13 @@ export function PlaylistTrackDropdown(props: PlaylistTrackDropdownProps) {
             size="icon-xs"
             aria-label="Track options"
             className="text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
-            onClick={(e) => e.stopPropagation()}
           >
             <Ellipsis className="size-5" />
           </Button>
         )}
+        onClick={(e) => e.stopPropagation()}
       />
-      <DropdownMenuContent>
+      <DropdownMenuContent onClick={(e) => e.stopPropagation()}>
         <DropdownMenuItem onClick={() => onToggleLike(track.id)}>
           <Heart
             className={cn("size-4", isLiked && "fill-primary text-primary")}
@@ -87,8 +87,7 @@ export function PlaylistTrackDropdown(props: PlaylistTrackDropdownProps) {
             <>
               <DropdownMenuSeparator />
               <DropdownMenuItem
-                onClick={() =>
-                  onDeleteFromPlaylist(currentPlaylist.id as number, track.id)}
+                onClick={() => onDeleteFromPlaylist(currentPlaylist.id as number, track.id)}
               >
                 <ListX className="size-4" />
                 Remove from playlist

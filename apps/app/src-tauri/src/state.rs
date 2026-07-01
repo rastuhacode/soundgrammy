@@ -8,8 +8,8 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use grammers_client::Client;
 use grammers_client::client::{LoginToken, PasswordToken};
+use grammers_client::Client;
 use grammers_session::storages::MemorySession;
 use tokio::sync::Mutex;
 

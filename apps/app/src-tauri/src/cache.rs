@@ -14,8 +14,8 @@ use tauri::AppHandle;
 use crate::db::Track;
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
-use crate::telegram::{auth, download};
 use crate::telegram::document::extension_for_mime;
+use crate::telegram::{auth, download};
 
 fn audio_dir(state: &AppState) -> PathBuf {
     state.cache_dir.join("audio")
@@ -128,12 +128,13 @@ pub async fn ensure_avatar(state: &AppState) -> AppResult<Option<PathBuf>> {
         return Ok(Some(dest));
     }
 
-    let location =
-        tl::enums::InputFileLocation::InputPeerPhotoFileLocation(tl::types::InputPeerPhotoFileLocation {
+    let location = tl::enums::InputFileLocation::InputPeerPhotoFileLocation(
+        tl::types::InputPeerPhotoFileLocation {
             big: false,
             peer: tl::enums::InputPeer::PeerSelf,
             photo_id: photo.photo_id,
-        });
+        },
+    );
 
     download::download_location(&state.client, location, &dest).await?;
     Ok(Some(dest))
