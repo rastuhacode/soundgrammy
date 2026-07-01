@@ -1,13 +1,14 @@
 import { Download, Ellipsis, Heart, Info, ListPlus, ListX } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
-  Menu,
-  MenuContent,
-  MenuItem,
-  MenuLabel,
-  MenuSeparator,
-  MenuTrigger,
-} from "@/components/ui/menu";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuGroup,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import type { Track } from "@/lib/db";
 import type { ResolvedSelectedPlaylist } from "@/stores/playlists-store";
 import { cn } from "@/lib/utils";
@@ -38,68 +39,74 @@ export function PlaylistTrackDropdown(props: PlaylistTrackDropdownProps) {
   } = props;
 
   return (
-    <Menu>
-      <MenuTrigger>
-        <Button
-          variant="ghost"
-          size="icon-xs"
-          aria-label="Track options"
-          className="text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
-        >
-          <Ellipsis className="size-5" />
-        </Button>
-      </MenuTrigger>
-      <MenuContent align="end" className="w-56">
-        <MenuItem onClick={() => onToggleLike(track.id)}>
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={(
+          <Button
+            variant="ghost"
+            size="icon-xs"
+            aria-label="Track options"
+            className="text-muted-foreground opacity-0 group-hover:opacity-100 focus-visible:opacity-100"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <Ellipsis className="size-5" />
+          </Button>
+        )}
+      />
+      <DropdownMenuContent>
+        <DropdownMenuItem onClick={() => onToggleLike(track.id)}>
           <Heart
             className={cn("size-4", isLiked && "fill-primary text-primary")}
           />
           {isLiked ? "Remove from Liked" : "Add to Liked"}
-        </MenuItem>
+        </DropdownMenuItem>
 
-        <MenuSeparator />
-        <MenuLabel>Add to playlist</MenuLabel>
-        {availablePlaylists.length === 0 ? (
-          <MenuItem disabled>
-            <ListPlus className="size-4" />
-            No other playlists
-          </MenuItem>
-        ) : (
-          availablePlaylists.map((playlist) => (
-            <MenuItem
-              key={playlist.id}
-              onClick={() => onAddToPlaylist(playlist.id, track.id)}
-            >
-              <ListPlus className="size-4" />
-              {playlist.name}
-            </MenuItem>
-          ))
-        )}
+        <DropdownMenuSeparator />
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>Add to playlist</DropdownMenuLabel>
+          {availablePlaylists.length === 0
+            ? (
+                <DropdownMenuItem disabled>
+                  <ListPlus className="size-4" />
+                  No other playlists
+                </DropdownMenuItem>
+              )
+            : (
+                availablePlaylists.map((playlist) => (
+                  <DropdownMenuItem
+                    key={playlist.id}
+                    onClick={() => onAddToPlaylist(playlist.id, track.id)}
+                  >
+                    <ListPlus className="size-4" />
+                    {playlist.name}
+                  </DropdownMenuItem>
+                ))
+              )}
 
-        {currentPlaylist.isCustom && (
-          <>
-            <MenuSeparator />
-            <MenuItem
-              onClick={() =>
-                onDeleteFromPlaylist(currentPlaylist.id as number, track.id)
-              }
-            >
-              <ListX className="size-4" />
-              Remove from playlist
-            </MenuItem>
-          </>
-        )}
+          {currentPlaylist.isCustom && (
+            <>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={() =>
+                  onDeleteFromPlaylist(currentPlaylist.id as number, track.id)}
+              >
+                <ListX className="size-4" />
+                Remove from playlist
+              </DropdownMenuItem>
+            </>
+          )}
+        </DropdownMenuGroup>
 
-        <MenuSeparator />
-        <MenuItem onClick={() => onDownload(track)}>
+        <DropdownMenuSeparator />
+        <DropdownMenuItem onClick={() => onDownload(track)}>
           <Download className="size-4" />
           Download
-        </MenuItem>
-        <MenuItem onClick={() => onShowInfo(track)}>
+        </DropdownMenuItem>
+        <DropdownMenuItem onClick={() => onShowInfo(track)}>
           <Info className="size-4" />
           Show info
-        </MenuItem>
-      </MenuContent>
-    </Menu>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

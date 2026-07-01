@@ -71,22 +71,24 @@ export function PlaylistTrackRow({
             isActive ? "opacity-100" : "opacity-0 group-hover:opacity-100"
           }`}
         >
-          {showEqualizer ? (
-            <span className="equalizer flex h-4 items-end gap-1">
-              <span className="w-[3px] rounded-[1px] bg-foreground" />
-              <span />
-              <span />
-            </span>
-          ) : (
-            <Play
-              className={cn(
-                "size-5",
-                isActive
-                  ? "fill-primary text-primary"
-                  : "fill-foreground text-foreground",
+          {showEqualizer
+            ? (
+                <span className="equalizer flex h-4 items-end gap-1">
+                  <span className="w-[3px] rounded-[1px] bg-foreground" />
+                  <span />
+                  <span />
+                </span>
+              )
+            : (
+                <Play
+                  className={cn(
+                    "size-5",
+                    isActive
+                      ? "fill-primary text-primary"
+                      : "fill-foreground text-foreground",
+                  )}
+                />
               )}
-            />
-          )}
         </span>
       </div>
 

@@ -6,10 +6,10 @@ import {
 } from "@/stores/playlists-store";
 import { cn } from "@/lib/utils";
 
-type SidebarPlaylistThumbnailVariant =
-  | typeof ALL_TRACKS_PLAYLIST_ID
-  | typeof LIKED_PLAYLIST_ID
-  | "custom";
+type SidebarPlaylistThumbnailVariant
+  = | typeof ALL_TRACKS_PLAYLIST_ID
+    | typeof LIKED_PLAYLIST_ID
+    | "custom";
 
 interface SidebarPlaylistThumbnailProps {
   variant: SidebarPlaylistThumbnailVariant;
@@ -59,17 +59,19 @@ export function SidebarPlaylistThumbnail({
         !showImage && style.className,
       )}
     >
-      {!showImage ? (
-        <div className="flex size-full items-center justify-center">
-          {style.icon}
-        </div>
-      ) : (
-        <img
-          src={coverUrl ?? undefined}
-          alt={`${name} cover`}
-          className="size-full object-cover"
-        />
-      )}
+      {!showImage
+        ? (
+            <div className="flex size-full items-center justify-center">
+              {style.icon}
+            </div>
+          )
+        : (
+            <img
+              src={coverUrl ?? undefined}
+              alt={`${name} cover`}
+              className="size-full object-cover"
+            />
+          )}
     </div>
   );
 }

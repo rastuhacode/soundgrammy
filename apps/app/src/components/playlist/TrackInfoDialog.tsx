@@ -51,7 +51,7 @@ function MetadataRow({
   return (
     <div className="grid grid-cols-[7rem_1fr] gap-2 text-sm">
       <dt className="text-muted-foreground">{label}</dt>
-      <dd className="min-w-0 break-words text-foreground">{value}</dd>
+      <dd className="min-w-0 wrap-break-word text-foreground">{value}</dd>
     </div>
   );
 }
@@ -66,6 +66,7 @@ export function TrackInfoDialog({
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect -- This effect owns the async metadata load lifecycle for the open track. */
     if (!open || !track) {
       setMetadata(null);
       setError(null);
@@ -92,6 +93,7 @@ export function TrackInfoDialog({
     return () => {
       cancelled = true;
     };
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [open, track]);
 
   const thumbnail = useCachedThumbnail(
@@ -101,14 +103,13 @@ export function TrackInfoDialog({
   );
 
   const title = metadata?.track.title ?? track?.title ?? "Unknown Title";
-  const performer =
-    metadata?.track.performer ?? track?.performer ?? "Unknown Artist";
+  const performer
+    = metadata?.track.performer ?? track?.performer ?? "Unknown Artist";
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent
         className="flex max-h-[min(85vh,720px)] flex-col overflow-hidden sm:max-w-lg"
-        onClose={() => onOpenChange(false)}
       >
         <DialogHeader className="shrink-0 pr-8">
           <DialogTitle>Track info</DialogTitle>
@@ -122,17 +123,19 @@ export function TrackInfoDialog({
             <div className="flex flex-col gap-5 pr-1">
               <div className="flex items-start gap-4">
                 <div className="size-24 shrink-0 overflow-hidden rounded-lg border border-border bg-muted">
-                  {thumbnail.url ? (
-                    <img
-                      src={thumbnail.url}
-                      alt=""
-                      className="size-full object-cover"
-                    />
-                  ) : (
-                    <div className="flex size-full items-center justify-center text-xs text-muted-foreground">
-                      No cover
-                    </div>
-                  )}
+                  {thumbnail.url
+                    ? (
+                        <img
+                          src={thumbnail.url}
+                          alt=""
+                          className="size-full object-cover"
+                        />
+                      )
+                    : (
+                        <div className="flex size-full items-center justify-center text-xs text-muted-foreground">
+                          No cover
+                        </div>
+                      )}
                 </div>
                 <div className="min-w-0 pt-1">
                   <p className="truncate text-base font-medium text-foreground">
@@ -227,46 +230,48 @@ export function TrackInfoDialog({
                       Attributes
                     </h3>
 
-                    {metadata.document.attributes.length === 0 ? (
-                      <p className="rounded-lg border border-border bg-card/50 p-3 text-sm text-muted-foreground">
-                        No document attributes available. Re-sync your library to
-                        cache them on future imports.
-                      </p>
-                    ) : (
-                      <div className="space-y-3">
-                        {metadata.document.attributes.map((attribute, index) => {
-                          const entries = Object.entries(attribute).filter(
-                            ([key]) => key !== "type",
-                          );
+                    {metadata.document.attributes.length === 0
+                      ? (
+                          <p className="rounded-lg border border-border bg-card/50 p-3 text-sm text-muted-foreground">
+                            No document attributes available. Re-sync your library to
+                            cache them on future imports.
+                          </p>
+                        )
+                      : (
+                          <div className="space-y-3">
+                            {metadata.document.attributes.map((attribute, index) => {
+                              const entries = Object.entries(attribute).filter(
+                                ([key]) => key !== "type",
+                              );
 
-                          return (
-                            <div
-                              key={`${String(attribute.type)}-${index}`}
-                              className="rounded-lg border border-border bg-card/50 p-3"
-                            >
-                              <p className="mb-2 text-sm font-medium text-foreground">
-                                {String(attribute.type)}
-                              </p>
-                              <dl className="space-y-1.5">
-                                {entries.map(([key, value]) => (
-                                  <div
-                                    key={key}
-                                    className="grid grid-cols-[6.5rem_1fr] gap-2 text-sm"
-                                  >
-                                    <dt className="text-muted-foreground">
-                                      {key}
-                                    </dt>
-                                    <dd className="min-w-0 break-all font-mono text-xs text-foreground">
-                                      {formatAttributeValue(value)}
-                                    </dd>
-                                  </div>
-                                ))}
-                              </dl>
-                            </div>
-                          );
-                        })}
-                      </div>
-                    )}
+                              return (
+                                <div
+                                  key={`${String(attribute.type)}-${index}`}
+                                  className="rounded-lg border border-border bg-card/50 p-3"
+                                >
+                                  <p className="mb-2 text-sm font-medium text-foreground">
+                                    {String(attribute.type)}
+                                  </p>
+                                  <dl className="space-y-1.5">
+                                    {entries.map(([key, value]) => (
+                                      <div
+                                        key={key}
+                                        className="grid grid-cols-[6.5rem_1fr] gap-2 text-sm"
+                                      >
+                                        <dt className="text-muted-foreground">
+                                          {key}
+                                        </dt>
+                                        <dd className="min-w-0 break-all font-mono text-xs text-foreground">
+                                          {formatAttributeValue(value)}
+                                        </dd>
+                                      </div>
+                                    ))}
+                                  </dl>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
                   </section>
                 </>
               )}

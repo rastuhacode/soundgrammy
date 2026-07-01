@@ -59,12 +59,15 @@ export function PlaylistFormDialog({
 
   useEffect(() => {
     if (!open) return;
+    // Opening the modal starts a fresh edit session from the selected playlist.
+    /* eslint-disable react-hooks/set-state-in-effect -- Form draft state must reset when a new dialog session opens. */
     setName(playlist?.name ?? "");
     setNameError(null);
     setThumbnailFile(null);
     setThumbnailPreview(null);
     setRemoveThumbnail(false);
     setThumbnailError(null);
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [open, playlist]);
 
   useEffect(() => {
@@ -73,8 +76,8 @@ export function PlaylistFormDialog({
     };
   }, [thumbnailPreview]);
 
-  const previewSrc =
-    thumbnailPreview ?? (!removeThumbnail ? existingThumbnail : null);
+  const previewSrc
+    = thumbnailPreview ?? (!removeThumbnail ? existingThumbnail : null);
 
   const handleThumbnailChange = (file: File | null) => {
     setThumbnailError(null);
@@ -172,7 +175,7 @@ export function PlaylistFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md" onClose={() => onOpenChange(false)}>
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle>{isEdit ? "Edit playlist" : "Create playlist"}</DialogTitle>
           <DialogDescription>
@@ -198,9 +201,11 @@ export function PlaylistFormDialog({
               placeholder="My playlist"
               autoComplete="off"
             />
-            {nameError ? (
-              <p className="text-xs text-destructive">{nameError}</p>
-            ) : null}
+            {nameError
+              ? (
+                  <p className="text-xs text-destructive">{nameError}</p>
+                )
+              : null}
           </div>
 
           <div className="flex flex-col gap-1.5">
@@ -212,17 +217,19 @@ export function PlaylistFormDialog({
             </label>
             <div className="flex items-start gap-4">
               <div className="relative size-24 shrink-0 overflow-hidden rounded-lg bg-muted shadow-sm ring-1 ring-border/60">
-                {previewSrc ? (
-                  <img
-                    src={previewSrc}
-                    alt="Playlist cover preview"
-                    className="size-full object-cover"
-                  />
-                ) : (
-                  <div className="flex size-full items-center justify-center bg-linear-to-br from-slate-600 to-slate-800 text-white/80">
-                    <ImagePlus className="size-8" />
-                  </div>
-                )}
+                {previewSrc
+                  ? (
+                      <img
+                        src={previewSrc}
+                        alt="Playlist cover preview"
+                        className="size-full object-cover"
+                      />
+                    )
+                  : (
+                      <div className="flex size-full items-center justify-center bg-linear-to-br from-slate-600 to-slate-800 text-white/80">
+                        <ImagePlus className="size-8" />
+                      </div>
+                    )}
               </div>
 
               <div className="flex min-w-0 flex-1 flex-col gap-2">
@@ -232,27 +239,30 @@ export function PlaylistFormDialog({
                   type="file"
                   accept="image/jpeg,image/png,image/webp"
                   onChange={(event) =>
-                    handleThumbnailChange(event.target.files?.[0] ?? null)
-                  }
+                    handleThumbnailChange(event.target.files?.[0] ?? null)}
                 />
                 <p className="text-xs text-muted-foreground">
                   JPEG, PNG, or WebP up to 512KB.
                 </p>
-                {previewSrc ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={handleRemoveThumbnail}
-                    className="w-fit"
-                  >
-                    <Trash2 />
-                    Remove image
-                  </Button>
-                ) : null}
-                {thumbnailError ? (
-                  <p className="text-xs text-destructive">{thumbnailError}</p>
-                ) : null}
+                {previewSrc
+                  ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleRemoveThumbnail}
+                        className="w-fit"
+                      >
+                        <Trash2 />
+                        Remove image
+                      </Button>
+                    )
+                  : null}
+                {thumbnailError
+                  ? (
+                      <p className="text-xs text-destructive">{thumbnailError}</p>
+                    )
+                  : null}
               </div>
             </div>
           </div>

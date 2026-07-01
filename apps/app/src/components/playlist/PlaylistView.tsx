@@ -84,6 +84,9 @@ export function PlaylistView() {
     id: playlistId,
   } = selectedPlaylist;
 
+  // TanStack Virtual intentionally returns live functions; this component does
+  // not pass them through memoized props, so the compiler warning is acceptable.
+  // eslint-disable-next-line react-hooks/incompatible-library
   const virtualizer = useVirtualizer({
     count: tracks.length,
     gap: 8,

@@ -1,6 +1,6 @@
 import { readLocalStorageValue } from "@mantine/hooks";
 import { create } from "zustand";
-import z from "zod";
+import { z } from "zod";
 
 const REPEAT_STORAGE_KEY = "soundgrammy-repeat";
 const repeatCycle = ["none", "one", "all"] as const;

@@ -10,6 +10,7 @@ export function usePlaylistThumbnail(
   const [src, setSrc] = useState<string | null>(null);
 
   useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect -- Cover image state mirrors an async backend lookup keyed by playlistId. */
     if (playlistId === undefined || !hasThumbnail) {
       setSrc(null);
       return;
@@ -28,6 +29,7 @@ export function usePlaylistThumbnail(
     return () => {
       cancelled = true;
     };
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [playlistId, hasThumbnail]);
 
   return src;

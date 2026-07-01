@@ -69,14 +69,14 @@ export interface SyncResult {
   lastSyncAt: string | null;
 }
 
-export type AuthOutcome =
-  | { status: "authorized"; user: AuthUser }
-  | { status: "passwordRequired"; hint: string | null };
+export type AuthOutcome
+  = | { status: "authorized"; user: AuthUser }
+    | { status: "passwordRequired"; hint: string | null };
 
-export type QrOutcome =
-  | { status: "waiting"; url: string; expires: number }
-  | { status: "passwordRequired"; hint: string | null }
-  | { status: "authorized"; user: AuthUser };
+export type QrOutcome
+  = | { status: "waiting"; url: string; expires: number }
+    | { status: "passwordRequired"; hint: string | null }
+    | { status: "authorized"; user: AuthUser };
 
 export interface SerializedAttribute {
   type: string;

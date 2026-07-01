@@ -73,9 +73,6 @@ export function AudioPlayer() {
     return playlistsData?.liked.trackIds.includes(track?.id ?? 0) ?? false;
   }, [playlistsData, track?.id]);
 
-  volumeRef.current = volume;
-  isPlayingRef.current = isPlaying;
-
   const playAudio = (audio: HTMLAudioElement, generation: number) => {
     void audio
       .play()
@@ -137,7 +134,13 @@ export function AudioPlayer() {
   };
 
   useEffect(hydratePreferences, [hydratePreferences]);
-  useEffect(applyVolume, [volume]);
+  useEffect(() => {
+    volumeRef.current = volume;
+    applyVolume();
+  }, [volume]);
+  useEffect(() => {
+    isPlayingRef.current = isPlaying;
+  }, [isPlaying]);
 
   // Load (and, on first play, download+cache) the current track from disk.
   useEffect(() => {
@@ -256,68 +259,72 @@ export function AudioPlayer() {
         className="hidden"
       />
 
-      {track ? (
-        <div className="relative flex h-24 w-full flex-col border-t border-border bg-card/80 backdrop-blur-xl">
-          <AudioProgressBar
-            currentTime={currentTime}
-            duration={duration}
-            bufferedTime={bufferedTime}
-            onSeek={(time) => {
-              if (!audioRef.current) return;
-              isSeekingRef.current = true;
-              audioRef.current.currentTime = time;
-              setCurrentTime(time);
-            }}
-            onSeekStart={() => {
-              isSeekingRef.current = true;
-            }}
-            onSeekEnd={handleSeekEnd}
-          />
-
-          <div className="flex h-full w-full items-center gap-2 px-4">
-            <div className="flex w-1/3 items-center gap-3">
-              <AudioTrackDescription track={track} />
-            </div>
-
-            <div className="flex w-1/3 flex-col items-center gap-2">
-              <AudioMainOperations
-                isPlaying={isPlaying}
-                onPlayToggle={togglePlay}
-                onPreviousTrack={handlePreviousTrack}
-                onNextTrack={playNext}
-                repeatState={repeat}
-                onRepeatToggle={toggleRepeat}
-                shuffleState={shuffle}
-                onShuffleToggle={toggleShuffle}
+      {track
+        ? (
+            <div className="relative flex h-24 w-full flex-col border-t border-border bg-card/80 backdrop-blur-xl">
+              <AudioProgressBar
+                currentTime={currentTime}
+                duration={duration}
+                bufferedTime={bufferedTime}
+                onSeek={(time) => {
+                  if (!audioRef.current) return;
+                  isSeekingRef.current = true;
+                  audioRef.current.currentTime = time;
+                  setCurrentTime(time);
+                }}
+                onSeekStart={() => {
+                  isSeekingRef.current = true;
+                }}
+                onSeekEnd={handleSeekEnd}
               />
-              <div className="flex items-center gap-1.5 font-mono text-xs tabular-nums text-muted-foreground">
-                {isBuffering ? (
-                  <Loader2 className="size-3 animate-spin text-primary" />
-                ) : null}
-                {formatTime(currentTime)}
-                <span className="mx-1 text-muted-foreground/60">/</span>
-                {formatTime(duration)}
+
+              <div className="flex h-full w-full items-center gap-2 px-4">
+                <div className="flex w-1/3 items-center gap-3">
+                  <AudioTrackDescription track={track} />
+                </div>
+
+                <div className="flex w-1/3 flex-col items-center gap-2">
+                  <AudioMainOperations
+                    isPlaying={isPlaying}
+                    onPlayToggle={togglePlay}
+                    onPreviousTrack={handlePreviousTrack}
+                    onNextTrack={playNext}
+                    repeatState={repeat}
+                    onRepeatToggle={toggleRepeat}
+                    shuffleState={shuffle}
+                    onShuffleToggle={toggleShuffle}
+                  />
+                  <div className="flex items-center gap-1.5 font-mono text-xs tabular-nums text-muted-foreground">
+                    {isBuffering
+                      ? (
+                          <Loader2 className="size-3 animate-spin text-primary" />
+                        )
+                      : null}
+                    {formatTime(currentTime)}
+                    <span className="mx-1 text-muted-foreground/60">/</span>
+                    {formatTime(duration)}
+                  </div>
+                </div>
+
+                <div className="w-1/3 items-center gap-2 flex justify-end">
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    aria-label={isLiked ? "Remove from liked" : "Add to liked"}
+                    onClick={handleToggleLike}
+                  >
+                    <Heart className={cn("size-5", isLiked && "fill-current")} />
+                  </Button>
+                  <AudioVolume
+                    volume={volume}
+                    onVolumeChange={handleVolumeChange}
+                    onMuteToggle={handleMuteToggle}
+                  />
+                </div>
               </div>
             </div>
-
-            <div className="w-1/3 items-center gap-2 flex justify-end">
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label={isLiked ? "Remove from liked" : "Add to liked"}
-                onClick={handleToggleLike}
-              >
-                <Heart className={cn("size-5", isLiked && "fill-current")} />
-              </Button>
-              <AudioVolume
-                volume={volume}
-                onVolumeChange={handleVolumeChange}
-                onMuteToggle={handleMuteToggle}
-              />
-            </div>
-          </div>
-        </div>
-      ) : null}
+          )
+        : null}
     </>
   );
 }

@@ -26,6 +26,7 @@ export function useCachedThumbnail(
   });
 
   useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect -- Thumbnail state mirrors an external cache/backend lookup keyed by trackId. */
     if (!enabled || !trackId) return;
 
     if (pathCache.has(trackId)) {
@@ -57,6 +58,7 @@ export function useCachedThumbnail(
     return () => {
       cancelled = true;
     };
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [enabled, trackId]);
 
   return state;

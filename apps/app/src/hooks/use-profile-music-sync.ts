@@ -15,7 +15,7 @@ function formatLastSync(value: string | null | undefined): string | null {
   }).format(date);
 }
 
-export function useProfileMusicSync(_trackCount: number) {
+export function useProfileMusicSync() {
   const [lastSyncAt, setLastSyncAt] = useState<string | null | undefined>(
     undefined,
   );
@@ -48,16 +48,16 @@ export function useProfileMusicSync(_trackCount: number) {
     };
   }, []);
 
-  const phase: SyncPhase =
-    lastSyncAt === undefined ? "connecting" : syncing ? "syncing" : "live";
+  const phase: SyncPhase
+    = lastSyncAt === undefined ? "connecting" : syncing ? "syncing" : "live";
 
   const lastSynced = formatLastSync(lastSyncAt);
 
-  const statusLabel =
-    phase === "connecting" ? "connecting" : phase === "syncing" ? "syncing" : "live";
+  const statusLabel
+    = phase === "connecting" ? "connecting" : phase === "syncing" ? "syncing" : "live";
 
-  const statusDetail =
-    phase === "connecting"
+  const statusDetail
+    = phase === "connecting"
       ? "Connecting to Telegram…"
       : phase === "syncing"
         ? "Pulling your library…"

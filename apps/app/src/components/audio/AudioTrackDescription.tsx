@@ -15,17 +15,19 @@ export function AudioTrackDescription(props: AudioTrackDescriptionProps) {
   return (
     <>
       <div className="relative shrink-0">
-        {failed || !url ? (
-          <div className="flex size-16 items-center justify-center rounded-lg bg-muted text-muted-foreground">
-            <Music className="size-5" />
-          </div>
-        ) : (
-          <img
-            src={url}
-            alt="Thumbnail"
-            className="size-16 rounded-lg object-cover ring-1 ring-border"
-          />
-        )}
+        {failed || !url
+          ? (
+              <div className="flex size-16 items-center justify-center rounded-lg bg-muted text-muted-foreground">
+                <Music className="size-5" />
+              </div>
+            )
+          : (
+              <img
+                src={url}
+                alt="Thumbnail"
+                className="size-16 rounded-lg object-cover ring-1 ring-border"
+              />
+            )}
       </div>
       <div className="hidden min-w-0 flex-col sm:flex">
         <span

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import QRCode from "qrcode";
+import { toDataURL } from "qrcode";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { api } from "@/lib/api";
@@ -26,15 +26,13 @@ export function MtprotoLogin({
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
-  const stepRef = useRef<Step>("qr");
-  stepRef.current = step;
   const lastUrlRef = useRef<string | null>(null);
 
   const renderQr = useCallback(async (url: string) => {
     if (lastUrlRef.current === url && qrDataUrl) return;
     lastUrlRef.current = url;
     try {
-      const dataUrl = await QRCode.toDataURL(url, {
+      const dataUrl = await toDataURL(url, {
         width: 232,
         margin: 1,
         color: { dark: "#000000", light: "#ffffff" },
@@ -69,7 +67,10 @@ export function MtprotoLogin({
   }, [renderQr, onAuthenticated]);
 
   useEffect(() => {
-    void startQrLogin();
+    // QR login must be kicked off on mount; the state writes inside startQrLogin
+    // reflect async MTProto progress, not derived render state.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    startQrLogin();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -79,7 +80,7 @@ export function MtprotoLogin({
     let cancelled = false;
 
     const interval = setInterval(async () => {
-      if (stepRef.current !== "qr" || cancelled) return;
+      if (cancelled) return;
       try {
         const outcome = await api.qrPoll();
         if (cancelled) return;
@@ -179,7 +180,8 @@ export function MtprotoLogin({
             <span />
           </span>
           <h1 className="text-4xl font-semibold tracking-tight text-foreground text-glow">
-            Sound<span className="text-primary">grammy</span>
+            Sound
+            <span className="text-primary">grammy</span>
           </h1>
           <p className="mx-auto mt-3 max-w-xs text-sm leading-relaxed text-muted-foreground">
             Sign in with Telegram to tune in your profile music.
@@ -187,154 +189,168 @@ export function MtprotoLogin({
         </div>
 
         <div className="rounded-2xl border border-border bg-card/80 p-7 shadow-[0_24px_60px_-24px_rgba(0,0,0,0.7)] backdrop-blur-xl">
-          {error ? (
-            <p
-              className="mb-5 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-center text-sm text-destructive"
-              role="alert"
-            >
-              {error}
-            </p>
-          ) : null}
+          {error
+            ? (
+                <p
+                  className="mb-5 rounded-lg border border-destructive/30 bg-destructive/10 px-3 py-2 text-center text-sm text-destructive"
+                  role="alert"
+                >
+                  {error}
+                </p>
+              )
+            : null}
 
-          {step === "qr" || step === "qr-password" ? (
-            <div className="flex w-full flex-col items-center gap-4">
-              {step === "qr" ? (
-                <>
-                  <p className="text-center text-sm leading-relaxed text-muted-foreground">
-                    Scan with Telegram on your phone
-                    <br />
-                    <span className="font-mono text-xs uppercase tracking-wide text-foreground/70">
-                      Settings → Devices → Link Desktop
-                    </span>
-                  </p>
-                  <div className="relative rounded-xl border border-border bg-white p-3">
-                    {qrDataUrl ? (
-                      <img
-                        src={qrDataUrl}
-                        alt="Telegram login QR code"
-                        width={232}
-                        height={232}
-                        className="rounded-md"
-                      />
-                    ) : (
-                      <div className="flex h-[232px] w-[232px] items-center justify-center">
-                        <span className="font-mono text-xs text-black/60">
-                          {qrStarting ? "Generating…" : "Loading…"}
-                        </span>
-                      </div>
-                    )}
-                  </div>
-                  <p className="text-center text-xs text-muted-foreground/80">
-                    Works without SMS — recommended for Russian numbers
-                  </p>
+          {step === "qr" || step === "qr-password"
+            ? (
+                <div className="flex w-full flex-col items-center gap-4">
+                  {step === "qr"
+                    ? (
+                        <>
+                          <p className="text-center text-sm leading-relaxed text-muted-foreground">
+                            Scan with Telegram on your phone
+                            <br />
+                            <span className="font-mono text-xs uppercase tracking-wide text-foreground/70">
+                              Settings → Devices → Link Desktop
+                            </span>
+                          </p>
+                          <div className="relative rounded-xl border border-border bg-white p-3">
+                            {qrDataUrl
+                              ? (
+                                  <img
+                                    src={qrDataUrl}
+                                    alt="Telegram login QR code"
+                                    width={232}
+                                    height={232}
+                                    className="rounded-md"
+                                  />
+                                )
+                              : (
+                                  <div className="flex h-[232px] w-[232px] items-center justify-center">
+                                    <span className="font-mono text-xs text-black/60">
+                                      {qrStarting ? "Generating…" : "Loading…"}
+                                    </span>
+                                  </div>
+                                )}
+                          </div>
+                          <p className="text-center text-xs text-muted-foreground/80">
+                            Works without SMS — recommended for Russian numbers
+                          </p>
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="sm"
+                            onClick={() => void startQrLogin()}
+                            disabled={qrStarting}
+                          >
+                            Refresh QR code
+                          </Button>
+                        </>
+                      )
+                    : (
+                        <form
+                          onSubmit={(e) => void handleQrPassword(e)}
+                          className="flex w-full flex-col gap-3"
+                        >
+                          <p className="text-center text-sm text-muted-foreground">
+                            2FA enabled
+                            {passwordHint ? `: ${passwordHint}` : ""}
+                          </p>
+                          <Input
+                            type="password"
+                            placeholder="2FA password"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            required
+                          />
+                          <Button type="submit" disabled={busy} className="w-full">
+                            {busy ? "Signing in…" : "Continue"}
+                          </Button>
+                        </form>
+                      )}
+                  <div className="h-px w-full bg-border" />
                   <Button
                     type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => void startQrLogin()}
-                    disabled={qrStarting}
+                    variant="outline"
+                    className="w-full"
+                    onClick={() => setStep("phone")}
                   >
-                    Refresh QR code
+                    Use phone number instead
                   </Button>
-                </>
-              ) : (
-                <form
-                  onSubmit={(e) => void handleQrPassword(e)}
-                  className="flex w-full flex-col gap-3"
-                >
-                  <p className="text-center text-sm text-muted-foreground">
-                    2FA enabled{passwordHint ? `: ${passwordHint}` : ""}
-                  </p>
-                  <Input
-                    type="password"
-                    placeholder="2FA password"
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    required
-                  />
-                  <Button type="submit" disabled={busy} className="w-full">
-                    {busy ? "Signing in…" : "Continue"}
-                  </Button>
-                </form>
-              )}
-              <div className="h-px w-full bg-border" />
-              <Button
-                type="button"
-                variant="outline"
-                className="w-full"
-                onClick={() => setStep("phone")}
-              >
-                Use phone number instead
-              </Button>
-            </div>
-          ) : step === "phone" ? (
-            <form
-              onSubmit={(e) => void handleSendCode(e)}
-              className="flex w-full flex-col gap-3"
-            >
-              <p className="text-center text-xs leading-relaxed text-muted-foreground">
-                Phone login may not work for Russian numbers (SMS blocked). Prefer
-                QR login.
-              </p>
-              <Input
-                type="tel"
-                placeholder="+79991234567"
-                value={phoneNumber}
-                onChange={(e) => setPhoneNumber(e.target.value)}
-                required
-              />
-              <Button type="submit" disabled={busy} className="w-full">
-                {busy ? "Sending…" : "Send login code"}
-              </Button>
-              <Button type="button" variant="ghost" onClick={() => setStep("qr")}>
-                Back to QR login
-              </Button>
-            </form>
-          ) : step === "code" ? (
-            <form
-              onSubmit={(e) => void handleSignIn(e)}
-              className="flex w-full flex-col gap-3"
-            >
-              <p className="text-center text-sm leading-relaxed text-muted-foreground">
-                Check the Telegram app chat with &quot;Telegram&quot; for your
-                code.
-              </p>
-              <Input
-                type="text"
-                inputMode="numeric"
-                placeholder="Login code"
-                value={code}
-                onChange={(e) => setCode(e.target.value)}
-                required
-                className="text-center font-mono text-lg tracking-[0.5em]"
-              />
-              <Button type="submit" disabled={busy} className="w-full">
-                {busy ? "Verifying…" : "Sign in"}
-              </Button>
-              <Button type="button" variant="ghost" onClick={() => setStep("qr")}>
-                Back to QR login
-              </Button>
-            </form>
-          ) : (
-            <form
-              onSubmit={(e) => void handlePhonePassword(e)}
-              className="flex w-full flex-col gap-3"
-            >
-              <p className="text-center text-sm text-muted-foreground">
-                2FA enabled{passwordHint ? `: ${passwordHint}` : ""}
-              </p>
-              <Input
-                type="password"
-                placeholder="2FA password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                required
-              />
-              <Button type="submit" disabled={busy} className="w-full">
-                {busy ? "Signing in…" : "Sign in"}
-              </Button>
-            </form>
-          )}
+                </div>
+              )
+            : step === "phone"
+              ? (
+                  <form
+                    onSubmit={(e) => void handleSendCode(e)}
+                    className="flex w-full flex-col gap-3"
+                  >
+                    <p className="text-center text-xs leading-relaxed text-muted-foreground">
+                      Phone login may not work for Russian numbers (SMS blocked). Prefer
+                      QR login.
+                    </p>
+                    <Input
+                      type="tel"
+                      placeholder="+79991234567"
+                      value={phoneNumber}
+                      onChange={(e) => setPhoneNumber(e.target.value)}
+                      required
+                    />
+                    <Button type="submit" disabled={busy} className="w-full">
+                      {busy ? "Sending…" : "Send login code"}
+                    </Button>
+                    <Button type="button" variant="ghost" onClick={() => setStep("qr")}>
+                      Back to QR login
+                    </Button>
+                  </form>
+                )
+              : step === "code"
+                ? (
+                    <form
+                      onSubmit={(e) => void handleSignIn(e)}
+                      className="flex w-full flex-col gap-3"
+                    >
+                      <p className="text-center text-sm leading-relaxed text-muted-foreground">
+                        Check the Telegram app chat with &quot;Telegram&quot; for your
+                        code.
+                      </p>
+                      <Input
+                        type="text"
+                        inputMode="numeric"
+                        placeholder="Login code"
+                        value={code}
+                        onChange={(e) => setCode(e.target.value)}
+                        required
+                        className="text-center font-mono text-lg tracking-[0.5em]"
+                      />
+                      <Button type="submit" disabled={busy} className="w-full">
+                        {busy ? "Verifying…" : "Sign in"}
+                      </Button>
+                      <Button type="button" variant="ghost" onClick={() => setStep("qr")}>
+                        Back to QR login
+                      </Button>
+                    </form>
+                  )
+                : (
+                    <form
+                      onSubmit={(e) => void handlePhonePassword(e)}
+                      className="flex w-full flex-col gap-3"
+                    >
+                      <p className="text-center text-sm text-muted-foreground">
+                        2FA enabled
+                        {passwordHint ? `: ${passwordHint}` : ""}
+                      </p>
+                      <Input
+                        type="password"
+                        placeholder="2FA password"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        required
+                      />
+                      <Button type="submit" disabled={busy} className="w-full">
+                        {busy ? "Signing in…" : "Sign in"}
+                      </Button>
+                    </form>
+                  )}
         </div>
 
         <p className="mt-6 text-center font-mono text-[10px] uppercase tracking-[0.3em] text-muted-foreground/60">

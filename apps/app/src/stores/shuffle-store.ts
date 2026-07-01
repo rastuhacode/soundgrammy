@@ -1,7 +1,7 @@
 import { readLocalStorageValue } from "@mantine/hooks";
 import { create } from "zustand";
 import type { Track } from "@/lib/db";
-import z from "zod";
+import { z } from "zod";
 
 const SHUFFLE_STORAGE_KEY = "soundgrammy-shuffle";
 

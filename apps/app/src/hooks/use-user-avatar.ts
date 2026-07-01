@@ -5,6 +5,7 @@ export function useUserAvatar(enabled = true): string | null {
   const [src, setSrc] = useState<string | null>(null);
 
   useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect -- Avatar state mirrors an async backend lookup controlled by session availability. */
     if (!enabled) {
       setSrc(null);
       return;
@@ -23,6 +24,7 @@ export function useUserAvatar(enabled = true): string | null {
     return () => {
       cancelled = true;
     };
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [enabled]);
 
   return src;

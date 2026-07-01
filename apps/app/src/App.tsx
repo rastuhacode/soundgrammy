@@ -79,7 +79,9 @@ export default function App() {
   }, [setSession, runSync]);
 
   useEffect(() => {
-    void bootstrap();
+    // Bootstrap synchronizes React state with persisted backend auth/library state.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    bootstrap();
   }, [bootstrap]);
 
   // Reload the library whenever the backend reports a completed sync.

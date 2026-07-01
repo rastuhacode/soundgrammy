@@ -2,11 +2,11 @@ import { useState } from "react";
 import { Ellipsis, Pencil, Plus, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
-  Menu,
-  MenuContent,
-  MenuItem,
-  MenuTrigger,
-} from "@/components/ui/menu";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { PlaylistFormDialog } from "@/components/playlist/PlaylistFormDialog";
 import { SidebarPlaylistThumbnail } from "@/components/playlist/SidebarPlaylistThumbnail";
 import type { CustomPlaylistSummary } from "@/lib/db";
@@ -86,56 +86,64 @@ function PlaylistItem({
         </span>
 
         <div className="flex size-6 shrink-0 items-center justify-center">
-          {onEdit || onDelete ? (
-            <Menu>
-              <MenuTrigger>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="icon-xs"
-                  aria-label={`${name} options`}
-                  className="text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
-                >
-                  <Ellipsis />
-                </Button>
-              </MenuTrigger>
-              <MenuContent align="end" className="w-40">
-                {onEdit ? (
-                  <MenuItem
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onEdit();
-                    }}
-                  >
-                    <Pencil />
-                    Edit playlist
-                  </MenuItem>
-                ) : null}
-                {onDelete ? (
-                  <MenuItem
-                    variant="destructive"
-                    disabled={isDeleting}
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      onDelete();
-                    }}
-                  >
-                    <Trash2 />
-                    Delete playlist
-                  </MenuItem>
-                ) : null}
-              </MenuContent>
-            </Menu>
-          ) : null}
+          {onEdit || onDelete
+            ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger render={(
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      size="icon-xs"
+                      aria-label={`${name} options`}
+                      className="text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <Ellipsis />
+                    </Button>
+                  )}
+                  />
+                  <DropdownMenuContent align="end" className="w-40">
+                    {onEdit
+                      ? (
+                          <DropdownMenuItem
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              onEdit();
+                            }}
+                          >
+                            <Pencil />
+                            Edit playlist
+                          </DropdownMenuItem>
+                        )
+                      : null}
+                    {onDelete
+                      ? (
+                          <DropdownMenuItem
+                            variant="destructive"
+                            disabled={isDeleting}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              onDelete();
+                            }}
+                          >
+                            <Trash2 />
+                            Delete playlist
+                          </DropdownMenuItem>
+                        )
+                      : null}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )
+            : null}
         </div>
       </div>
     </div>
   );
 }
 
-type DialogState =
-  | { mode: "create" }
-  | { mode: "edit"; playlist: CustomPlaylistSummary };
+type DialogState
+  = | { mode: "create" }
+    | { mode: "edit"; playlist: CustomPlaylistSummary };
 
 export function SidebarPlaylists() {
   const libraryTrackCount = useLibraryStore((state) => state.tracks.length);
@@ -197,16 +205,18 @@ export function SidebarPlaylists() {
           onSelect={() => setSelectedPlaylist(ALL_TRACKS_PLAYLIST_ID)}
         />
 
-        {data ? (
-          <PlaylistItem
-            id={LIKED_PLAYLIST_ID}
-            name="Liked"
-            count={likedCount}
-            isActive={selectedPlaylistId === LIKED_PLAYLIST_ID}
-            thumbnailVariant={LIKED_PLAYLIST_ID}
-            onSelect={() => setSelectedPlaylist(LIKED_PLAYLIST_ID)}
-          />
-        ) : null}
+        {data
+          ? (
+              <PlaylistItem
+                id={LIKED_PLAYLIST_ID}
+                name="Liked"
+                count={likedCount}
+                isActive={selectedPlaylistId === LIKED_PLAYLIST_ID}
+                thumbnailVariant={LIKED_PLAYLIST_ID}
+                onSelect={() => setSelectedPlaylist(LIKED_PLAYLIST_ID)}
+              />
+            )
+          : null}
 
         {data?.custom.map((playlist) => (
           <PlaylistItem

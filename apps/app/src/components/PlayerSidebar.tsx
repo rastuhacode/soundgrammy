@@ -1,10 +1,10 @@
 import { SidebarProfile } from "@/components/SidebarProfile";
 import { SidebarPlaylists } from "@/components/SidebarPlaylists";
 import { Separator } from "@/components/ui/separator";
-import { useLibraryStore } from "@/stores/library-store";
+// import { useLibraryStore } from "@/stores/library-store";
 
 export function PlayerSidebar({ onLogout }: { onLogout: () => void }) {
-  const trackCount = useLibraryStore((state) => state.tracks.length);
+  // const trackCount = useLibraryStore((state) => state.tracks.length);
 
   return (
     <div className="flex h-full flex-col gap-4 pt-4">
@@ -13,7 +13,7 @@ export function PlayerSidebar({ onLogout }: { onLogout: () => void }) {
           SoundGrammy
         </h1>
 
-        <SidebarProfile trackCount={trackCount} onLogout={onLogout} />
+        <SidebarProfile onLogout={onLogout} />
       </div>
 
       <Separator />
