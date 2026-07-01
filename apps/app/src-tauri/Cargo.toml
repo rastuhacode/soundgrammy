@@ -54,3 +54,4 @@ hex = "0.4"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 lofty = "0.21"
+dotenvy = "0.15"

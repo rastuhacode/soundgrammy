@@ -151,7 +151,7 @@ impl Db {
         let mut stmt = conn.prepare(
             "SELECT id, tg_user_id, file_id, file_unique_id, title, performer, duration, \
              source, mime_type, file_size, created_at, mtproto_document \
-             FROM tracks WHERE tg_user_id = ?1 ORDER BY created_at DESC, id DESC",
+             FROM tracks WHERE tg_user_id = ?1 ORDER BY created_at ASC, id ASC",
         )?;
         let rows = stmt
             .query_map(params![tg_user_id], map_track)?
