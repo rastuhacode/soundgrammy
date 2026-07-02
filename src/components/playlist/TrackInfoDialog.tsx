@@ -1,59 +1,59 @@
-import { useEffect, useState } from "react";
-import type { Track, TrackMetadata } from "@/types";
-import { useCachedThumbnail } from "@/hooks/use-cached-thumbnail";
-import { api } from "@/lib/api";
+import { useEffect, useState } from 'react'
+import type { Track, TrackMetadata } from '@/types'
+import { useCachedThumbnail } from '@/hooks/use-cached-thumbnail'
+import { api } from '@/lib/api'
 import {
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
+} from '@/components/ui/dialog'
 
 interface TrackInfoDialogProps {
-  track: Track | null;
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
+  track: Track | null
+  open: boolean
+  onOpenChange: (open: boolean) => void
 }
 
 function formatDuration(seconds: number | null): string {
-  if (seconds === null) return "—";
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  return `${mins}:${secs.toString().padStart(2, "0")}`;
+  if (seconds === null) return '—'
+  const mins = Math.floor(seconds / 60)
+  const secs = seconds % 60
+  return `${mins}:${secs.toString().padStart(2, '0')}`
 }
 
 function formatFileSize(bytes: number | string | null): string {
-  if (bytes === null) return "—";
-  const value = typeof bytes === "string" ? Number(bytes) : bytes;
-  if (!Number.isFinite(value) || value <= 0) return "—";
-  if (value < 1024) return `${value} B`;
-  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
-  return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+  if (bytes === null) return '—'
+  const value = typeof bytes === 'string' ? Number(bytes) : bytes
+  if (!Number.isFinite(value) || value <= 0) return '—'
+  if (value < 1024) return `${value} B`
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`
 }
 
 function formatAttributeValue(value: unknown): string {
-  if (value === null || value === undefined) return "—";
-  if (typeof value === "boolean") return value ? "true" : "false";
-  if (typeof value === "string" || typeof value === "number") {
-    return String(value);
+  if (value === null || value === undefined) return '—'
+  if (typeof value === 'boolean') return value ? 'true' : 'false'
+  if (typeof value === 'string' || typeof value === 'number') {
+    return String(value)
   }
-  return JSON.stringify(value);
+  return JSON.stringify(value)
 }
 
 function MetadataRow({
   label,
   value,
 }: {
-  label: string;
-  value: React.ReactNode;
+  label: string
+  value: React.ReactNode
 }) {
   return (
     <div className="grid grid-cols-[7rem_1fr] gap-2 text-sm">
       <dt className="text-muted-foreground">{label}</dt>
       <dd className="min-w-0 wrap-break-word text-foreground">{value}</dd>
     </div>
-  );
+  )
 }
 
 export function TrackInfoDialog({
@@ -61,49 +61,49 @@ export function TrackInfoDialog({
   open,
   onOpenChange,
 }: TrackInfoDialogProps) {
-  const [metadata, setMetadata] = useState<TrackMetadata | null>(null);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [metadata, setMetadata] = useState<TrackMetadata | null>(null)
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
     /* eslint-disable react-hooks/set-state-in-effect -- This effect owns the async metadata load lifecycle for the open track. */
     if (!open || !track) {
-      setMetadata(null);
-      setError(null);
-      return;
+      setMetadata(null)
+      setError(null)
+      return
     }
 
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
+    let cancelled = false
+    setLoading(true)
+    setError(null)
     api
       .trackMetadata(track.id)
       .then((result) => {
-        if (!cancelled) setMetadata(result);
+        if (!cancelled) setMetadata(result)
       })
       .catch((err) => {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Failed to load metadata");
+          setError(err instanceof Error ? err.message : 'Failed to load metadata')
         }
       })
       .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+        if (!cancelled) setLoading(false)
+      })
 
     return () => {
-      cancelled = true;
-    };
+      cancelled = true
+    }
     /* eslint-enable react-hooks/set-state-in-effect */
-  }, [open, track]);
+  }, [open, track])
 
   const thumbnail = useCachedThumbnail(
     track?.id ?? 0,
     { enabled: open && Boolean(track) },
-  );
+  )
 
-  const title = metadata?.track.title ?? track?.title ?? "Unknown Title";
+  const title = metadata?.track.title ?? track?.title ?? 'Unknown Title'
   const performer
-    = metadata?.track.performer ?? track?.performer ?? "Unknown Artist";
+    = metadata?.track.performer ?? track?.performer ?? 'Unknown Artist'
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -164,11 +164,11 @@ export function TrackInfoDialog({
                     <dl className="space-y-2 rounded-lg border border-border bg-card/50 p-3">
                       <MetadataRow
                         label="Title"
-                        value={metadata.track.title ?? "—"}
+                        value={metadata.track.title ?? '—'}
                       />
                       <MetadataRow
                         label="Artist"
-                        value={metadata.track.performer ?? "—"}
+                        value={metadata.track.performer ?? '—'}
                       />
                       <MetadataRow
                         label="Duration"
@@ -176,7 +176,7 @@ export function TrackInfoDialog({
                       />
                       <MetadataRow
                         label="MIME type"
-                        value={metadata.track.mimeType ?? "—"}
+                        value={metadata.track.mimeType ?? '—'}
                       />
                       <MetadataRow
                         label="File size"
@@ -207,7 +207,7 @@ export function TrackInfoDialog({
                       <MetadataRow label="DC ID" value={metadata.document.dcId} />
                       <MetadataRow
                         label="MIME type"
-                        value={metadata.document.mimeType ?? "—"}
+                        value={metadata.document.mimeType ?? '—'}
                       />
                       <MetadataRow
                         label="Size"
@@ -217,8 +217,8 @@ export function TrackInfoDialog({
                         label="Thumbnail"
                         value={
                           metadata.document.hasRemoteThumb
-                            ? "Remote thumb on Telegram"
-                            : "Embedded / none"
+                            ? 'Remote thumb on Telegram'
+                            : 'Embedded / none'
                         }
                       />
                     </dl>
@@ -240,8 +240,8 @@ export function TrackInfoDialog({
                           <div className="space-y-3">
                             {metadata.document.attributes.map((attribute, index) => {
                               const entries = Object.entries(attribute).filter(
-                                ([key]) => key !== "type",
-                              );
+                                ([key]) => key !== 'type',
+                              )
 
                               return (
                                 <div
@@ -267,7 +267,7 @@ export function TrackInfoDialog({
                                     ))}
                                   </dl>
                                 </div>
-                              );
+                              )
                             })}
                           </div>
                         )}
@@ -279,5 +279,5 @@ export function TrackInfoDialog({
         )}
       </DialogContent>
     </Dialog>
-  );
+  )
 }

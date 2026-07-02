@@ -4,4 +4,4 @@ export type {
   PlaylistsBundle,
   LikedPlaylist,
   CustomPlaylistSummary,
-} from "@/types";
+} from '@/types'

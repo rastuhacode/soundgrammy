@@ -1,13 +1,13 @@
-import type { Track } from "@/lib/db";
-import { Music } from "lucide-react";
-import { useCachedThumbnail } from "@/hooks/use-cached-thumbnail";
+import type { Track } from '@/lib/db'
+import { Music } from 'lucide-react'
+import { useCachedThumbnail } from '@/hooks/use-cached-thumbnail'
 
 export interface AudioTrackDescriptionProps {
-  track: Track;
+  track: Track
 }
 
 export function AudioTrackDescription(props: AudioTrackDescriptionProps) {
-  const { url, failed } = useCachedThumbnail(props.track.id);
+  const { url, failed } = useCachedThumbnail(props.track.id)
 
   return (
     <>
@@ -29,17 +29,17 @@ export function AudioTrackDescription(props: AudioTrackDescriptionProps) {
       <div className="hidden min-w-0 flex-col sm:flex">
         <span
           className="truncate text-sm font-medium text-foreground"
-          title={props.track.title ?? "Unknown Title"}
+          title={props.track.title ?? 'Unknown Title'}
         >
-          {props.track.title ?? "Unknown Title"}
+          {props.track.title ?? 'Unknown Title'}
         </span>
         <span
           className="truncate text-xs text-muted-foreground"
-          title={props.track.performer ?? "Unknown Artist"}
+          title={props.track.performer ?? 'Unknown Artist'}
         >
-          {props.track.performer ?? "Unknown Artist"}
+          {props.track.performer ?? 'Unknown Artist'}
         </span>
       </div>
     </>
-  );
+  )
 }

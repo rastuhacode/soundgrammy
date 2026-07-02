@@ -1,14 +1,14 @@
-import { useIntersection } from "@mantine/hooks";
-import { Music } from "lucide-react";
-import { useCachedThumbnail } from "@/hooks/use-cached-thumbnail";
+import { useIntersection } from '@mantine/hooks'
+import { Music } from 'lucide-react'
+import { useCachedThumbnail } from '@/hooks/use-cached-thumbnail'
 
 export function TrackThumbnail(props: {
-  trackId: number;
-  fileUniqueId: string;
+  trackId: number
+  fileUniqueId: string
 }) {
-  const { ref, entry } = useIntersection<HTMLDivElement>({ rootMargin: "400px" });
-  const inView = entry?.isIntersecting ?? false;
-  const { url, loaded, failed } = useCachedThumbnail(props.trackId, { enabled: inView });
+  const { ref, entry } = useIntersection<HTMLDivElement>({ rootMargin: '400px' })
+  const inView = entry?.isIntersecting ?? false
+  const { url, loaded, failed } = useCachedThumbnail(props.trackId, { enabled: inView })
 
   return (
     <div
@@ -22,7 +22,7 @@ export function TrackThumbnail(props: {
               alt="Thumbnail"
               decoding="async"
               className={`absolute inset-0 size-12 object-cover transition-opacity duration-200 ${
-                loaded ? "opacity-100" : "opacity-0"
+                loaded ? 'opacity-100' : 'opacity-0'
               }`}
             />
           )
@@ -32,5 +32,5 @@ export function TrackThumbnail(props: {
             </div>
           )}
     </div>
-  );
+  )
 }

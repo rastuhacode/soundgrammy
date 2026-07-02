@@ -1,6 +1,6 @@
-import { useEffect, useId, useRef, useState } from "react";
-import { ImagePlus, Trash2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { useEffect, useId, useRef, useState } from 'react'
+import { ImagePlus, Trash2 } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import {
   Dialog,
   DialogContent,
@@ -8,25 +8,25 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-} from "@/components/ui/dialog";
-import { Input } from "@/components/ui/input";
-import type { CustomPlaylistSummary } from "@/lib/db";
-import { usePlaylistThumbnail } from "@/hooks/use-playlist-thumbnail";
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import type { CustomPlaylistSummary } from '@/lib/db'
+import { usePlaylistThumbnail } from '@/hooks/use-playlist-thumbnail'
 import {
   createThumbnailPreviewUrl,
   readPlaylistThumbnailFile,
   revokeThumbnailPreviewUrl,
-} from "@/lib/playlist-thumbnail";
-import { usePlaylistsStore } from "@/stores/playlists-store";
-import { api } from "@/lib/api";
+} from '@/lib/playlist-thumbnail'
+import { usePlaylistsStore } from '@/stores/playlists-store'
+import { api } from '@/lib/api'
 
-type PlaylistFormMode = "create" | "edit";
+type PlaylistFormMode = 'create' | 'edit'
 
 interface PlaylistFormDialogProps {
-  open: boolean;
-  onOpenChange: (open: boolean) => void;
-  mode: PlaylistFormMode;
-  playlist?: CustomPlaylistSummary;
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  mode: PlaylistFormMode
+  playlist?: CustomPlaylistSummary
 }
 
 export function PlaylistFormDialog({
@@ -35,110 +35,112 @@ export function PlaylistFormDialog({
   mode,
   playlist,
 }: PlaylistFormDialogProps) {
-  const formId = useId();
-  const fileInputRef = useRef<HTMLInputElement>(null);
-  const data = usePlaylistsStore((state) => state.data);
-  const setData = usePlaylistsStore((state) => state.setData);
+  const formId = useId()
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  const data = usePlaylistsStore(state => state.data)
+  const setData = usePlaylistsStore(state => state.setData)
   const setSelectedPlaylist = usePlaylistsStore(
-    (state) => state.setSelectedPlaylist,
-  );
+    state => state.setSelectedPlaylist,
+  )
 
-  const isEdit = mode === "edit";
+  const isEdit = mode === 'edit'
   const existingThumbnail = usePlaylistThumbnail(
     isEdit ? playlist?.id : undefined,
     Boolean(playlist?.hasThumbnail),
-  );
+  )
 
-  const [name, setName] = useState(playlist?.name ?? "");
-  const [nameError, setNameError] = useState<string | null>(null);
-  const [thumbnailFile, setThumbnailFile] = useState<File | null>(null);
-  const [thumbnailPreview, setThumbnailPreview] = useState<string | null>(null);
-  const [removeThumbnail, setRemoveThumbnail] = useState(false);
-  const [thumbnailError, setThumbnailError] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [name, setName] = useState(playlist?.name ?? '')
+  const [nameError, setNameError] = useState<string | null>(null)
+  const [thumbnailFile, setThumbnailFile] = useState<File | null>(null)
+  const [thumbnailPreview, setThumbnailPreview] = useState<string | null>(null)
+  const [removeThumbnail, setRemoveThumbnail] = useState(false)
+  const [thumbnailError, setThumbnailError] = useState<string | null>(null)
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) return
     // Opening the modal starts a fresh edit session from the selected playlist.
     /* eslint-disable react-hooks/set-state-in-effect -- Form draft state must reset when a new dialog session opens. */
-    setName(playlist?.name ?? "");
-    setNameError(null);
-    setThumbnailFile(null);
-    setThumbnailPreview(null);
-    setRemoveThumbnail(false);
-    setThumbnailError(null);
+    setName(playlist?.name ?? '')
+    setNameError(null)
+    setThumbnailFile(null)
+    setThumbnailPreview(null)
+    setRemoveThumbnail(false)
+    setThumbnailError(null)
     /* eslint-enable react-hooks/set-state-in-effect */
-  }, [open, playlist]);
+  }, [open, playlist])
 
   useEffect(() => {
     return () => {
-      revokeThumbnailPreviewUrl(thumbnailPreview);
-    };
-  }, [thumbnailPreview]);
+      revokeThumbnailPreviewUrl(thumbnailPreview)
+    }
+  }, [thumbnailPreview])
 
   const previewSrc
-    = thumbnailPreview ?? (!removeThumbnail ? existingThumbnail : null);
+    = thumbnailPreview ?? (!removeThumbnail ? existingThumbnail : null)
 
   const handleThumbnailChange = (file: File | null) => {
-    setThumbnailError(null);
-    setRemoveThumbnail(false);
-    revokeThumbnailPreviewUrl(thumbnailPreview);
+    setThumbnailError(null)
+    setRemoveThumbnail(false)
+    revokeThumbnailPreviewUrl(thumbnailPreview)
 
     if (!file) {
-      setThumbnailFile(null);
-      setThumbnailPreview(null);
-      return;
+      setThumbnailFile(null)
+      setThumbnailPreview(null)
+      return
     }
 
-    setThumbnailFile(file);
-    setThumbnailPreview(createThumbnailPreviewUrl(file));
-  };
+    setThumbnailFile(file)
+    setThumbnailPreview(createThumbnailPreviewUrl(file))
+  }
 
   const handleRemoveThumbnail = () => {
-    setThumbnailError(null);
-    setThumbnailFile(null);
-    setRemoveThumbnail(true);
-    revokeThumbnailPreviewUrl(thumbnailPreview);
-    setThumbnailPreview(null);
+    setThumbnailError(null)
+    setThumbnailFile(null)
+    setRemoveThumbnail(true)
+    revokeThumbnailPreviewUrl(thumbnailPreview)
+    setThumbnailPreview(null)
     if (fileInputRef.current) {
-      fileInputRef.current.value = "";
+      fileInputRef.current.value = ''
     }
-  };
+  }
 
   const handleSubmit = async (event: React.FormEvent) => {
-    event.preventDefault();
-    if (!data) return;
+    event.preventDefault()
+    if (!data) return
 
-    const trimmed = name.trim();
+    const trimmed = name.trim()
     if (trimmed.length === 0) {
-      setNameError("Playlist name is required");
-      return;
+      setNameError('Playlist name is required')
+      return
     }
     if (trimmed.length > 100) {
-      setNameError("Playlist name must be at most 100 characters");
-      return;
+      setNameError('Playlist name must be at most 100 characters')
+      return
     }
-    setNameError(null);
+    setNameError(null)
 
     let thumbnailPayload:
-      | { data: string; mime: "image/jpeg" | "image/png" | "image/webp" }
+      | { data: string, mime: 'image/jpeg' | 'image/png' | 'image/webp' }
       | null
-      | undefined;
+      | undefined
 
     try {
       if (thumbnailFile) {
-        thumbnailPayload = await readPlaylistThumbnailFile(thumbnailFile);
-      } else if (removeThumbnail) {
-        thumbnailPayload = null;
+        thumbnailPayload = await readPlaylistThumbnailFile(thumbnailFile)
       }
-    } catch (err) {
+      else if (removeThumbnail) {
+        thumbnailPayload = null
+      }
+    }
+    catch (err) {
       setThumbnailError(
-        err instanceof Error ? err.message : "Invalid thumbnail",
-      );
-      return;
+        err instanceof Error ? err.message : 'Invalid thumbnail',
+      )
+      return
     }
 
-    setIsSubmitting(true);
+    setIsSubmitting(true)
     try {
       if (isEdit && playlist) {
         const updated = await api.updatePlaylist({
@@ -147,41 +149,44 @@ export function PlaylistFormDialog({
           thumbnailData: thumbnailPayload?.data ?? null,
           thumbnailMime: thumbnailPayload?.mime ?? null,
           clearThumbnail: thumbnailPayload === null,
-        });
+        })
         setData({
           ...data,
-          custom: data.custom.map((item) =>
+          custom: data.custom.map(item =>
             item.id === updated.id ? updated : item,
           ),
-        });
-      } else {
+        })
+      }
+      else {
         const created = await api.createPlaylist({
           name: trimmed,
           thumbnailData: thumbnailPayload?.data ?? null,
           thumbnailMime: thumbnailPayload?.mime ?? null,
-        });
-        setData({ ...data, custom: [...data.custom, created] });
-        setSelectedPlaylist(created.id);
+        })
+        setData({ ...data, custom: [...data.custom, created] })
+        setSelectedPlaylist(created.id)
       }
-      onOpenChange(false);
-    } catch (err) {
-      setThumbnailError(
-        err instanceof Error ? err.message : "Failed to save playlist",
-      );
-    } finally {
-      setIsSubmitting(false);
+      onOpenChange(false)
     }
-  };
+    catch (err) {
+      setThumbnailError(
+        err instanceof Error ? err.message : 'Failed to save playlist',
+      )
+    }
+    finally {
+      setIsSubmitting(false)
+    }
+  }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>{isEdit ? "Edit playlist" : "Create playlist"}</DialogTitle>
+          <DialogTitle>{isEdit ? 'Edit playlist' : 'Create playlist'}</DialogTitle>
           <DialogDescription>
             {isEdit
-              ? "Update the playlist name or cover image."
-              : "Give your playlist a name and optional cover image."}
+              ? 'Update the playlist name or cover image.'
+              : 'Give your playlist a name and optional cover image.'}
           </DialogDescription>
         </DialogHeader>
 
@@ -196,7 +201,7 @@ export function PlaylistFormDialog({
             <Input
               id={`${formId}-name`}
               value={name}
-              onChange={(event) => setName(event.target.value)}
+              onChange={event => setName(event.target.value)}
               aria-invalid={Boolean(nameError)}
               placeholder="My playlist"
               autoComplete="off"
@@ -238,7 +243,7 @@ export function PlaylistFormDialog({
                   id={`${formId}-thumbnail`}
                   type="file"
                   accept="image/jpeg,image/png,image/webp"
-                  onChange={(event) =>
+                  onChange={event =>
                     handleThumbnailChange(event.target.files?.[0] ?? null)}
                 />
                 <p className="text-xs text-muted-foreground">
@@ -279,13 +284,13 @@ export function PlaylistFormDialog({
           </Button>
           <Button type="submit" form={formId} disabled={isSubmitting}>
             {isSubmitting
-              ? "Saving..."
+              ? 'Saving...'
               : isEdit
-                ? "Save changes"
-                : "Create playlist"}
+                ? 'Save changes'
+                : 'Create playlist'}
           </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>
-  );
+  )
 }

@@ -1,6 +1,6 @@
-import { LogOut, RadioTower, Settings } from "lucide-react";
-import { useState } from "react";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { LogOut, RadioTower, Settings } from 'lucide-react'
+import { useState } from 'react'
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -9,42 +9,43 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { SyncStatusDot } from "@/components/SyncStatusDot";
-import { useProfileMusicSync } from "@/hooks/use-profile-music-sync";
-import { useUserAvatar } from "@/hooks/use-user-avatar";
+} from '@/components/ui/dropdown-menu'
+import { SyncStatusDot } from '@/components/SyncStatusDot'
+import { useProfileMusicSync } from '@/hooks/use-profile-music-sync'
+import { useUserAvatar } from '@/hooks/use-user-avatar'
 import {
   formatDisplayName,
   formatInitials,
   useSessionStore,
-} from "@/stores/session-store";
-import { api } from "@/lib/api";
-import { Button } from "@/components/ui/button";
+} from '@/stores/session-store'
+import { api } from '@/lib/api'
+import { Button } from '@/components/ui/button'
 
 interface SidebarProfileProps {
-  onLogout: () => void;
+  onLogout: () => void
 }
 
 export function SidebarProfile({ onLogout }: SidebarProfileProps) {
-  const [isLoggingOut, setIsLoggingOut] = useState(false);
-  const session = useSessionStore((state) => state.session);
-  const avatarSrc = useUserAvatar(Boolean(session));
-  const { phase, statusLabel, statusDetail } = useProfileMusicSync();
+  const [isLoggingOut, setIsLoggingOut] = useState(false)
+  const session = useSessionStore(state => state.session)
+  const avatarSrc = useUserAvatar(Boolean(session))
+  const { phase, statusLabel, statusDetail } = useProfileMusicSync()
 
-  if (!session) return null;
+  if (!session) return null
 
-  const displayName = formatDisplayName(session);
-  const initials = formatInitials(session);
+  const displayName = formatDisplayName(session)
+  const initials = formatInitials(session)
 
   const handleLogout = async () => {
-    setIsLoggingOut(true);
+    setIsLoggingOut(true)
     try {
-      await api.logout();
-      onLogout();
-    } finally {
-      setIsLoggingOut(false);
+      await api.logout()
+      onLogout()
     }
-  };
+    finally {
+      setIsLoggingOut(false)
+    }
+  }
 
   return (
     <DropdownMenu>
@@ -52,7 +53,7 @@ export function SidebarProfile({ onLogout }: SidebarProfileProps) {
         <button
           type="button"
           className="relative shrink-0 rounded-full outline-none focus-visible:ring-2 focus-visible:ring-ring/50"
-          onClick={(e) => e.stopPropagation()}
+          onClick={e => e.stopPropagation()}
         >
           <Avatar size="lg" className="ring ring-primary/25">
             {avatarSrc ? <AvatarImage src={avatarSrc} alt={displayName} /> : null}
@@ -133,11 +134,11 @@ export function SidebarProfile({ onLogout }: SidebarProfileProps) {
             onClick={handleLogout}
           >
             <LogOut className="size-4" />
-            {isLoggingOut ? "Signing out…" : "Log out"}
+            {isLoggingOut ? 'Signing out…' : 'Log out'}
           </DropdownMenuItem>
 
         </div>
       </DropdownMenuContent>
     </DropdownMenu>
-  );
+  )
 }

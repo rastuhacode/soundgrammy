@@ -1,5 +1,5 @@
-import { Download, Ellipsis, Heart, Info, ListPlus, ListX } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Download, Ellipsis, Heart, Info, ListPlus, ListX } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -12,21 +12,21 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuPortal,
   DropdownMenuSubContent,
-} from "@/components/ui/dropdown-menu";
-import type { Track } from "@/lib/db";
-import type { ResolvedSelectedPlaylist } from "@/stores/playlists-store";
-import { cn } from "@/lib/utils";
+} from '@/components/ui/dropdown-menu'
+import type { Track } from '@/lib/db'
+import type { ResolvedSelectedPlaylist } from '@/stores/playlists-store'
+import { cn } from '@/lib/utils'
 
 export interface PlaylistTrackDropdownProps {
-  availablePlaylists: { id: number; name: string; trackIds: number[] }[];
-  currentPlaylist: ResolvedSelectedPlaylist;
-  onAddToPlaylist: (playlistId: number, trackId: number) => void;
-  onToggleLike: (trackId: number) => void;
-  onDeleteFromPlaylist: (playlistId: number, trackId: number) => void;
-  onDownload: (track: Track) => void;
-  onShowInfo: (track: Track) => void;
-  isLiked: boolean;
-  track: Track;
+  availablePlaylists: { id: number, name: string, trackIds: number[] }[]
+  currentPlaylist: ResolvedSelectedPlaylist
+  onAddToPlaylist: (playlistId: number, trackId: number) => void
+  onToggleLike: (trackId: number) => void
+  onDeleteFromPlaylist: (playlistId: number, trackId: number) => void
+  onDownload: (track: Track) => void
+  onShowInfo: (track: Track) => void
+  isLiked: boolean
+  track: Track
 }
 
 export function PlaylistTrackDropdown(props: PlaylistTrackDropdownProps) {
@@ -40,7 +40,7 @@ export function PlaylistTrackDropdown(props: PlaylistTrackDropdownProps) {
     onShowInfo,
     isLiked,
     track,
-  } = props;
+  } = props
 
   return (
     <DropdownMenu>
@@ -55,16 +55,16 @@ export function PlaylistTrackDropdown(props: PlaylistTrackDropdownProps) {
             <Ellipsis className="size-5" />
           </Button>
         )}
-        onClick={(e) => e.stopPropagation()}
+        onClick={e => e.stopPropagation()}
       />
-      <DropdownMenuContent onClick={(e) => e.stopPropagation()}>
+      <DropdownMenuContent onClick={e => e.stopPropagation()}>
         <DropdownMenuGroup>
           <DropdownMenuLabel>Playlist</DropdownMenuLabel>
           <DropdownMenuItem onClick={() => onToggleLike(track.id)}>
             <Heart
-              className={cn("size-4", isLiked && "fill-primary text-primary")}
+              className={cn('size-4', isLiked && 'fill-primary text-primary')}
             />
-            {isLiked ? "Remove from Liked" : "Add to Liked"}
+            {isLiked ? 'Remove from Liked' : 'Add to Liked'}
           </DropdownMenuItem>
 
           <DropdownMenuSub>
@@ -82,7 +82,7 @@ export function PlaylistTrackDropdown(props: PlaylistTrackDropdownProps) {
                       </DropdownMenuItem>
                     )
                   : (
-                      availablePlaylists.map((playlist) => (
+                      availablePlaylists.map(playlist => (
                         <DropdownMenuItem
                           key={playlist.id}
                           onClick={() => onAddToPlaylist(playlist.id, track.id)}
@@ -124,5 +124,5 @@ export function PlaylistTrackDropdown(props: PlaylistTrackDropdownProps) {
         </DropdownMenuGroup>
       </DropdownMenuContent>
     </DropdownMenu>
-  );
+  )
 }

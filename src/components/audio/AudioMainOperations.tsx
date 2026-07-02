@@ -6,24 +6,24 @@ import {
   Repeat,
   Repeat1,
   Shuffle,
-} from "lucide-react";
-import type { RepeatState } from "@/stores/repeat-store";
-import type { ShuffleState } from "@/stores/shuffle-store";
-import { cn } from "@/lib/utils";
+} from 'lucide-react'
+import type { RepeatState } from '@/stores/repeat-store'
+import type { ShuffleState } from '@/stores/shuffle-store'
+import { cn } from '@/lib/utils'
 
 type AudioMainOperationsProps = {
-  isPlaying: boolean;
-  onPlayToggle: () => void;
+  isPlaying: boolean
+  onPlayToggle: () => void
 
-  onPreviousTrack: () => void;
-  onNextTrack: () => void;
+  onPreviousTrack: () => void
+  onNextTrack: () => void
 
-  repeatState: RepeatState;
-  onRepeatToggle: () => void;
+  repeatState: RepeatState
+  onRepeatToggle: () => void
 
-  shuffleState: ShuffleState;
-  onShuffleToggle: () => void;
-};
+  shuffleState: ShuffleState
+  onShuffleToggle: () => void
+}
 
 export function AudioMainOperations(props: AudioMainOperationsProps) {
   return (
@@ -35,12 +35,12 @@ export function AudioMainOperations(props: AudioMainOperationsProps) {
           aria-label="Toggle repeat"
           className="text-primary"
         >
-          {props.repeatState === "none" || props.repeatState === "all"
+          {props.repeatState === 'none' || props.repeatState === 'all'
             ? (
                 <Repeat
                   className={cn(
-                    "size-4",
-                    props.repeatState === "none" && "text-muted-foreground",
+                    'size-4',
+                    props.repeatState === 'none' && 'text-muted-foreground',
                   )}
                 />
               )
@@ -60,7 +60,7 @@ export function AudioMainOperations(props: AudioMainOperationsProps) {
       <button
         type="button"
         onClick={props.onPlayToggle}
-        aria-label={props.isPlaying ? "Pause" : "Play"}
+        aria-label={props.isPlaying ? 'Pause' : 'Play'}
         className="flex size-11 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-[0_0_24px_-4px_var(--primary)] transition-transform hover:scale-105 active:scale-95"
       >
         {props.isPlaying
@@ -80,9 +80,9 @@ export function AudioMainOperations(props: AudioMainOperationsProps) {
           type="button"
           aria-label="Shuffle mode"
           className={
-            props.shuffleState === "on"
-              ? "text-primary"
-              : "text-muted-foreground"
+            props.shuffleState === 'on'
+              ? 'text-primary'
+              : 'text-muted-foreground'
           }
           onClick={props.onShuffleToggle}
         >
@@ -90,5 +90,5 @@ export function AudioMainOperations(props: AudioMainOperationsProps) {
         </button>
       </div>
     </div>
-  );
+  )
 }

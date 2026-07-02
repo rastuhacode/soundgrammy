@@ -1,168 +1,184 @@
-import { useCallback, useEffect, useRef, useState } from "react";
-import { toDataURL } from "qrcode";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
-import { api } from "@/lib/api";
-import type { AuthUser } from "@/types";
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { toDataURL } from 'qrcode'
+import { Button } from '@/components/ui/button'
+import { Input } from '@/components/ui/input'
+import { api } from '@/lib/api'
+import type { AuthUser } from '@/types'
 
-type Step = "qr" | "phone" | "code" | "password" | "qr-password";
+type Step = 'qr' | 'phone' | 'code' | 'password' | 'qr-password'
 
 function errorMessage(error: unknown, fallback: string): string {
-  return error instanceof Error ? error.message : fallback;
+  return error instanceof Error ? error.message : fallback
 }
 
 export function MtprotoLogin({
   onAuthenticated,
 }: {
-  onAuthenticated: (user: AuthUser) => void;
+  onAuthenticated: (user: AuthUser) => void
 }) {
-  const [step, setStep] = useState<Step>("qr");
-  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
-  const [qrStarting, setQrStarting] = useState(false);
-  const [phoneNumber, setPhoneNumber] = useState("");
-  const [code, setCode] = useState("");
-  const [password, setPassword] = useState("");
-  const [passwordHint, setPasswordHint] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [step, setStep] = useState<Step>('qr')
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
+  const [qrStarting, setQrStarting] = useState(false)
+  const [phoneNumber, setPhoneNumber] = useState('')
+  const [code, setCode] = useState('')
+  const [password, setPassword] = useState('')
+  const [passwordHint, setPasswordHint] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
 
-  const lastUrlRef = useRef<string | null>(null);
+  const lastUrlRef = useRef<string | null>(null)
 
   const renderQr = useCallback(async (url: string) => {
-    if (lastUrlRef.current === url && qrDataUrl) return;
-    lastUrlRef.current = url;
+    if (lastUrlRef.current === url && qrDataUrl) return
+    lastUrlRef.current = url
     try {
       const dataUrl = await toDataURL(url, {
         width: 232,
         margin: 1,
-        color: { dark: "#000000", light: "#ffffff" },
-      });
-      setQrDataUrl(dataUrl);
-    } catch {
-      setQrDataUrl(null);
+        color: { dark: '#000000', light: '#ffffff' },
+      })
+      setQrDataUrl(dataUrl)
     }
-  }, [qrDataUrl]);
+    catch {
+      setQrDataUrl(null)
+    }
+  }, [qrDataUrl])
 
   const startQrLogin = useCallback(async () => {
-    setError(null);
-    setQrStarting(true);
-    setQrDataUrl(null);
-    lastUrlRef.current = null;
+    setError(null)
+    setQrStarting(true)
+    setQrDataUrl(null)
+    lastUrlRef.current = null
     try {
-      const outcome = await api.qrStart();
-      if (outcome.status === "waiting") {
-        await renderQr(outcome.url);
-        setStep("qr");
-      } else if (outcome.status === "passwordRequired") {
-        setPasswordHint(outcome.hint);
-        setStep("qr-password");
-      } else if (outcome.status === "authorized") {
-        onAuthenticated(outcome.user);
+      const outcome = await api.qrStart()
+      if (outcome.status === 'waiting') {
+        await renderQr(outcome.url)
+        setStep('qr')
       }
-    } catch (err) {
-      setError(errorMessage(err, "Failed to start QR login"));
-    } finally {
-      setQrStarting(false);
+      else if (outcome.status === 'passwordRequired') {
+        setPasswordHint(outcome.hint)
+        setStep('qr-password')
+      }
+      else if (outcome.status === 'authorized') {
+        onAuthenticated(outcome.user)
+      }
     }
-  }, [renderQr, onAuthenticated]);
+    catch (err) {
+      setError(errorMessage(err, 'Failed to start QR login'))
+    }
+    finally {
+      setQrStarting(false)
+    }
+  }, [renderQr, onAuthenticated])
 
   useEffect(() => {
     // QR login must be kicked off on mount; the state writes inside startQrLogin
     // reflect async MTProto progress, not derived render state.
     // eslint-disable-next-line react-hooks/set-state-in-effect
-    startQrLogin();
+    startQrLogin()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [])
 
   // Poll the QR token while the QR step is visible.
   useEffect(() => {
-    if (step !== "qr") return;
-    let cancelled = false;
+    if (step !== 'qr') return
+    let cancelled = false
 
     const interval = setInterval(async () => {
-      if (cancelled) return;
+      if (cancelled) return
       try {
-        const outcome = await api.qrPoll();
-        if (cancelled) return;
-        if (outcome.status === "waiting") {
-          await renderQr(outcome.url);
-        } else if (outcome.status === "passwordRequired") {
-          setPasswordHint(outcome.hint);
-          setStep("qr-password");
-        } else if (outcome.status === "authorized") {
-          onAuthenticated(outcome.user);
+        const outcome = await api.qrPoll()
+        if (cancelled) return
+        if (outcome.status === 'waiting') {
+          await renderQr(outcome.url)
         }
-      } catch {
+        else if (outcome.status === 'passwordRequired') {
+          setPasswordHint(outcome.hint)
+          setStep('qr-password')
+        }
+        else if (outcome.status === 'authorized') {
+          onAuthenticated(outcome.user)
+        }
+      }
+      catch {
         // transient errors while polling are ignored
       }
-    }, 2000);
+    }, 2000)
 
     return () => {
-      cancelled = true;
-      clearInterval(interval);
-    };
-  }, [step, renderQr, onAuthenticated]);
+      cancelled = true
+      clearInterval(interval)
+    }
+  }, [step, renderQr, onAuthenticated])
 
   const handleSendCode = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    setBusy(true);
+    e.preventDefault()
+    setError(null)
+    setBusy(true)
     try {
-      await api.phoneSendCode(phoneNumber);
-      setStep("code");
-    } catch (err) {
-      setError(errorMessage(err, "Failed to send code"));
-    } finally {
-      setBusy(false);
+      await api.phoneSendCode(phoneNumber)
+      setStep('code')
     }
-  };
+    catch (err) {
+      setError(errorMessage(err, 'Failed to send code'))
+    }
+    finally {
+      setBusy(false)
+    }
+  }
 
   const handleSignIn = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    setBusy(true);
+    e.preventDefault()
+    setError(null)
+    setBusy(true)
     try {
-      const outcome = await api.phoneSignIn(code);
-      if (outcome.status === "passwordRequired") {
-        setPasswordHint(outcome.hint);
-        setStep("password");
-        return;
+      const outcome = await api.phoneSignIn(code)
+      if (outcome.status === 'passwordRequired') {
+        setPasswordHint(outcome.hint)
+        setStep('password')
+        return
       }
-      onAuthenticated(outcome.user);
-    } catch (err) {
-      setError(errorMessage(err, "Failed to sign in"));
-    } finally {
-      setBusy(false);
+      onAuthenticated(outcome.user)
     }
-  };
+    catch (err) {
+      setError(errorMessage(err, 'Failed to sign in'))
+    }
+    finally {
+      setBusy(false)
+    }
+  }
 
   const handlePhonePassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    setBusy(true);
+    e.preventDefault()
+    setError(null)
+    setBusy(true)
     try {
-      const user = await api.phoneCheckPassword(password);
-      onAuthenticated(user);
-    } catch (err) {
-      setError(errorMessage(err, "Invalid password"));
-    } finally {
-      setBusy(false);
+      const user = await api.phoneCheckPassword(password)
+      onAuthenticated(user)
     }
-  };
+    catch (err) {
+      setError(errorMessage(err, 'Invalid password'))
+    }
+    finally {
+      setBusy(false)
+    }
+  }
 
   const handleQrPassword = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setError(null);
-    setBusy(true);
+    e.preventDefault()
+    setError(null)
+    setBusy(true)
     try {
-      const user = await api.qrCheckPassword(password);
-      onAuthenticated(user);
-    } catch (err) {
-      setError(errorMessage(err, "Invalid password"));
-    } finally {
-      setBusy(false);
+      const user = await api.qrCheckPassword(password)
+      onAuthenticated(user)
     }
-  };
+    catch (err) {
+      setError(errorMessage(err, 'Invalid password'))
+    }
+    finally {
+      setBusy(false)
+    }
+  }
 
   return (
     <div className="hifi-bg relative flex min-h-screen items-center justify-center overflow-hidden px-5 py-12">
@@ -200,10 +216,10 @@ export function MtprotoLogin({
               )
             : null}
 
-          {step === "qr" || step === "qr-password"
+          {step === 'qr' || step === 'qr-password'
             ? (
                 <div className="flex w-full flex-col items-center gap-4">
-                  {step === "qr"
+                  {step === 'qr'
                     ? (
                         <>
                           <p className="text-center text-sm leading-relaxed text-muted-foreground">
@@ -227,7 +243,7 @@ export function MtprotoLogin({
                               : (
                                   <div className="flex h-[232px] w-[232px] items-center justify-center">
                                     <span className="font-mono text-xs text-black/60">
-                                      {qrStarting ? "Generating…" : "Loading…"}
+                                      {qrStarting ? 'Generating…' : 'Loading…'}
                                     </span>
                                   </div>
                                 )}
@@ -248,22 +264,22 @@ export function MtprotoLogin({
                       )
                     : (
                         <form
-                          onSubmit={(e) => void handleQrPassword(e)}
+                          onSubmit={e => void handleQrPassword(e)}
                           className="flex w-full flex-col gap-3"
                         >
                           <p className="text-center text-sm text-muted-foreground">
                             2FA enabled
-                            {passwordHint ? `: ${passwordHint}` : ""}
+                            {passwordHint ? `: ${passwordHint}` : ''}
                           </p>
                           <Input
                             type="password"
                             placeholder="2FA password"
                             value={password}
-                            onChange={(e) => setPassword(e.target.value)}
+                            onChange={e => setPassword(e.target.value)}
                             required
                           />
                           <Button type="submit" disabled={busy} className="w-full">
-                            {busy ? "Signing in…" : "Continue"}
+                            {busy ? 'Signing in…' : 'Continue'}
                           </Button>
                         </form>
                       )}
@@ -272,16 +288,16 @@ export function MtprotoLogin({
                     type="button"
                     variant="outline"
                     className="w-full"
-                    onClick={() => setStep("phone")}
+                    onClick={() => setStep('phone')}
                   >
                     Use phone number instead
                   </Button>
                 </div>
               )
-            : step === "phone"
+            : step === 'phone'
               ? (
                   <form
-                    onSubmit={(e) => void handleSendCode(e)}
+                    onSubmit={e => void handleSendCode(e)}
                     className="flex w-full flex-col gap-3"
                   >
                     <p className="text-center text-xs leading-relaxed text-muted-foreground">
@@ -292,21 +308,21 @@ export function MtprotoLogin({
                       type="tel"
                       placeholder="+79991234567"
                       value={phoneNumber}
-                      onChange={(e) => setPhoneNumber(e.target.value)}
+                      onChange={e => setPhoneNumber(e.target.value)}
                       required
                     />
                     <Button type="submit" disabled={busy} className="w-full">
-                      {busy ? "Sending…" : "Send login code"}
+                      {busy ? 'Sending…' : 'Send login code'}
                     </Button>
-                    <Button type="button" variant="ghost" onClick={() => setStep("qr")}>
+                    <Button type="button" variant="ghost" onClick={() => setStep('qr')}>
                       Back to QR login
                     </Button>
                   </form>
                 )
-              : step === "code"
+              : step === 'code'
                 ? (
                     <form
-                      onSubmit={(e) => void handleSignIn(e)}
+                      onSubmit={e => void handleSignIn(e)}
                       className="flex w-full flex-col gap-3"
                     >
                       <p className="text-center text-sm leading-relaxed text-muted-foreground">
@@ -318,36 +334,36 @@ export function MtprotoLogin({
                         inputMode="numeric"
                         placeholder="Login code"
                         value={code}
-                        onChange={(e) => setCode(e.target.value)}
+                        onChange={e => setCode(e.target.value)}
                         required
                         className="text-center font-mono text-lg tracking-[0.5em]"
                       />
                       <Button type="submit" disabled={busy} className="w-full">
-                        {busy ? "Verifying…" : "Sign in"}
+                        {busy ? 'Verifying…' : 'Sign in'}
                       </Button>
-                      <Button type="button" variant="ghost" onClick={() => setStep("qr")}>
+                      <Button type="button" variant="ghost" onClick={() => setStep('qr')}>
                         Back to QR login
                       </Button>
                     </form>
                   )
                 : (
                     <form
-                      onSubmit={(e) => void handlePhonePassword(e)}
+                      onSubmit={e => void handlePhonePassword(e)}
                       className="flex w-full flex-col gap-3"
                     >
                       <p className="text-center text-sm text-muted-foreground">
                         2FA enabled
-                        {passwordHint ? `: ${passwordHint}` : ""}
+                        {passwordHint ? `: ${passwordHint}` : ''}
                       </p>
                       <Input
                         type="password"
                         placeholder="2FA password"
                         value={password}
-                        onChange={(e) => setPassword(e.target.value)}
+                        onChange={e => setPassword(e.target.value)}
                         required
                       />
                       <Button type="submit" disabled={busy} className="w-full">
-                        {busy ? "Signing in…" : "Sign in"}
+                        {busy ? 'Signing in…' : 'Sign in'}
                       </Button>
                     </form>
                   )}
@@ -358,5 +374,5 @@ export function MtprotoLogin({
         </p>
       </div>
     </div>
-  );
+  )
 }

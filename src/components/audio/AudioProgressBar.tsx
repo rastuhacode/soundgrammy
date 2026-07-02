@@ -1,14 +1,14 @@
-import { useState } from "react";
-import { cn } from "@/lib/utils";
+import { useState } from 'react'
+import { cn } from '@/lib/utils'
 
 export interface AudioProgressBarProps {
-  currentTime: number;
-  duration: number;
-  bufferedTime?: number;
-  onSeek: (time: number) => void;
-  onSeekStart?: () => void;
-  onSeekEnd?: () => void;
-  className?: string;
+  currentTime: number
+  duration: number
+  bufferedTime?: number
+  onSeek: (time: number) => void
+  onSeekStart?: () => void
+  onSeekEnd?: () => void
+  className?: string
 }
 
 export function AudioProgressBar({
@@ -20,35 +20,35 @@ export function AudioProgressBar({
   onSeekEnd,
   className,
 }: AudioProgressBarProps) {
-  const [isDragging, setIsDragging] = useState(false);
+  const [isDragging, setIsDragging] = useState(false)
 
   const progress
-    = duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0;
+    = duration > 0 ? Math.min(100, (currentTime / duration) * 100) : 0
   const bufferedProgress
-    = duration > 0 ? Math.min(100, (bufferedTime / duration) * 100) : 0;
+    = duration > 0 ? Math.min(100, (bufferedTime / duration) * 100) : 0
 
   const handleSeek = (
     e:
       | React.FormEvent<HTMLInputElement>
       | React.ChangeEvent<HTMLInputElement>,
   ) => {
-    onSeek(Number(e.currentTarget.value));
-  };
+    onSeek(Number(e.currentTarget.value))
+  }
 
   const handleSeekStart = () => {
-    setIsDragging(true);
-    onSeekStart?.();
-  };
+    setIsDragging(true)
+    onSeekStart?.()
+  }
 
   const handleSeekEnd = () => {
-    setIsDragging(false);
-    onSeekEnd?.();
-  };
+    setIsDragging(false)
+    onSeekEnd?.()
+  }
 
   return (
     <div
       className={cn(
-        "group/audiobar absolute h-8 -top-4 w-full z-100",
+        'group/audiobar absolute h-8 -top-4 w-full z-100',
         className,
       )}
     >
@@ -66,8 +66,8 @@ export function AudioProgressBar({
         />
         <div
           className={cn(
-            "absolute top-1/2 size-0.5 -translate-y-1/2 rounded-full bg-primary opacity-0 transition-all duration-200 group-hover/audiobar:opacity-100 group-hover/audiobar:scale-700",
-            isDragging && "scale-110",
+            'absolute top-1/2 size-0.5 -translate-y-1/2 rounded-full bg-primary opacity-0 transition-all duration-200 group-hover/audiobar:opacity-100 group-hover/audiobar:scale-700',
+            isDragging && 'scale-110',
           )}
           style={{ left: `calc(${progress}% - 5px)` }}
         />
@@ -91,5 +91,5 @@ export function AudioProgressBar({
         aria-valuenow={currentTime}
       />
     </div>
-  );
+  )
 }
