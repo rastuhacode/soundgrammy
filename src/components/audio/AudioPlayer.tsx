@@ -12,6 +12,7 @@ import { cn } from '@/lib/utils'
 import { AudioMainOperations } from './AudioMainOperations'
 import { AudioTrackDescription } from './AudioTrackDescription'
 import { AudioVolume } from './AudioVolume'
+import { z } from 'zod'
 
 const VOLUME_STORAGE_KEY = 'soundgrammy-volume'
 const VOLUME_DEFAULT = 25 // 25% (players shouldn't scream by default)
@@ -24,16 +25,17 @@ function formatTime(seconds: number): string {
 }
 
 function parseStoredVolume(stored: string | undefined): number {
+  const volumeSchema = z.number().min(0).max(100).default(VOLUME_DEFAULT)
+
   if (stored === undefined) return VOLUME_DEFAULT
-  let value: unknown
+  let value: number | undefined
   try {
-    value = JSON.parse(stored)
+    value = volumeSchema.safeParse(JSON.parse(stored)).data
   }
   catch {
-    value = Number(stored)
+    value = volumeSchema.safeParse(Number(stored)).data
   }
-  const n = typeof value === 'number' ? value : Number(value)
-  return Number.isFinite(n) && n >= 0 && n <= 100 ? n : VOLUME_DEFAULT
+  return value ?? VOLUME_DEFAULT
 }
 
 export function AudioPlayer() {
@@ -158,7 +160,7 @@ export function AudioPlayer() {
 
     audio.pause()
 
-    void api
+    api
       .getTrackSource(track.id)
       .then((path) => {
         if (loadGenerationRef.current !== generation) return
@@ -206,10 +208,7 @@ export function AudioPlayer() {
 
   const onProgress = (event: React.SyntheticEvent<HTMLAudioElement>) => {
     const audio = event.currentTarget
-    if (!audio.buffered.length) {
-      setBufferedTime(0)
-      return
-    }
+    if (!audio.buffered.length) return setBufferedTime(0)
     setBufferedTime(audio.buffered.end(audio.buffered.length - 1))
   }
 
@@ -232,8 +231,7 @@ export function AudioPlayer() {
       const audio = audioRef.current
       if (!audio) return
       audio.currentTime = 0
-      playAudio(audio, loadGenerationRef.current)
-      return
+      return playAudio(audio, loadGenerationRef.current)
     }
     playNext()
   }
@@ -300,11 +298,7 @@ export function AudioPlayer() {
                     onShuffleToggle={toggleShuffle}
                   />
                   <div className="flex items-center gap-1.5 font-mono text-xs tabular-nums text-muted-foreground">
-                    {isBuffering
-                      ? (
-                          <Loader2 className="size-3 animate-spin text-primary" />
-                        )
-                      : null}
+                    {isBuffering ? <Loader2 className="size-3 animate-spin text-primary" /> : null}
                     {formatTime(currentTime)}
                     <span className="mx-1 text-muted-foreground/60">/</span>
                     {formatTime(duration)}

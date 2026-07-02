@@ -61,15 +61,16 @@ export function AudioMainOperations(props: AudioMainOperationsProps) {
         type="button"
         onClick={props.onPlayToggle}
         aria-label={props.isPlaying ? 'Pause' : 'Play'}
-        className="flex size-11 items-center justify-center rounded-full bg-primary text-primary-foreground shadow-[0_0_24px_-4px_var(--primary)] transition-transform hover:scale-105 active:scale-95"
+        className={
+          cn(
+            'flex items-center justify-center',
+            'size-11 rounded-full bg-primary text-primary-foreground',
+            'transition-transform hover:scale-105 active:scale-95',
+            '[&>svg]:fill-current [&>svg]:size-5',
+          )
+        }
       >
-        {props.isPlaying
-          ? (
-              <Pause className="size-5 fill-current" />
-            )
-          : (
-              <Play className="size-5 translate-x-px fill-current" />
-            )}
+        { props.isPlaying ? <Pause /> : <Play /> }
       </button>
 
       <div className="flex items-center gap-4">
