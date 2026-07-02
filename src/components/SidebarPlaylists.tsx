@@ -1,40 +1,40 @@
-import { useState } from "react";
-import { Ellipsis, Pencil, Plus, Trash2 } from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { useState } from 'react'
+import { Ellipsis, Pencil, Plus, Trash2 } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { PlaylistFormDialog } from "@/components/playlist/PlaylistFormDialog";
-import { SidebarPlaylistThumbnail } from "@/components/playlist/SidebarPlaylistThumbnail";
-import type { CustomPlaylistSummary } from "@/lib/db";
+} from '@/components/ui/dropdown-menu'
+import { PlaylistFormDialog } from '@/components/playlist/PlaylistFormDialog'
+import { SidebarPlaylistThumbnail } from '@/components/playlist/SidebarPlaylistThumbnail'
+import type { CustomPlaylistSummary } from '@/lib/db'
 import {
   ALL_TRACKS_PLAYLIST_ID,
   LIKED_PLAYLIST_ID,
   type PlaylistId,
   usePlaylistsStore,
-} from "@/stores/playlists-store";
-import { useLibraryStore } from "@/stores/library-store";
-import { api } from "@/lib/api";
-import { cn } from "@/lib/utils";
+} from '@/stores/playlists-store'
+import { useLibraryStore } from '@/stores/library-store'
+import { api } from '@/lib/api'
+import { cn } from '@/lib/utils'
 
 interface PlaylistItemProps {
-  id: PlaylistId;
-  name: string;
-  count: number;
-  isActive: boolean;
+  id: PlaylistId
+  name: string
+  count: number
+  isActive: boolean
   thumbnailVariant:
     | typeof ALL_TRACKS_PLAYLIST_ID
     | typeof LIKED_PLAYLIST_ID
-    | "custom";
-  playlistId?: number;
-  hasThumbnail?: boolean;
-  onSelect: () => void;
-  onEdit?: () => void;
-  onDelete?: () => void;
-  isDeleting?: boolean;
+    | 'custom'
+  playlistId?: number
+  hasThumbnail?: boolean
+  onSelect: () => void
+  onEdit?: () => void
+  onDelete?: () => void
+  isDeleting?: boolean
 }
 
 function PlaylistItem({
@@ -52,10 +52,10 @@ function PlaylistItem({
   return (
     <div
       className={cn(
-        "group flex w-full items-center gap-3 rounded-lg px-2 py-2 transition-colors",
+        'group flex w-full items-center gap-3 rounded-lg px-2 py-2 transition-colors',
         isActive
-          ? "bg-accent text-accent-foreground"
-          : "text-foreground hover:bg-muted/70",
+          ? 'bg-accent text-accent-foreground'
+          : 'text-foreground hover:bg-muted/70',
       )}
       role="button"
       aria-label={`Select ${name} playlist`}
@@ -72,8 +72,8 @@ function PlaylistItem({
       <div className="min-w-0 grow">
         <p
           className={cn(
-            "truncate text-sm font-medium",
-            isActive ? "text-foreground" : "text-foreground/90",
+            'truncate text-sm font-medium',
+            isActive ? 'text-foreground' : 'text-foreground/90',
           )}
         >
           {name}
@@ -96,7 +96,7 @@ function PlaylistItem({
                       size="icon-xs"
                       aria-label={`${name} options`}
                       className="text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
-                      onClick={(e) => e.stopPropagation()}
+                      onClick={e => e.stopPropagation()}
                     >
                       <Ellipsis />
                     </Button>
@@ -107,8 +107,8 @@ function PlaylistItem({
                       ? (
                           <DropdownMenuItem
                             onClick={(event) => {
-                              event.stopPropagation();
-                              onEdit();
+                              event.stopPropagation()
+                              onEdit()
                             }}
                           >
                             <Pencil />
@@ -122,8 +122,8 @@ function PlaylistItem({
                             variant="destructive"
                             disabled={isDeleting}
                             onClick={(event) => {
-                              event.stopPropagation();
-                              onDelete();
+                              event.stopPropagation()
+                              onDelete()
                             }}
                           >
                             <Trash2 />
@@ -138,44 +138,46 @@ function PlaylistItem({
         </div>
       </div>
     </div>
-  );
+  )
 }
 
 type DialogState
-  = | { mode: "create" }
-    | { mode: "edit"; playlist: CustomPlaylistSummary };
+  = | { mode: 'create' }
+    | { mode: 'edit', playlist: CustomPlaylistSummary }
 
 export function SidebarPlaylists() {
-  const libraryTrackCount = useLibraryStore((state) => state.tracks.length);
-  const data = usePlaylistsStore((state) => state.data);
+  const libraryTrackCount = useLibraryStore(state => state.library.length)
+  const data = usePlaylistsStore(state => state.data)
   const selectedPlaylistId = usePlaylistsStore(
-    (state) => state.selectedPlaylistId,
-  );
+    state => state.selectedPlaylistId,
+  )
   const setSelectedPlaylist = usePlaylistsStore(
-    (state) => state.setSelectedPlaylist,
-  );
-  const setData = usePlaylistsStore((state) => state.setData);
+    state => state.setSelectedPlaylist,
+  )
+  const setData = usePlaylistsStore(state => state.setData)
 
-  const [dialogState, setDialogState] = useState<DialogState | null>(null);
-  const [deletingId, setDeletingId] = useState<number | null>(null);
+  const [dialogState, setDialogState] = useState<DialogState | null>(null)
+  const [deletingId, setDeletingId] = useState<number | null>(null)
 
-  const likedCount = data?.liked.trackIds.length ?? 0;
+  const likedCount = data?.liked.trackIds.length ?? 0
 
   const handleDelete = async (id: number) => {
-    if (!data) return;
-    setDeletingId(id);
+    if (!data) return
+    setDeletingId(id)
     try {
-      await api.deletePlaylist(id);
+      await api.deletePlaylist(id)
       setData({
         ...data,
-        custom: data.custom.filter((playlist) => playlist.id !== id),
-      });
-    } catch {
-      // keep list unchanged on failure
-    } finally {
-      setDeletingId(null);
+        custom: data.custom.filter(playlist => playlist.id !== id),
+      })
     }
-  };
+    catch {
+      // keep list unchanged on failure
+    }
+    finally {
+      setDeletingId(null)
+    }
+  }
 
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-4">
@@ -187,7 +189,7 @@ export function SidebarPlaylists() {
           type="button"
           variant="ghost"
           size="icon-sm"
-          onClick={() => setDialogState({ mode: "create" })}
+          onClick={() => setDialogState({ mode: 'create' })}
           aria-label="Create playlist"
           className="text-muted-foreground hover:text-foreground"
         >
@@ -218,7 +220,7 @@ export function SidebarPlaylists() {
             )
           : null}
 
-        {data?.custom.map((playlist) => (
+        {data?.custom.map(playlist => (
           <PlaylistItem
             key={playlist.id}
             id={playlist.id}
@@ -229,7 +231,7 @@ export function SidebarPlaylists() {
             playlistId={playlist.id}
             hasThumbnail={playlist.hasThumbnail}
             onSelect={() => setSelectedPlaylist(playlist.id)}
-            onEdit={() => setDialogState({ mode: "edit", playlist })}
+            onEdit={() => setDialogState({ mode: 'edit', playlist })}
             onDelete={() => handleDelete(playlist.id)}
             isDeleting={deletingId === playlist.id}
           />
@@ -239,11 +241,11 @@ export function SidebarPlaylists() {
       <PlaylistFormDialog
         open={dialogState !== null}
         onOpenChange={(open) => {
-          if (!open) setDialogState(null);
+          if (!open) setDialogState(null)
         }}
-        mode={dialogState?.mode ?? "create"}
-        playlist={dialogState?.mode === "edit" ? dialogState.playlist : undefined}
+        mode={dialogState?.mode ?? 'create'}
+        playlist={dialogState?.mode === 'edit' ? dialogState.playlist : undefined}
       />
     </div>
-  );
+  )
 }

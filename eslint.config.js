@@ -13,14 +13,7 @@ export default [
   ...tseslint.configs.recommended,
   importX.flatConfigs.recommended,
   importX.flatConfigs.typescript,
-  stylistic.configs.customize({
-    indent: 2,
-    quotes: "double",
-    semi: true,
-    jsx: true,
-    braceStyle: "1tbs",
-    arrowParens: true,
-  }),
+  stylistic.configs.recommended,
   {
     plugins: {
       turbo: turboPlugin,

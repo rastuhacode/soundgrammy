@@ -1,38 +1,40 @@
-import { readLocalStorageValue } from "@mantine/hooks";
-import { create } from "zustand";
-import type { Track } from "@/lib/db";
-import { z } from "zod";
+import { readLocalStorageValue } from '@mantine/hooks'
+import { create } from 'zustand'
+import type { Track } from '@/lib/db'
 
-const SHUFFLE_STORAGE_KEY = "soundgrammy-shuffle";
+import type { ShuffleState, ShuffleAlgorithm } from '@/lib/shuffle'
+import { defaultShuffle } from '@/lib/shuffle/default'
+import { isShuffleState } from '@/lib/shuffle'
 
-export const shuffleSchema = z.enum(["off", "on"]);
-export type ShuffleState = z.infer<typeof shuffleSchema>;
-export type ShuffleAlgorithm = (playlist: Track[]) => Track[];
+function useStorageShuffle() {
+  const SHUFFLE_STORAGE_KEY = 'soundgrammy-shuffle'
 
-export const defaultShuffleAlgorithm: ShuffleAlgorithm = (playlist) => {
-  const shuffled = [...playlist];
-  for (let i = shuffled.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [shuffled[i], shuffled[j]] = [shuffled[j]!, shuffled[i]!];
+  function deserialize(stored: string | undefined): ShuffleState {
+    if (stored === undefined) return 'off'
+    try {
+      const state = JSON.parse(stored)
+      if (isShuffleState(state)) return state
+    }
+    catch {
+      if (isShuffleState(stored)) return stored
+    }
+    return 'off'
   }
-  return shuffled;
-};
 
-function parseStoredShuffle(stored: string | undefined): ShuffleState {
-  if (stored === undefined) return "off";
-  try {
-    const result = shuffleSchema.safeParse(JSON.parse(stored));
-    if (result.success) return result.data;
-  } catch {
-    const result = shuffleSchema.safeParse(stored);
-    if (result.success) return result.data;
+  const read = (): ShuffleState => {
+    return readLocalStorageValue<ShuffleState>({
+      key: SHUFFLE_STORAGE_KEY,
+      defaultValue: 'off',
+      deserialize,
+    })
   }
-  return "off";
-}
 
-function persistShuffle(shuffle: ShuffleState) {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(SHUFFLE_STORAGE_KEY, JSON.stringify(shuffle));
+  const write = (shuffle: ShuffleState) => {
+    if (typeof window === 'undefined') return
+    localStorage.setItem(SHUFFLE_STORAGE_KEY, JSON.stringify(shuffle))
+  }
+
+  return { read, write }
 }
 
 function applyShuffle(
@@ -40,64 +42,51 @@ function applyShuffle(
   algorithm: ShuffleAlgorithm,
   pinTrackId?: number,
 ): Track[] {
-  if (orderedTracks.length <= 1) {
-    return orderedTracks;
-  }
+  if (orderedTracks.length <= 1) return orderedTracks
 
-  let shuffled = algorithm(orderedTracks);
-  if (pinTrackId === undefined) {
-    return shuffled;
-  }
+  let shuffled = algorithm(orderedTracks)
+  if (pinTrackId === undefined) return shuffled
 
-  const pinIndex = shuffled.findIndex((track) => track.id === pinTrackId);
+  const pinIndex = shuffled.findIndex(track => track.id === pinTrackId)
   if (pinIndex > 0) {
-    const [pinned] = shuffled.splice(pinIndex, 1);
-    shuffled = [pinned!, ...shuffled];
+    const [pinned] = shuffled.splice(pinIndex, 1)
+    shuffled = [pinned!, ...shuffled]
   }
 
-  return shuffled;
+  return shuffled
 }
 
 interface ShuffleStoreState {
-  shuffle: ShuffleState;
-  shuffleAlgorithm: ShuffleAlgorithm;
-  setShuffle: (shuffle: ShuffleState) => void;
-  toggleShuffle: () => void;
+  shuffle: ShuffleState
+  shuffleAlgorithm: ShuffleAlgorithm
+  setShuffle: (shuffle: ShuffleState) => void
+  toggleShuffle: () => void
   resolvePlaybackTracks: (
     orderedTracks: Track[],
     pinTrackId?: number,
-  ) => Track[];
-  hydrate: () => void;
+  ) => Track[]
+  hydrate: () => void
 }
 
-export const useShuffleStore = create<ShuffleStoreState>((set, get) => ({
-  shuffle: "off",
-  shuffleAlgorithm: defaultShuffleAlgorithm,
+export const useShuffleStore = create<ShuffleStoreState>((set, get) => {
+  const { read, write } = useStorageShuffle()
 
-  setShuffle: (shuffle) => {
-    persistShuffle(shuffle);
-    set({ shuffle });
-  },
-
-  toggleShuffle: () => {
-    const { shuffle } = get();
-    get().setShuffle(shuffle === "off" ? "on" : "off");
-  },
-
-  resolvePlaybackTracks: (orderedTracks, pinTrackId) => {
-    const { shuffle, shuffleAlgorithm } = get();
-    if (shuffle === "off") {
-      return orderedTracks;
-    }
-    return applyShuffle(orderedTracks, shuffleAlgorithm, pinTrackId);
-  },
-
-  hydrate: () => {
-    const shuffle = readLocalStorageValue<ShuffleState>({
-      key: SHUFFLE_STORAGE_KEY,
-      defaultValue: "off",
-      deserialize: parseStoredShuffle,
-    });
-    set({ shuffle });
-  },
-}));
+  return {
+    shuffle: 'off',
+    shuffleAlgorithm: defaultShuffle,
+    setShuffle: (shuffle) => {
+      write(shuffle)
+      set({ shuffle })
+    },
+    toggleShuffle: () => {
+      const { shuffle, setShuffle } = get()
+      setShuffle(shuffle === 'off' ? 'on' : 'off')
+    },
+    resolvePlaybackTracks: (orderedTracks, pinTrackId) => {
+      const { shuffle, shuffleAlgorithm } = get()
+      if (shuffle === 'off') return orderedTracks
+      return applyShuffle(orderedTracks, shuffleAlgorithm, pinTrackId)
+    },
+    hydrate: () => set({ shuffle: read() }),
+  }
+})

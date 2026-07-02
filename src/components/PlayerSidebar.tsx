@@ -1,11 +1,8 @@
-import { SidebarProfile } from "@/components/SidebarProfile";
-import { SidebarPlaylists } from "@/components/SidebarPlaylists";
-import { Separator } from "@/components/ui/separator";
-// import { useLibraryStore } from "@/stores/library-store";
+import { SidebarProfile } from '@/components/SidebarProfile'
+import { SidebarPlaylists } from '@/components/SidebarPlaylists'
+import { Separator } from '@/components/ui/separator'
 
 export function PlayerSidebar({ onLogout }: { onLogout: () => void }) {
-  // const trackCount = useLibraryStore((state) => state.tracks.length);
-
   return (
     <div className="flex h-full flex-col gap-4 pt-4">
       <div className="flex w-full items-center justify-between gap-2 px-4 h-10">
@@ -20,5 +17,5 @@ export function PlayerSidebar({ onLogout }: { onLogout: () => void }) {
 
       <SidebarPlaylists />
     </div>
-  );
+  )
 }

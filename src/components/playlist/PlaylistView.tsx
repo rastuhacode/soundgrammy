@@ -1,122 +1,127 @@
-import type { Track } from "@/lib/db";
-import { useLibraryStore } from "@/stores/library-store";
-import { usePlayerStore } from "@/stores/player-store";
+import type { Track } from '@/lib/db'
+import { useLibraryStore } from '@/stores/library-store'
+import { usePlayerStore } from '@/stores/player-store'
 import {
   isTrackLiked,
   LIKED_PLAYLIST_ID,
   resolveSelectedPlaylistTracks,
   usePlaylistsStore,
-} from "@/stores/playlists-store";
+} from '@/stores/playlists-store'
 import type {
   CustomPlaylistId,
   ResolvedSelectedPlaylist,
-} from "@/stores/playlists-store";
-import { useVirtualizer } from "@tanstack/react-virtual";
-import { Music } from "lucide-react";
-import { useMemo, useRef, useState } from "react";
-import { revealItemInDir } from "@tauri-apps/plugin-opener";
-import { Separator } from "@/components/ui/separator";
-import { api } from "@/lib/api";
+} from '@/stores/playlists-store'
+import { useVirtualizer } from '@tanstack/react-virtual'
+import { Music, Play, Shuffle } from 'lucide-react'
+import { useMemo, useRef, useState } from 'react'
+import { revealItemInDir } from '@tauri-apps/plugin-opener'
+import { Separator } from '@/components/ui/separator'
+import { api } from '@/lib/api'
 
-import { TRACK_ROW_HEIGHT, PlaylistTrackRow } from "./PlaylistTrackRow";
-import { TrackInfoDialog } from "./TrackInfoDialog";
+import { TRACK_ROW_HEIGHT, PlaylistTrackRow } from './PlaylistTrackRow'
+import { TrackInfoDialog } from './TrackInfoDialog'
+import { Button } from '@/components/ui/button'
+import { useShuffleStore } from '@/stores/shuffle-store'
 
 function getEmptyStateCopy(
   libraryTrackCount: number,
-  playlistId: ResolvedSelectedPlaylist["id"],
+  playlistId: ResolvedSelectedPlaylist['id'],
   isCustom: boolean,
-): { title: string; description: string } {
+): { title: string, description: string } {
   if (libraryTrackCount === 0) {
     return {
-      title: "No tracks yet",
+      title: 'No playlistTracks yet',
       description:
-        "Pin music to your Telegram profile and it will tune in here automatically.",
-    };
+        'Pin music to your Telegram profile and it will tune in here automatically.',
+    }
   }
 
   if (playlistId === LIKED_PLAYLIST_ID) {
     return {
-      title: "No liked tracks yet",
-      description: "Tap the heart on any track to save it here.",
-    };
+      title: 'No liked playlistTracks yet',
+      description: 'Tap the heart on any track to save it here.',
+    }
   }
 
   if (isCustom) {
     return {
-      title: "This playlist is empty",
-      description: "Add tracks from your library using the list button.",
-    };
+      title: 'This playlist is empty',
+      description: 'Add playlistTracks from your library using the list button.',
+    }
   }
 
   return {
-    title: "No tracks yet",
+    title: 'No playlistTracks yet',
     description:
-      "Pin music to your Telegram profile and it will tune in here automatically.",
-  };
+      'Pin music to your Telegram profile and it will tune in here automatically.',
+  }
 }
 
 export function PlaylistView() {
-  const libraryTracks = useLibraryStore((state) => state.tracks);
+  const libraryTracks = useLibraryStore(state => state.library)
   const currentTrackId = usePlayerStore(
-    (state) => state.currentTrack?.id ?? null,
-  );
-  const isPlaying = usePlayerStore((state) => state.isPlaying);
-  const selectTrack = usePlayerStore((state) => state.selectTrack);
-  const data = usePlaylistsStore((state) => state.data);
+    state => state.currentTrack?.id ?? null,
+  )
+  const isPlaying = usePlayerStore(state => state.isPlaying)
+  const selectTrack = usePlayerStore(state => state.selectTrack)
+  const data = usePlaylistsStore(state => state.data)
   const selectedPlaylistId = usePlaylistsStore(
-    (state) => state.selectedPlaylistId,
-  );
+    state => state.selectedPlaylistId,
+  )
   const activateSelectedPlaylist = usePlaylistsStore(
-    (state) => state.activateSelectedPlaylist,
-  );
-  const setData = usePlaylistsStore((state) => state.setData);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [infoTrack, setInfoTrack] = useState<Track | null>(null);
+    state => state.activateSelectedPlaylist,
+  )
+  const setData = usePlaylistsStore(state => state.setData)
+  const scrollRef = useRef<HTMLDivElement>(null)
+  const [infoTrack, setInfoTrack] = useState<Track | null>(null)
+  const shuffle = useShuffleStore(state => state.shuffle)
+  const setShuffle = useShuffleStore(state => state.setShuffle)
+  const setQueueTracks = usePlayerStore(state => state.setQueueTracks)
 
   const selectedPlaylist = useMemo(
     () => resolveSelectedPlaylistTracks(libraryTracks, data, selectedPlaylistId),
     [libraryTracks, data, selectedPlaylistId],
-  );
+  )
   const {
-    tracks,
+    tracks: playlistTracks,
     isCustom,
     name: playlistName,
     id: playlistId,
-  } = selectedPlaylist;
+  } = selectedPlaylist
 
-  // TanStack Virtual intentionally returns live functions; this component does
-  // not pass them through memoized props, so the compiler warning is acceptable.
+  // TanStack Virtual intentionally returns live functions
   // eslint-disable-next-line react-hooks/incompatible-library
   const virtualizer = useVirtualizer({
-    count: tracks.length,
+    count: playlistTracks.length,
     gap: 8,
     getScrollElement: () => scrollRef.current,
     estimateSize: () => TRACK_ROW_HEIGHT,
     overscan: 8,
-  });
+  })
 
   const handleTrackSelect = (track: Track) => {
-    activateSelectedPlaylist(track.id);
-    selectTrack(track);
-  };
+    activateSelectedPlaylist(track.id)
+    selectTrack(track)
+  }
 
   const handleToggleLike = async (trackId: number) => {
-    if (!data) return;
+    if (!data) return
     try {
-      const trackIds = await api.toggleLike(trackId);
-      setData({ ...data, liked: { ...data.liked, trackIds } });
-    } catch {
+      const trackIds = await api.toggleLike(trackId)
+      setData({ ...data, liked: { ...data.liked, trackIds } })
+    }
+    catch {
       // keep UI unchanged on failure
     }
-  };
+  }
 
   const handleAddToPlaylist = async (targetId: number, trackId: number) => {
-    if (!data) return;
+    if (!data) return
     try {
-      await api.addTrackToPlaylist(targetId, trackId);
+      await api.addTrackToPlaylist(targetId, trackId)
       setData({
         ...data,
-        custom: data.custom.map((playlist) =>
+        custom: data.custom.map(playlist =>
           playlist.id === targetId
             ? {
                 ...playlist,
@@ -126,54 +131,71 @@ export function PlaylistView() {
               }
             : playlist,
         ),
-      });
-    } catch {
+      })
+    }
+    catch {
       // keep UI unchanged on failure
     }
-  };
+  }
 
   const handleDeleteFromPlaylist = async (
     targetId: CustomPlaylistId,
     trackId: number,
   ) => {
-    if (!data) return;
+    if (!data) return
     try {
-      await api.removeTrackFromPlaylist(targetId, trackId);
+      await api.removeTrackFromPlaylist(targetId, trackId)
       setData({
         ...data,
-        custom: data.custom.map((playlist) =>
+        custom: data.custom.map(playlist =>
           playlist.id === targetId
             ? {
                 ...playlist,
-                trackIds: playlist.trackIds.filter((id) => id !== trackId),
+                trackIds: playlist.trackIds.filter(id => id !== trackId),
               }
             : playlist,
         ),
-      });
-    } catch {
+      })
+    }
+    catch {
       // keep UI unchanged on failure
     }
-  };
+  }
 
   const handleDownload = async (track: Track) => {
     try {
-      const path = await api.getTrackSource(track.id);
-      await revealItemInDir(path);
-    } catch {
+      const path = await api.getTrackSource(track.id)
+      await revealItemInDir(path)
+    }
+    catch {
       // ignore — file may still be downloading
     }
-  };
+  }
+
+  function handlePlaylistPlay() {
+    const firstTrack = playlistTracks[0]
+    handleTrackSelect(firstTrack)
+  }
+
+  // TODO: refactor shuffle, playlists and queue
+  // for more adaptive use cases like here
+  // Currently this feature doesn't work as expected
+  function handlePlaylistShuffle() {
+    if (shuffle === 'off') setShuffle('on')
+    setQueueTracks(playlistTracks)
+    selectTrack(usePlayerStore.getState().tracks[0])
+  }
 
   const handleShowInfo = (track: Track) => {
-    setInfoTrack(track);
-  };
+    setInfoTrack(track)
+  }
 
-  if (tracks.length === 0) {
+  if (playlistTracks.length === 0) {
     const emptyState = getEmptyStateCopy(
       libraryTracks.length,
       playlistId,
       isCustom,
-    );
+    )
 
     return (
       <div className="animate-fade-up flex flex-col items-center justify-center gap-3 px-6 py-20 text-center">
@@ -187,16 +209,24 @@ export function PlaylistView() {
           {emptyState.description}
         </p>
       </div>
-    );
+    )
   }
 
-  const customPlaylists = data?.custom ?? [];
+  const customPlaylists = data?.custom ?? []
 
   return (
     <>
       <div className="flex min-h-0 grow flex-col pt-4">
-        <div className="h-10 px-4 shrink-0 flex items-center">
+        <div className="h-10 px-4 shrink-0 flex items-center gap-4">
           <h2 className="text-lg font-semibold">{playlistName}</h2>
+          <Button onClick={handlePlaylistPlay}>
+            <Play />
+            Play
+          </Button>
+          <Button variant="secondary" disabled onClick={handlePlaylistShuffle}>
+            <Shuffle />
+            Shuffle
+          </Button>
         </div>
 
         <Separator className="mt-4" />
@@ -207,17 +237,14 @@ export function PlaylistView() {
             style={{ height: `${virtualizer.getTotalSize()}px` }}
           >
             {virtualizer.getVirtualItems().map((virtualRow) => {
-              const track = tracks[virtualRow.index];
-              if (!track) return null;
+              const track = playlistTracks[virtualRow.index]
+              if (!track) return null
 
               return (
                 <PlaylistTrackRow
                   key={track.id}
                   className="absolute left-0 top-0 w-full"
-                  style={{
-                    height: `${virtualRow.size}px`,
-                    transform: `translateY(${virtualRow.start}px)`,
-                  }}
+                  style={{ height: `${virtualRow.size}px`, transform: `translateY(${virtualRow.start}px)` }}
                   currentPlaylist={selectedPlaylist}
                   track={track}
                   isActive={currentTrackId === track.id}
@@ -231,7 +258,7 @@ export function PlaylistView() {
                   onDownload={handleDownload}
                   onShowInfo={handleShowInfo}
                 />
-              );
+              )
             })}
           </ul>
         </div>
@@ -242,10 +269,10 @@ export function PlaylistView() {
         open={infoTrack !== null}
         onOpenChange={(open) => {
           if (!open) {
-            setInfoTrack(null);
+            setInfoTrack(null)
           }
         }}
       />
     </>
-  );
+  )
 }

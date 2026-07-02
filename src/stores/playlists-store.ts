@@ -1,81 +1,81 @@
-import { create } from "zustand";
-import type { PlaylistsBundle, Track } from "@/lib/db";
-import { useLibraryStore } from "@/stores/library-store";
-import { usePlayerStore } from "@/stores/player-store";
+import { create } from 'zustand'
+import type { PlaylistsBundle, Track } from '@/lib/db'
+import { useLibraryStore } from '@/stores/library-store'
+import { usePlayerStore } from '@/stores/player-store'
 
-export const ALL_TRACKS_PLAYLIST_ID = "all" as const;
-export const LIKED_PLAYLIST_ID = "liked" as const;
+export const ALL_TRACKS_PLAYLIST_ID = 'all' as const
+export const LIKED_PLAYLIST_ID = 'liked' as const
 
-export type CustomPlaylistId = number;
+export type CustomPlaylistId = number
 export type CommonPlaylistId
-  = typeof ALL_TRACKS_PLAYLIST_ID | typeof LIKED_PLAYLIST_ID;
-export type PlaylistId = CustomPlaylistId | CommonPlaylistId;
+  = typeof ALL_TRACKS_PLAYLIST_ID | typeof LIKED_PLAYLIST_ID
+export type PlaylistId = CustomPlaylistId | CommonPlaylistId
 
-const SELECTED_PLAYLIST_STORAGE_KEY = "soundgrammy:selectedPlaylistId";
+const SELECTED_PLAYLIST_STORAGE_KEY = 'soundgrammy:selectedPlaylistId'
 
-export type PlaylistsData = PlaylistsBundle;
+export type PlaylistsData = PlaylistsBundle
 
 export interface QueueSnapshot {
-  playlistId: PlaylistId;
-  trackIds: number[];
+  playlistId: PlaylistId
+  trackIds: number[]
 }
 
-export type SelectedPlaylist = CustomSelectedPlaylist | CommonSelectedPlaylist;
+export type SelectedPlaylist = CustomSelectedPlaylist | CommonSelectedPlaylist
 
 interface BaseSelectedPlaylist {
-  id: PlaylistId;
-  name: string;
-  trackIds: number[];
-  isCustom: boolean;
+  id: PlaylistId
+  name: string
+  trackIds: number[]
+  isCustom: boolean
 }
 
 export interface CustomSelectedPlaylist extends BaseSelectedPlaylist {
-  id: CustomPlaylistId;
-  isCustom: true;
+  id: CustomPlaylistId
+  isCustom: true
 }
 
 export interface CommonSelectedPlaylist extends BaseSelectedPlaylist {
-  id: CommonPlaylistId;
-  isCustom: false;
+  id: CommonPlaylistId
+  isCustom: false
 }
 
 export interface ResolvedCustomSelectedPlaylist extends CustomSelectedPlaylist {
-  tracks: Track[];
+  tracks: Track[]
 }
 
 export interface ResolvedCommonSelectedPlaylist extends CommonSelectedPlaylist {
-  tracks: Track[];
+  tracks: Track[]
 }
 
 export type ResolvedSelectedPlaylist
   = | ResolvedCustomSelectedPlaylist
-    | ResolvedCommonSelectedPlaylist;
+    | ResolvedCommonSelectedPlaylist
 
 function readPersistedSelectedPlaylistId(): PlaylistId | number {
-  if (typeof window === "undefined") {
-    return ALL_TRACKS_PLAYLIST_ID;
+  if (typeof window === 'undefined') {
+    return ALL_TRACKS_PLAYLIST_ID
   }
 
-  const stored = localStorage.getItem(SELECTED_PLAYLIST_STORAGE_KEY);
+  const stored = localStorage.getItem(SELECTED_PLAYLIST_STORAGE_KEY)
   if (!stored || stored === ALL_TRACKS_PLAYLIST_ID) {
-    return ALL_TRACKS_PLAYLIST_ID;
+    return ALL_TRACKS_PLAYLIST_ID
   }
 
   if (stored === LIKED_PLAYLIST_ID) {
-    return LIKED_PLAYLIST_ID;
+    return LIKED_PLAYLIST_ID
   }
 
-  const parsed = Number(stored);
+  const parsed = Number(stored)
   return Number.isInteger(parsed) && parsed > 0
     ? parsed
-    : ALL_TRACKS_PLAYLIST_ID;
+    : ALL_TRACKS_PLAYLIST_ID
 }
 
 function persistSelectedPlaylistId(id: PlaylistId) {
-  if (typeof window === "undefined") {
-    return;
+  if (typeof window === 'undefined') {
+    return
   }
-  localStorage.setItem(SELECTED_PLAYLIST_STORAGE_KEY, String(id));
+  localStorage.setItem(SELECTED_PLAYLIST_STORAGE_KEY, String(id))
 }
 
 function normalizePlaylistId(
@@ -83,14 +83,14 @@ function normalizePlaylistId(
   playlistId: PlaylistId | number,
 ): PlaylistId {
   if (playlistId === ALL_TRACKS_PLAYLIST_ID || playlistId === LIKED_PLAYLIST_ID) {
-    return playlistId;
+    return playlistId
   }
 
-  if (typeof playlistId === "number" && playlistId === data.liked.id) {
-    return LIKED_PLAYLIST_ID;
+  if (typeof playlistId === 'number' && playlistId === data.liked.id) {
+    return LIKED_PLAYLIST_ID
   }
 
-  return playlistId;
+  return playlistId
 }
 
 function resolvePlaylistTrackIds(
@@ -99,15 +99,15 @@ function resolvePlaylistTrackIds(
   libraryTracks: Track[] = [],
 ): number[] {
   if (playlistId === ALL_TRACKS_PLAYLIST_ID) {
-    return libraryTracks.map((track) => track.id);
+    return libraryTracks.map(track => track.id)
   }
 
   if (playlistId === LIKED_PLAYLIST_ID) {
-    return data?.liked.trackIds ?? [];
+    return data?.liked.trackIds ?? []
   }
 
-  const custom = data?.custom.find((playlist) => playlist.id === playlistId);
-  return custom?.trackIds ?? [];
+  const custom = data?.custom.find(playlist => playlist.id === playlistId)
+  return custom?.trackIds ?? []
 }
 
 export function resolvePlaylistTracks(
@@ -116,18 +116,18 @@ export function resolvePlaylistTracks(
   playlistId: PlaylistId,
 ): Track[] {
   if (playlistId === ALL_TRACKS_PLAYLIST_ID) {
-    return libraryTracks;
+    return libraryTracks
   }
 
-  const trackIds = resolvePlaylistTrackIds(data, playlistId, libraryTracks);
+  const trackIds = resolvePlaylistTrackIds(data, playlistId, libraryTracks)
   if (trackIds.length === 0) {
-    return [];
+    return []
   }
 
-  const trackById = new Map(libraryTracks.map((track) => [track.id, track]));
+  const trackById = new Map(libraryTracks.map(track => [track.id, track]))
   return trackIds
-    .map((id) => trackById.get(id))
-    .filter((track): track is Track => track !== undefined);
+    .map(id => trackById.get(id))
+    .filter((track): track is Track => track !== undefined)
 }
 
 export function resolveSelectedPlaylist(
@@ -135,33 +135,33 @@ export function resolveSelectedPlaylist(
   data: PlaylistsData | null,
   playlistId: PlaylistId,
 ): SelectedPlaylist {
-  const trackIds = resolvePlaylistTrackIds(data, playlistId, libraryTracks);
+  const trackIds = resolvePlaylistTrackIds(data, playlistId, libraryTracks)
 
   if (playlistId === ALL_TRACKS_PLAYLIST_ID) {
     return {
       id: ALL_TRACKS_PLAYLIST_ID,
-      name: "All tracks",
+      name: 'All tracks',
       trackIds,
       isCustom: false,
-    };
+    }
   }
 
   if (playlistId === LIKED_PLAYLIST_ID) {
     return {
       id: LIKED_PLAYLIST_ID,
-      name: "Liked",
+      name: 'Liked',
       trackIds,
       isCustom: false,
-    };
+    }
   }
 
-  const custom = data?.custom.find((playlist) => playlist.id === playlistId);
+  const custom = data?.custom.find(playlist => playlist.id === playlistId)
   return {
     id: playlistId,
-    name: custom?.name ?? "Playlist",
+    name: custom?.name ?? 'Playlist',
     trackIds,
     isCustom: true,
-  };
+  }
 }
 
 export function resolveSelectedPlaylistTracks(
@@ -169,14 +169,14 @@ export function resolveSelectedPlaylistTracks(
   data: PlaylistsData | null,
   playlistId: PlaylistId,
 ): ResolvedSelectedPlaylist {
-  const playlist = resolveSelectedPlaylist(libraryTracks, data, playlistId);
-  const tracks = resolvePlaylistTracks(libraryTracks, data, playlistId);
+  const playlist = resolveSelectedPlaylist(libraryTracks, data, playlistId)
+  const tracks = resolvePlaylistTracks(libraryTracks, data, playlistId)
 
   if (playlist.isCustom) {
-    return { ...playlist, tracks };
+    return { ...playlist, tracks }
   }
 
-  return { ...playlist, tracks };
+  return { ...playlist, tracks }
 }
 
 function isValidPlaylistId(
@@ -187,10 +187,10 @@ function isValidPlaylistId(
     playlistId === ALL_TRACKS_PLAYLIST_ID
     || playlistId === LIKED_PLAYLIST_ID
   ) {
-    return true;
+    return true
   }
 
-  return data.custom.some((playlist) => playlist.id === playlistId);
+  return data.custom.some(playlist => playlist.id === playlistId)
 }
 
 function createQueueSnapshot(
@@ -199,21 +199,21 @@ function createQueueSnapshot(
   playlistId: PlaylistId,
 ): QueueSnapshot {
   const trackIds = resolvePlaylistTracks(libraryTracks, data, playlistId).map(
-    (track) => track.id,
-  );
-  return { playlistId, trackIds };
+    track => track.id,
+  )
+  return { playlistId, trackIds }
 }
 
 interface PlaylistsState {
-  data: PlaylistsData | null;
-  selectedPlaylistId: PlaylistId;
-  activePlaylistId: PlaylistId;
-  queueSnapshot: QueueSnapshot | null;
-  hydrate: (data: PlaylistsData) => void;
-  setSelectedPlaylist: (id: PlaylistId) => void;
-  activateSelectedPlaylist: (trackId: number) => void;
-  setData: (data: PlaylistsData) => void;
-  syncQueueToPlayer: () => void;
+  data: PlaylistsData | null
+  selectedPlaylistId: PlaylistId
+  activePlaylistId: PlaylistId
+  queueSnapshot: QueueSnapshot | null
+  hydrate: (data: PlaylistsData) => void
+  setSelectedPlaylist: (id: PlaylistId) => void
+  activateSelectedPlaylist: (trackId: number) => void
+  setData: (data: PlaylistsData) => void
+  syncQueueToPlayer: () => void
 }
 
 export const usePlaylistsStore = create<PlaylistsState>((set, get) => ({
@@ -226,13 +226,13 @@ export const usePlaylistsStore = create<PlaylistsState>((set, get) => ({
     const persisted = normalizePlaylistId(
       data,
       readPersistedSelectedPlaylistId(),
-    );
+    )
     const selectedPlaylistId = isValidPlaylistId(data, persisted)
       ? persisted
-      : ALL_TRACKS_PLAYLIST_ID;
+      : ALL_TRACKS_PLAYLIST_ID
 
     if (selectedPlaylistId !== persisted) {
-      persistSelectedPlaylistId(selectedPlaylistId);
+      persistSelectedPlaylistId(selectedPlaylistId)
     }
 
     set({
@@ -240,23 +240,23 @@ export const usePlaylistsStore = create<PlaylistsState>((set, get) => ({
       selectedPlaylistId,
       activePlaylistId: selectedPlaylistId,
       queueSnapshot: null,
-    });
+    })
   },
 
   setSelectedPlaylist: (id) => {
-    persistSelectedPlaylistId(id);
-    set({ selectedPlaylistId: id });
+    persistSelectedPlaylistId(id)
+    set({ selectedPlaylistId: id })
   },
 
   activateSelectedPlaylist: (trackId) => {
-    const { selectedPlaylistId, queueSnapshot, data } = get();
-    const libraryTracks = useLibraryStore.getState().tracks;
-    const currentTrackId = usePlayerStore.getState().currentTrack?.id ?? null;
+    const { selectedPlaylistId, queueSnapshot, data } = get()
+    const libraryTracks = useLibraryStore.getState().library
+    const currentTrackId = usePlayerStore.getState().currentTrack?.id ?? null
 
     const needsNewSnapshot
       = !queueSnapshot
         || queueSnapshot.playlistId !== selectedPlaylistId
-        || currentTrackId !== trackId;
+        || currentTrackId !== trackId
 
     if (needsNewSnapshot) {
       set({
@@ -266,33 +266,34 @@ export const usePlaylistsStore = create<PlaylistsState>((set, get) => ({
           data,
           selectedPlaylistId,
         ),
-      });
-    } else {
-      set({ activePlaylistId: selectedPlaylistId });
+      })
+    }
+    else {
+      set({ activePlaylistId: selectedPlaylistId })
     }
 
-    get().syncQueueToPlayer();
+    get().syncQueueToPlayer()
   },
 
   setData: (data) => {
-    const { selectedPlaylistId, activePlaylistId, queueSnapshot } = get();
+    const { selectedPlaylistId, activePlaylistId, queueSnapshot } = get()
     const nextSelectedPlaylistId = isValidPlaylistId(data, selectedPlaylistId)
       ? selectedPlaylistId
-      : ALL_TRACKS_PLAYLIST_ID;
+      : ALL_TRACKS_PLAYLIST_ID
     const nextActivePlaylistId = isValidPlaylistId(data, activePlaylistId)
       ? activePlaylistId
-      : ALL_TRACKS_PLAYLIST_ID;
+      : ALL_TRACKS_PLAYLIST_ID
 
-    let nextQueueSnapshot = queueSnapshot;
+    let nextQueueSnapshot = queueSnapshot
     if (
       nextQueueSnapshot
       && !isValidPlaylistId(data, nextQueueSnapshot.playlistId)
     ) {
-      nextQueueSnapshot = null;
+      nextQueueSnapshot = null
     }
 
     if (nextSelectedPlaylistId !== selectedPlaylistId) {
-      persistSelectedPlaylistId(nextSelectedPlaylistId);
+      persistSelectedPlaylistId(nextSelectedPlaylistId)
     }
 
     set({
@@ -300,20 +301,20 @@ export const usePlaylistsStore = create<PlaylistsState>((set, get) => ({
       selectedPlaylistId: nextSelectedPlaylistId,
       activePlaylistId: nextActivePlaylistId,
       queueSnapshot: nextQueueSnapshot,
-    });
+    })
 
-    get().syncQueueToPlayer();
+    get().syncQueueToPlayer()
   },
 
   syncQueueToPlayer: () => {
-    const { queueSnapshot } = get();
-    if (!queueSnapshot) return;
+    const { queueSnapshot } = get()
+    if (!queueSnapshot) return
 
-    const libraryTracks = useLibraryStore.getState().tracks;
-    const trackById = new Map(libraryTracks.map((track) => [track.id, track]));
-    const validTrackIds = queueSnapshot.trackIds.filter((id) =>
+    const libraryTracks = useLibraryStore.getState().library
+    const trackById = new Map(libraryTracks.map(track => [track.id, track]))
+    const validTrackIds = queueSnapshot.trackIds.filter(id =>
       trackById.has(id),
-    );
+    )
 
     if (validTrackIds.length !== queueSnapshot.trackIds.length) {
       set({
@@ -321,27 +322,27 @@ export const usePlaylistsStore = create<PlaylistsState>((set, get) => ({
           ...queueSnapshot,
           trackIds: validTrackIds,
         },
-      });
+      })
     }
 
     const queueTracks = validTrackIds
-      .map((id) => trackById.get(id))
-      .filter((track): track is Track => track !== undefined);
+      .map(id => trackById.get(id))
+      .filter((track): track is Track => track !== undefined)
 
-    usePlayerStore.getState().setQueueTracks(queueTracks);
+    usePlayerStore.getState().setQueueTracks(queueTracks)
   },
-}));
+}))
 
 export function getLikedTrackIdSet(data: PlaylistsData | null): Set<number> {
   if (!data) {
-    return new Set();
+    return new Set()
   }
-  return new Set(data.liked.trackIds);
+  return new Set(data.liked.trackIds)
 }
 
 export function isTrackLiked(
   data: PlaylistsData | null,
   trackId: number,
 ): boolean {
-  return getLikedTrackIdSet(data).has(trackId);
+  return getLikedTrackIdSet(data).has(trackId)
 }
