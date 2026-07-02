@@ -1,60 +1,71 @@
+import { isRepeatState, type RepeatState } from '@/lib/repeat'
 import { readLocalStorageValue } from '@mantine/hooks'
 import { create } from 'zustand'
-import { z } from 'zod'
-
-const REPEAT_STORAGE_KEY = 'soundgrammy-repeat'
-const repeatCycle = ['none', 'one', 'all'] as const
-
-export const repeatSchema = z.enum(repeatCycle)
-export type RepeatState = z.infer<typeof repeatSchema>
-
-function parseStoredRepeat(stored: string | undefined): RepeatState {
-  if (stored === undefined) return 'none'
-  try {
-    const result = repeatSchema.safeParse(JSON.parse(stored))
-    if (result.success) return result.data
-  }
-  catch {
-    const result = repeatSchema.safeParse(stored)
-    if (result.success) return result.data
-  }
-  return 'none'
-}
-
-function persistRepeat(repeat: RepeatState) {
-  if (typeof window === 'undefined') return
-  localStorage.setItem(REPEAT_STORAGE_KEY, JSON.stringify(repeat))
-}
 
 interface RepeatStoreState {
   repeat: RepeatState
   setRepeat: (repeat: RepeatState) => void
-  toggleRepeat: () => void
+  toggle: () => void
   hydrate: () => void
 }
 
-export const useRepeatStore = create<RepeatStoreState>((set, get) => ({
-  repeat: 'none',
+export const useRepeatStore = create<RepeatStoreState>((set, get) => {
+  const defaultRepeat: RepeatState = 'none'
+  const RepeatCycle = new Map<RepeatState, RepeatState>([
+    ['none', 'one'],
+    ['one', 'all'],
+    ['all', 'none'],
+  ])
 
-  setRepeat: (repeat) => {
-    persistRepeat(repeat)
-    set({ repeat })
-  },
+  const { read, write } = useStorageRepeat()
 
-  toggleRepeat: () => {
-    const { repeat } = get()
-    const nextIndex = (repeatCycle.indexOf(repeat) + 1) % repeatCycle.length
-    const nextRepeat = repeatCycle[nextIndex]!
-    persistRepeat(nextRepeat)
-    set({ repeat: nextRepeat })
-  },
+  return {
+    repeat: defaultRepeat,
+    setRepeat: (repeat) => {
+      write(repeat)
+      set({ repeat })
+    },
+    toggle: () => {
+      const { repeat } = get()
+      const nextRepeat = RepeatCycle.get(repeat)!
+      write(nextRepeat)
+      set({ repeat: nextRepeat })
+    },
+    hydrate: () => set({ repeat: read() }),
+  }
+})
 
-  hydrate: () => {
-    const repeat = readLocalStorageValue<RepeatState>({
+/**
+ * Reads and writes the repeat state to localStorage.
+ * @returns The read and write functions.
+ */
+function useStorageRepeat() {
+  const REPEAT_STORAGE_KEY = 'soundgrammy-repeat'
+
+  function deserialize(stored: string | undefined): RepeatState {
+    if (stored === undefined) return 'none'
+    try {
+      const state = JSON.parse(stored)
+      if (isRepeatState(state)) return state
+    }
+    catch {
+      if (isRepeatState(stored)) return stored
+    }
+    return 'none'
+  }
+
+  const read = (): RepeatState => {
+    return readLocalStorageValue<RepeatState>({
       key: REPEAT_STORAGE_KEY,
       defaultValue: 'none',
-      deserialize: parseStoredRepeat,
+      deserialize,
     })
-    set({ repeat })
-  },
-}))
+  }
+
+  const write = (repeat: RepeatState) => {
+    if (typeof window === 'undefined') return
+    localStorage.setItem(REPEAT_STORAGE_KEY, JSON.stringify(repeat))
+  }
+
+  return { read, write }
+}

@@ -21,7 +21,6 @@ import { api } from '@/lib/api'
 import { TRACK_ROW_HEIGHT, PlaylistTrackRow } from './PlaylistTrackRow'
 import { TrackInfoDialog } from './TrackInfoDialog'
 import { Button } from '@/components/ui/button'
-import { useShuffleStore } from '@/stores/shuffle-store'
 
 function getEmptyStateCopy(
   libraryTrackCount: number,
@@ -63,20 +62,14 @@ export function PlaylistView() {
     state => state.currentTrack?.id ?? null,
   )
   const isPlaying = usePlayerStore(state => state.isPlaying)
-  const selectTrack = usePlayerStore(state => state.selectTrack)
+  const playPlaylist = usePlayerStore(state => state.playPlaylist)
   const data = usePlaylistsStore(state => state.data)
   const selectedPlaylistId = usePlaylistsStore(
     state => state.selectedPlaylistId,
   )
-  const activateSelectedPlaylist = usePlaylistsStore(
-    state => state.activateSelectedPlaylist,
-  )
   const setData = usePlaylistsStore(state => state.setData)
   const scrollRef = useRef<HTMLDivElement>(null)
   const [infoTrack, setInfoTrack] = useState<Track | null>(null)
-  const shuffle = useShuffleStore(state => state.shuffle)
-  const setShuffle = useShuffleStore(state => state.setShuffle)
-  const setQueueTracks = usePlayerStore(state => state.setQueueTracks)
 
   const selectedPlaylist = useMemo(
     () => resolveSelectedPlaylistTracks(libraryTracks, data, selectedPlaylistId),
@@ -99,9 +92,8 @@ export function PlaylistView() {
     overscan: 8,
   })
 
-  const handleTrackSelect = (track: Track) => {
-    activateSelectedPlaylist(track.id)
-    selectTrack(track)
+  const handleTrackSelect = (track: Track, startIndex: number) => {
+    playPlaylist(selectedPlaylist, { start: track, startIndex })
   }
 
   const handleToggleLike = async (trackId: number) => {
@@ -173,17 +165,11 @@ export function PlaylistView() {
   }
 
   function handlePlaylistPlay() {
-    const firstTrack = playlistTracks[0]
-    handleTrackSelect(firstTrack)
+    playPlaylist(selectedPlaylist, { startIndex: 0 })
   }
 
-  // TODO: refactor shuffle, playlists and queue
-  // for more adaptive use cases like here
-  // Currently this feature doesn't work as expected
   function handlePlaylistShuffle() {
-    if (shuffle === 'off') setShuffle('on')
-    setQueueTracks(playlistTracks)
-    selectTrack(usePlayerStore.getState().tracks[0])
+    playPlaylist(selectedPlaylist, { shuffle: 'on' })
   }
 
   const handleShowInfo = (track: Track) => {
@@ -220,11 +206,11 @@ export function PlaylistView() {
         <div className="h-10 px-4 shrink-0 flex items-center gap-4">
           <h2 className="text-lg font-semibold">{playlistName}</h2>
           <Button onClick={handlePlaylistPlay}>
-            <Play />
+            <Play className="size-4" />
             Play
           </Button>
-          <Button variant="secondary" disabled onClick={handlePlaylistShuffle}>
-            <Shuffle />
+          <Button variant="secondary" onClick={handlePlaylistShuffle}>
+            <Shuffle className="size-4" />
             Shuffle
           </Button>
         </div>
@@ -251,7 +237,8 @@ export function PlaylistView() {
                   isPlaying={isPlaying}
                   isLiked={isTrackLiked(data, track.id)}
                   customPlaylists={customPlaylists}
-                  onTrackSelect={handleTrackSelect}
+                  onTrackSelect={track =>
+                    handleTrackSelect(track, virtualRow.index)}
                   onToggleLike={handleToggleLike}
                   onAddToPlaylist={handleAddToPlaylist}
                   onDeleteFromPlaylist={handleDeleteFromPlaylist}

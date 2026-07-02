@@ -8,7 +8,10 @@ import { api, onSyncDone } from '@/lib/api'
 import { authUserToSession, type AuthUser } from '@/types'
 import { useLibraryStore } from '@/stores/library-store'
 import { usePlayerStore } from '@/stores/player-store'
-import { usePlaylistsStore } from '@/stores/playlists-store'
+import {
+  ALL_TRACKS_PLAYLIST_ID,
+  usePlaylistsStore,
+} from '@/stores/playlists-store'
 import { useSessionStore } from '@/stores/session-store'
 
 type AppStatus = 'loading' | 'login' | 'ready'
@@ -21,6 +24,7 @@ async function loadLibrary(firstLoad: boolean) {
   ])
 
   useLibraryStore.getState().setLibrary(library)
+  usePlayerStore.getState().refreshQueueTracks(library)
 
   // Keep the current track reference fresh (mirrors PlayerTracksHydrator).
   const { currentTrack } = usePlayerStore.getState()
@@ -40,7 +44,6 @@ async function loadLibrary(firstLoad: boolean) {
   else {
     usePlaylistsStore.getState().setData(playlists)
   }
-  usePlaylistsStore.getState().syncQueueToPlayer()
 }
 
 export default function App() {
@@ -117,13 +120,11 @@ export default function App() {
   const handleLogout = useCallback(() => {
     clearSession()
     useLibraryStore.getState().setLibrary([])
-    usePlayerStore.setState({
-      orderedTracks: [],
-      tracks: [],
-      currentTrack: null,
-      isPlaying: false,
+    usePlayerStore.getState().clearQueue()
+    usePlaylistsStore.setState({
+      data: null,
+      selectedPlaylistId: ALL_TRACKS_PLAYLIST_ID,
     })
-    usePlaylistsStore.setState({ data: null, queueSnapshot: null })
     syncStartedRef.current = false
     setStatus('login')
   }, [clearSession])

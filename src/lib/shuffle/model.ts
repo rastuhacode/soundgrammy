@@ -1,9 +1,9 @@
-import { Track } from '@/types'
+import type { Track } from '@/types'
 import { z } from 'zod'
 
-export const shuffleSchema = z.enum(['off', 'on'])
+export const ShuffleSchema = z.enum(['off', 'on'])
 
-export type ShuffleState = z.infer<typeof shuffleSchema>
+export type ShuffleState = z.infer<typeof ShuffleSchema>
 export type ShuffleAlgorithm = (playlist: Track[]) => Track[]
 
 /**
@@ -12,5 +12,5 @@ export type ShuffleAlgorithm = (playlist: Track[]) => Track[]
  * @returns True if the value is a valid shuffle state, false otherwise.
  */
 export function isShuffleState(value: unknown): value is ShuffleState {
-  return shuffleSchema.safeParse(value).success
+  return ShuffleSchema.safeParse(value).success
 }

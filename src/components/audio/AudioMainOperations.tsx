@@ -7,8 +7,8 @@ import {
   Repeat1,
   Shuffle,
 } from 'lucide-react'
-import type { RepeatState } from '@/stores/repeat-store'
-import type { ShuffleState } from '@/stores/shuffle-store'
+import type { RepeatState } from '@/lib/repeat'
+import type { ShuffleState } from '@/lib/shuffle'
 import { cn } from '@/lib/utils'
 
 type AudioMainOperationsProps = {

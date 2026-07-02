@@ -4,8 +4,55 @@ import type { Track } from '@/lib/db'
 
 import type { ShuffleState, ShuffleAlgorithm } from '@/lib/shuffle'
 import { defaultShuffle } from '@/lib/shuffle/default'
-import { isShuffleState } from '@/lib/shuffle'
+import { applyAlgorithm, isShuffleState } from '@/lib/shuffle'
 
+interface ShuffleStoreState {
+  shuffle: ShuffleState
+  algorithm: ShuffleAlgorithm
+  setShuffle: (shuffle: ShuffleState) => void
+  setAlgorithm: (algorithm: ShuffleAlgorithm) => void
+  toggle: () => void
+  process: (
+    tracks: Track[],
+    pinTrackId?: number,
+    algorithm?: ShuffleAlgorithm,
+    shuffle?: ShuffleState,
+  ) => Track[]
+  hydrate: () => void
+}
+
+export const useShuffleStore = create<ShuffleStoreState>((set, get) => {
+  const { read, write } = useStorageShuffle()
+
+  return {
+    shuffle: 'off',
+    algorithm: defaultShuffle,
+    setShuffle: (shuffle) => {
+      write(shuffle)
+      set({ shuffle })
+    },
+    setAlgorithm: algorithm => set({ algorithm }),
+    toggle: () => {
+      const { shuffle, setShuffle } = get()
+      setShuffle(shuffle === 'off' ? 'on' : 'off')
+    },
+    process: (tracks, pinTrackId, algorithmOverride, shuffleOverride) => {
+      const { shuffle, algorithm } = get()
+      if ((shuffleOverride ?? shuffle) === 'off') return tracks
+      return applyAlgorithm(
+        tracks,
+        algorithmOverride ?? algorithm,
+        pinTrackId,
+      )
+    },
+    hydrate: () => set({ shuffle: read() }),
+  }
+})
+
+/**
+ * Reads and writes the shuffle state to localStorage.
+ * @returns The read and write functions.
+ */
 function useStorageShuffle() {
   const SHUFFLE_STORAGE_KEY = 'soundgrammy-shuffle'
 
@@ -36,57 +83,3 @@ function useStorageShuffle() {
 
   return { read, write }
 }
-
-function applyShuffle(
-  orderedTracks: Track[],
-  algorithm: ShuffleAlgorithm,
-  pinTrackId?: number,
-): Track[] {
-  if (orderedTracks.length <= 1) return orderedTracks
-
-  let shuffled = algorithm(orderedTracks)
-  if (pinTrackId === undefined) return shuffled
-
-  const pinIndex = shuffled.findIndex(track => track.id === pinTrackId)
-  if (pinIndex > 0) {
-    const [pinned] = shuffled.splice(pinIndex, 1)
-    shuffled = [pinned!, ...shuffled]
-  }
-
-  return shuffled
-}
-
-interface ShuffleStoreState {
-  shuffle: ShuffleState
-  shuffleAlgorithm: ShuffleAlgorithm
-  setShuffle: (shuffle: ShuffleState) => void
-  toggleShuffle: () => void
-  resolvePlaybackTracks: (
-    orderedTracks: Track[],
-    pinTrackId?: number,
-  ) => Track[]
-  hydrate: () => void
-}
-
-export const useShuffleStore = create<ShuffleStoreState>((set, get) => {
-  const { read, write } = useStorageShuffle()
-
-  return {
-    shuffle: 'off',
-    shuffleAlgorithm: defaultShuffle,
-    setShuffle: (shuffle) => {
-      write(shuffle)
-      set({ shuffle })
-    },
-    toggleShuffle: () => {
-      const { shuffle, setShuffle } = get()
-      setShuffle(shuffle === 'off' ? 'on' : 'off')
-    },
-    resolvePlaybackTracks: (orderedTracks, pinTrackId) => {
-      const { shuffle, shuffleAlgorithm } = get()
-      if (shuffle === 'off') return orderedTracks
-      return applyShuffle(orderedTracks, shuffleAlgorithm, pinTrackId)
-    },
-    hydrate: () => set({ shuffle: read() }),
-  }
-})

@@ -43,7 +43,7 @@ export function AudioPlayer() {
   const playNext = usePlayerStore(state => state.playNext)
   const playPrevious = usePlayerStore(state => state.playPrevious)
   const repeat = useRepeatStore(state => state.repeat)
-  const toggleRepeat = useRepeatStore(state => state.toggleRepeat)
+  const toggleRepeat = usePlayerStore(state => state.toggleRepeat)
   const shuffle = useShuffleStore(state => state.shuffle)
   const toggleShuffle = usePlayerStore(state => state.toggleShuffle)
   const hydratePreferences = usePlayerStore(
