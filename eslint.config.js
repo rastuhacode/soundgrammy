@@ -1,7 +1,6 @@
 import js from "@eslint/js";
 import stylistic from "@stylistic/eslint-plugin";
 import { importX } from "eslint-plugin-import-x";
-import turboPlugin from "eslint-plugin-turbo";
 import pluginReact from "eslint-plugin-react";
 import pluginReactHooks from "eslint-plugin-react-hooks";
 import globals from "globals";
@@ -15,18 +14,12 @@ export default [
   importX.flatConfigs.typescript,
   stylistic.configs.recommended,
   {
-    plugins: {
-      turbo: turboPlugin,
-    },
     settings: {
       "import-x/resolver": {
         typescript: {
           project: "./tsconfig.json",
         },
       },
-    },
-    rules: {
-      "turbo/no-undeclared-env-vars": "warn",
     },
   },
   // eslint-plugin-react@7 is not compatible with ESLint 10 yet: with version "detect"
