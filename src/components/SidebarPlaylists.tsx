@@ -98,20 +98,15 @@ function PlaylistItem({
                       className="text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
                       onClick={e => e.stopPropagation()}
                     >
-                      <Ellipsis />
+                      <Ellipsis className="size-4" />
                     </Button>
                   )}
                   />
-                  <DropdownMenuContent align="end" className="w-40">
+                  <DropdownMenuContent align="end" className="w-40" onClick={e => e.stopPropagation()}>
                     {onEdit
                       ? (
-                          <DropdownMenuItem
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              onEdit()
-                            }}
-                          >
-                            <Pencil />
+                          <DropdownMenuItem onClick={onEdit}>
+                            <Pencil className="size-4" />
                             Edit playlist
                           </DropdownMenuItem>
                         )
@@ -121,12 +116,9 @@ function PlaylistItem({
                           <DropdownMenuItem
                             variant="destructive"
                             disabled={isDeleting}
-                            onClick={(event) => {
-                              event.stopPropagation()
-                              onDelete()
-                            }}
+                            onClick={onDelete}
                           >
-                            <Trash2 />
+                            <Trash2 className="size-4" />
                             Delete playlist
                           </DropdownMenuItem>
                         )

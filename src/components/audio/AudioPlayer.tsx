@@ -70,6 +70,7 @@ export function AudioPlayer() {
   const preMuteVolumeRef = useRef(volume)
   const isSeekingRef = useRef(false)
   const loadGenerationRef = useRef(0)
+  const loadedTrackIdRef = useRef<number | null>(null)
   const isPlayingRef = useRef(isPlaying)
 
   const isLiked = useMemo(() => {
@@ -149,22 +150,32 @@ export function AudioPlayer() {
   // Load (and, on first play, download+cache) the current track from disk.
   useEffect(() => {
     const audio = audioRef.current
-    if (!audio || !track) return
-
     const generation = ++loadGenerationRef.current
 
-    setCurrentTime(0)
-    setDuration(0)
-    setBufferedTime(0)
-    setIsBuffering(true)
+    loadedTrackIdRef.current = null
+
+    queueMicrotask(() => {
+      if (loadGenerationRef.current !== generation) return
+      setCurrentTime(0)
+      setDuration(0)
+      setBufferedTime(0)
+      setIsBuffering(Boolean(audio && track))
+    })
+
+    if (!audio) return
 
     audio.pause()
+    audio.removeAttribute('src')
+    audio.load()
+
+    if (!track) return
 
     api
       .getTrackSource(track.id)
       .then((path) => {
         if (loadGenerationRef.current !== generation) return
         audio.src = fileSrc(path)
+        loadedTrackIdRef.current = track.id
         applyVolume()
         audio.load()
         setIsBuffering(false)
@@ -187,11 +198,10 @@ export function AudioPlayer() {
 
     const generation = loadGenerationRef.current
 
-    if (isPlaying) {
+    if (isPlaying && loadedTrackIdRef.current === track.id) {
       playAudio(audio, generation)
     }
     else {
-      loadGenerationRef.current += 1
       audio.pause()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

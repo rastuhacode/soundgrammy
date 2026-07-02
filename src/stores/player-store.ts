@@ -85,6 +85,17 @@ function resolveStartCursor(
   return index === -1 ? 0 : index
 }
 
+function resolveSourceTracks(queue: Queue): Track[] {
+  if (!queue.source) return queue.tracks
+
+  const trackById = new Map(queue.tracks.map(track => [track.id, track]))
+  const sourceTracks = queue.source.trackIds
+    .map(id => trackById.get(id))
+    .filter((track): track is Track => track !== undefined)
+
+  return sourceTracks.length > 0 ? sourceTracks : queue.tracks
+}
+
 export const usePlayerStore = create<PlayerState>((set, get) => {
   const emptyQueue: Queue = {
     source: null,
@@ -128,7 +139,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
           type: 'playlist',
           playlistId: playlist.id,
           name: playlist.name,
-          trackIds: tracks.map(track => track.id),
+          trackIds: playlist.trackIds,
         },
         tracks,
         cursor,
@@ -186,9 +197,34 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     pause: () => set({ isPlaying: false }),
     setPlaying: isPlaying => set({ isPlaying }),
 
-    setShuffle: shuffle => useShuffleStore.getState().setShuffle(shuffle),
+    setShuffle: (shuffle) => {
+      const shuffleStore = useShuffleStore.getState()
+      shuffleStore.setShuffle(shuffle)
+
+      const { queue, currentTrack } = get()
+      if (!currentTrack || queue.tracks.length === 0) return
+
+      const sourceTracks = resolveSourceTracks(queue)
+      const nextTracks = shuffle === 'on'
+        ? shuffleStore.process(sourceTracks, currentTrack.id, undefined, shuffle)
+        : sourceTracks
+      const nextCursor = shuffle === 'on'
+        ? 0
+        : resolveStartCursor(nextTracks, currentTrack)
+
+      const nextQueue = {
+        ...queue,
+        tracks: nextTracks,
+        cursor: nextCursor,
+      }
+
+      set({ queue: nextQueue, currentTrack: getCurrentTrack(nextQueue) })
+    },
     setShuffleAlgorithm: algorithm => useShuffleStore.getState().setAlgorithm(algorithm),
-    toggleShuffle: () => useShuffleStore.getState().toggle(),
+    toggleShuffle: () => {
+      const { shuffle } = useShuffleStore.getState()
+      get().setShuffle(shuffle === 'off' ? 'on' : 'off')
+    },
 
     setRepeat: repeat => useRepeatStore.getState().setRepeat(repeat),
     toggleRepeat: () => useRepeatStore.getState().toggle(),
@@ -222,7 +258,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
         tracks: refreshedTracks,
         cursor: nextCursor,
         source: queue.source
-          ? { ...queue.source, trackIds: refreshedTracks.map(track => track.id) }
+          ? {
+              ...queue.source,
+              trackIds: queue.source.trackIds.filter(id => trackById.has(id)),
+            }
           : null,
       }
 
@@ -233,8 +272,6 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
       const { queue } = get()
       const { repeat } = useRepeatStore.getState()
       if (queue.tracks.length === 0 || queue.cursor < 0) return
-
-      if (repeat === 'one') return set({ isPlaying: true })
 
       const isLast = queue.cursor === queue.tracks.length - 1
       if (isLast && repeat === 'none') return set({ isPlaying: false })

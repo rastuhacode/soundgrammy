@@ -12,8 +12,8 @@ import type {
   ResolvedSelectedPlaylist,
 } from '@/stores/playlists-store'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { Music, Play, Shuffle } from 'lucide-react'
-import { useMemo, useRef, useState } from 'react'
+import { Music, Play, Search, Shuffle, X } from 'lucide-react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
 import { Separator } from '@/components/ui/separator'
 import { api } from '@/lib/api'
@@ -21,6 +21,8 @@ import { api } from '@/lib/api'
 import { TRACK_ROW_HEIGHT, PlaylistTrackRow } from './PlaylistTrackRow'
 import { TrackInfoDialog } from './TrackInfoDialog'
 import { Button } from '@/components/ui/button'
+import { useFilter } from '@/hooks/utils/use-filter'
+import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '@/components/ui/input-group'
 
 function getEmptyStateCopy(
   libraryTrackCount: number,
@@ -57,6 +59,10 @@ function getEmptyStateCopy(
 }
 
 export function PlaylistView() {
+  const [search, setSearch] = useState('')
+
+  const { contains } = useFilter()
+
   const libraryTracks = useLibraryStore(state => state.library)
   const currentTrackId = usePlayerStore(
     state => state.currentTrack?.id ?? null,
@@ -82,15 +88,22 @@ export function PlaylistView() {
     id: playlistId,
   } = selectedPlaylist
 
+  const filteredTracks = playlistTracks.filter((track) => {
+    // TODO: this construction is invalid - maybe it is better to pass `fileName` from the rust
+    return contains(`${track.performer} - ${track.title}`, search)
+  })
+
   // TanStack Virtual intentionally returns live functions
   // eslint-disable-next-line react-hooks/incompatible-library
   const virtualizer = useVirtualizer({
-    count: playlistTracks.length,
+    count: filteredTracks.length,
     gap: 8,
     getScrollElement: () => scrollRef.current,
     estimateSize: () => TRACK_ROW_HEIGHT,
     overscan: 8,
   })
+
+  useEffect(() => setSearch(''), [selectedPlaylist])
 
   const handleTrackSelect = (track: Track, startIndex: number) => {
     playPlaylist(selectedPlaylist, { start: track, startIndex })
@@ -203,16 +216,32 @@ export function PlaylistView() {
   return (
     <>
       <div className="flex min-h-0 grow flex-col pt-4">
-        <div className="h-10 px-4 shrink-0 flex items-center gap-4">
-          <h2 className="text-lg font-semibold">{playlistName}</h2>
-          <Button onClick={handlePlaylistPlay}>
-            <Play className="size-4" />
-            Play
-          </Button>
-          <Button variant="secondary" onClick={handlePlaylistShuffle}>
-            <Shuffle className="size-4" />
-            Shuffle
-          </Button>
+        <div className="h-10 px-4 flex items-center gap-4 justify-between w-full">
+          <div className="flex items-center gap-2 shrink-0 w-1/2">
+            <h2 className="text-lg font-semibold">{playlistName}</h2>
+            <Button onClick={handlePlaylistPlay}>
+              <Play className="size-4" />
+              Play
+            </Button>
+            <Button variant="secondary" onClick={handlePlaylistShuffle}>
+              <Shuffle className="size-4" />
+              Shuffle
+            </Button>
+          </div>
+
+          <div className="w-1/2">
+            <InputGroup>
+              <InputGroupInput value={search} onChange={e => setSearch(e.target.value)} placeholder="Search" />
+              <InputGroupAddon>
+                <Search className="size-4" />
+              </InputGroupAddon>
+              {search.length > 0 && (
+                <InputGroupButton onClick={() => setSearch('')}>
+                  <X className="size-4" />
+                </InputGroupButton>
+              )}
+            </InputGroup>
+          </div>
         </div>
 
         <Separator className="mt-4" />
@@ -223,7 +252,7 @@ export function PlaylistView() {
             style={{ height: `${virtualizer.getTotalSize()}px` }}
           >
             {virtualizer.getVirtualItems().map((virtualRow) => {
-              const track = playlistTracks[virtualRow.index]
+              const track = filteredTracks[virtualRow.index]
               if (!track) return null
 
               return (

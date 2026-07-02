@@ -57,7 +57,7 @@ export function PlaylistTrackDropdown(props: PlaylistTrackDropdownProps) {
         )}
         onClick={e => e.stopPropagation()}
       />
-      <DropdownMenuContent onClick={e => e.stopPropagation()}>
+      <DropdownMenuContent className="w-44" onClick={e => e.stopPropagation()}>
         <DropdownMenuGroup>
           <DropdownMenuLabel>Playlist</DropdownMenuLabel>
           <DropdownMenuItem onClick={() => onToggleLike(track.id)}>
@@ -94,19 +94,16 @@ export function PlaylistTrackDropdown(props: PlaylistTrackDropdownProps) {
                     )}
               </DropdownMenuSubContent>
             </DropdownMenuPortal>
-
-            {currentPlaylist.isCustom && (
-              <>
-                <DropdownMenuSeparator />
-                <DropdownMenuItem
-                  onClick={() => onDeleteFromPlaylist(currentPlaylist.id as number, track.id)}
-                >
-                  <ListX className="size-4" />
-                  Remove from playlist
-                </DropdownMenuItem>
-              </>
-            )}
           </DropdownMenuSub>
+
+          {currentPlaylist.isCustom && (
+            <DropdownMenuItem
+              onClick={() => onDeleteFromPlaylist(currentPlaylist.id as number, track.id)}
+            >
+              <ListX className="size-4" />
+              Remove from playlist
+            </DropdownMenuItem>
+          )}
         </DropdownMenuGroup>
 
         <DropdownMenuSeparator />
