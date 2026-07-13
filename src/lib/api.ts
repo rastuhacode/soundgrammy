@@ -44,8 +44,8 @@ export const api = {
     invoke<string>('get_track_source', { trackId }),
   prefetchTrack: (trackId: number) =>
     invoke<void>('prefetch_track', { trackId }),
-  getTrackThumbnail: (trackId: number) =>
-    invoke<string | null>('get_track_thumbnail', { trackId }),
+  getTrackThumbnail: (trackId: number, highQuality = false) =>
+    invoke<string | null>('get_track_thumbnail', { trackId, highQuality }),
   getUserAvatar: () => invoke<string | null>('get_user_avatar'),
   trackMetadata: (trackId: number) =>
     invoke<TrackMetadata>('track_metadata', { trackId }),

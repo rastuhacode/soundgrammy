@@ -221,10 +221,93 @@
   animation: glow-pulse 3.5s ease-in-out infinite;
 }
 
+/* ---------- Buffering progress bar (barbershop stripes) ---------- */
+.barbershop-buffer {
+  background: repeating-linear-gradient(
+    -45deg,
+    var(--primary) 0,
+    var(--primary) 2px,
+    color-mix(in oklch, var(--primary) 35%, transparent) 2px,
+    color-mix(in oklch, var(--primary) 35%, transparent) 6px
+  );
+  background-size: 8.49px 8.49px;
+  animation: barbershop-slide 0.55s linear infinite;
+}
+
+@keyframes barbershop-slide {
+  to {
+    background-position: 8.49px 0;
+  }
+}
+
+/* ---------- Fullscreen now-playing atmosphere ---------- */
+@property --fullscreen-color-one {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #075985;
+}
+
+@property --fullscreen-color-two {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #172554;
+}
+
+@property --fullscreen-color-three {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #164e63;
+}
+
+.fullscreen-player {
+  isolation: isolate;
+  transition:
+    --fullscreen-color-one 1.2s ease,
+    --fullscreen-color-two 1.2s ease,
+    --fullscreen-color-three 1.2s ease;
+}
+
+.fullscreen-artwork-backdrop {
+  background-position: center;
+  background-size: cover;
+  filter: blur(64px) saturate(1.25);
+  opacity: 0.5;
+  transform: scale(1.16);
+}
+
+.fullscreen-palette {
+  background:
+    radial-gradient(circle at 22% 28%, var(--fullscreen-color-one), transparent 38%),
+    radial-gradient(circle at 78% 24%, var(--fullscreen-color-two), transparent 42%),
+    radial-gradient(circle at 55% 78%, var(--fullscreen-color-three), transparent 45%);
+  background-position: 0% 0%;
+  background-size: 125% 125%;
+  opacity: 0.62;
+  animation: fullscreen-palette-drift 18s ease-in-out infinite alternate;
+}
+
+.fullscreen-art-enter {
+  animation: fullscreen-art-enter 0.8s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes fullscreen-palette-drift {
+  0% { background-position: 0% 0%; }
+  50% { background-position: 100% 35%; }
+  100% { background-position: 30% 100%; }
+}
+
+@keyframes fullscreen-art-enter {
+  from { opacity: 0; transform: scale(0.965) translateY(10px); }
+  to { opacity: 1; transform: scale(1) translateY(0); }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .animate-fade-up,
   .animate-glow-pulse,
-  .equalizer span {
+  .fullscreen-art-enter,
+  .fullscreen-palette,
+  .equalizer span,
+  .barbershop-buffer {
     animation: none;
   }
 }

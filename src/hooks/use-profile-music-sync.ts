@@ -43,8 +43,8 @@ export function useProfileMusicSync() {
 
     return () => {
       cancelled = true
-      void startPromise.then(unlisten => unlisten())
-      void donePromise.then(unlisten => unlisten())
+      startPromise.then(unlisten => unlisten())
+      donePromise.then(unlisten => unlisten())
     }
   }, [])
 

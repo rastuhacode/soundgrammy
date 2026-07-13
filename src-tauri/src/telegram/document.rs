@@ -11,6 +11,16 @@ use grammers_tl_types as tl;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct StoredThumbnail {
+    #[serde(rename = "type")]
+    pub type_: String,
+    pub width: i32,
+    pub height: i32,
+    #[serde(rename = "fileSize")]
+    pub file_size: String,
+}
+
 /// Persisted, JSON-safe representation of a Telegram document.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StoredDocument {
@@ -35,6 +45,9 @@ pub struct StoredDocument {
         default
     )]
     pub thumb_file_size: Option<String>,
+    /// Downloadable thumbnail variants retained for quality-aware callers.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub thumbnails: Vec<StoredThumbnail>,
     #[serde(default)]
     pub attributes: Vec<serde_json::Value>,
 }
@@ -63,8 +76,17 @@ impl StoredDocument {
 
     /// Builds the input location for downloading the remote thumbnail, if one
     /// was selected during sync.
-    pub fn thumb_input_location(&self) -> Option<tl::enums::InputFileLocation> {
-        let thumb_size = self.thumb_size.clone()?;
+    pub fn thumb_input_location_for(
+        &self,
+        high_quality: bool,
+    ) -> Option<tl::enums::InputFileLocation> {
+        let thumb_size = if high_quality {
+            best_thumbnail(&self.thumbnails)
+                .map(|thumb| thumb.type_.clone())
+                .or_else(|| self.thumb_size.clone())?
+        } else {
+            self.thumb_size.clone()?
+        };
         Some(tl::enums::InputFileLocation::InputDocumentFileLocation(
             tl::types::InputDocumentFileLocation {
                 id: self.id,
@@ -136,13 +158,16 @@ pub fn parse_document(doc: &tl::types::Document) -> ParsedDocument {
         size: doc.size.to_string(),
         thumb_size: None,
         thumb_file_size: None,
+        thumbnails: Vec::new(),
         attributes: serialize_attributes(&doc.attributes),
     };
 
-    let (thumb_size, thumb_file_size) = pick_best_remote_thumb(doc.thumbs.as_deref());
+    let thumbnails = collect_remote_thumbnails(doc.thumbs.as_deref());
+    let (thumb_size, thumb_file_size) = pick_best_remote_thumb(&thumbnails);
     let stored = StoredDocument {
         thumb_size,
         thumb_file_size,
+        thumbnails,
         ..stored
     };
 
@@ -160,45 +185,44 @@ pub fn parse_document(doc: &tl::types::Document) -> ParsedDocument {
     }
 }
 
-/// Picks the best remote thumbnail (prefers a mid "m" size, else the largest
-/// declared byte size) and returns its `(type, file_size)`.
-fn pick_best_remote_thumb(
-    thumbs: Option<&[tl::enums::PhotoSize]>,
-) -> (Option<String>, Option<String>) {
+fn collect_remote_thumbnails(thumbs: Option<&[tl::enums::PhotoSize]>) -> Vec<StoredThumbnail> {
     let Some(thumbs) = thumbs else {
-        return (None, None);
+        return Vec::new();
     };
 
-    let mut best: Option<(String, i64, i32)> = None; // (type, size, priority)
-    for thumb in thumbs {
-        let (type_, size, priority) = match thumb {
-            tl::enums::PhotoSize::Size(s) => (s.r#type.clone(), s.size as i64, 2),
-            tl::enums::PhotoSize::Progressive(s) => (
-                s.r#type.clone(),
-                s.sizes.iter().copied().max().unwrap_or(0) as i64,
-                1,
-            ),
-            _ => continue,
-        };
-        // Prefer the "m" size when present; otherwise fall back to largest.
-        let this_priority = if type_ == "m" {
-            priority + 10
-        } else {
-            priority
-        };
-        let take = match &best {
-            None => true,
-            Some((_, best_size, best_prio)) => {
-                this_priority > *best_prio || (this_priority == *best_prio && size > *best_size)
-            }
-        };
-        if take {
-            best = Some((type_, size, this_priority));
-        }
-    }
+    thumbs
+        .iter()
+        .filter_map(|thumb| match thumb {
+            tl::enums::PhotoSize::Size(size) => Some(StoredThumbnail {
+                type_: size.r#type.clone(),
+                width: size.w,
+                height: size.h,
+                file_size: size.size.to_string(),
+            }),
+            tl::enums::PhotoSize::Progressive(size) => Some(StoredThumbnail {
+                type_: size.r#type.clone(),
+                width: size.w,
+                height: size.h,
+                file_size: size.sizes.iter().copied().max().unwrap_or(0).to_string(),
+            }),
+            _ => None,
+        })
+        .collect()
+}
 
-    match best {
-        Some((type_, size, _)) => (Some(type_), Some(size.to_string())),
+fn thumbnail_rank(thumb: &StoredThumbnail) -> (i64, i64) {
+    let area = i64::from(thumb.width) * i64::from(thumb.height);
+    let bytes = thumb.file_size.parse::<i64>().unwrap_or(0);
+    (area, bytes)
+}
+
+fn best_thumbnail(thumbs: &[StoredThumbnail]) -> Option<&StoredThumbnail> {
+    thumbs.iter().max_by_key(|thumb| thumbnail_rank(thumb))
+}
+
+fn pick_best_remote_thumb(thumbs: &[StoredThumbnail]) -> (Option<String>, Option<String>) {
+    match best_thumbnail(thumbs) {
+        Some(thumb) => (Some(thumb.type_.clone()), Some(thumb.file_size.clone())),
         None => (None, None),
     }
 }
@@ -255,5 +279,59 @@ pub fn extension_for_mime(mime: &str) -> &'static str {
         "audio/flac" | "audio/x-flac" => "flac",
         "audio/wav" | "audio/x-wav" => "wav",
         _ => "mp3",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn picks_largest_thumbnail_by_dimensions_then_size() {
+        let thumbnails = vec![
+            StoredThumbnail {
+                type_: "m".into(),
+                width: 320,
+                height: 320,
+                file_size: "50000".into(),
+            },
+            StoredThumbnail {
+                type_: "x".into(),
+                width: 800,
+                height: 800,
+                file_size: "120000".into(),
+            },
+            StoredThumbnail {
+                type_: "y".into(),
+                width: 800,
+                height: 800,
+                file_size: "150000".into(),
+            },
+        ];
+
+        assert_eq!(
+            pick_best_remote_thumb(&thumbnails),
+            (Some("y".into()), Some("150000".into()))
+        );
+    }
+
+    #[test]
+    fn deserializes_legacy_document_without_thumbnail_candidates() {
+        let json = r#"{
+            "id": 1,
+            "accessHash": 2,
+            "fileReference": "",
+            "dcId": 4,
+            "mimeType": "audio/mpeg",
+            "size": "1234",
+            "thumbSize": "m",
+            "thumbFileSize": "50000",
+            "attributes": []
+        }"#;
+
+        let document: StoredDocument = serde_json::from_str(json).unwrap();
+
+        assert_eq!(document.thumb_size.as_deref(), Some("m"));
+        assert!(document.thumbnails.is_empty());
     }
 }

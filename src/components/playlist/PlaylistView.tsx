@@ -216,7 +216,7 @@ export function PlaylistView() {
   return (
     <>
       <div className="flex min-h-0 grow flex-col pt-4">
-        <div className="h-10 px-4 flex items-center gap-4 justify-between w-full">
+        <div className="h-10 px-4 flex items-center gap-4 justify-between w-full shrink-0">
           <div className="flex items-center gap-2 shrink-0 w-1/2">
             <h2 className="text-lg font-semibold">{playlistName}</h2>
             <Button onClick={handlePlaylistPlay}>

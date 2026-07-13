@@ -1,15 +1,17 @@
 import { useRef, useState, useEffect, useMemo } from 'react'
 import { useLocalStorage } from '@mantine/hooks'
-import { Heart, Loader2 } from 'lucide-react'
+import { Heart } from 'lucide-react'
 import { AudioProgressBar } from '@/components/audio/AudioProgressBar'
 import { usePlayerStore } from '@/stores/player-store'
 import { useRepeatStore } from '@/stores/repeat-store'
 import { useShuffleStore } from '@/stores/shuffle-store'
 import { usePlaylistsStore } from '@/stores/playlists-store'
+import { useFullscreenStore } from '@/stores/fullscreen-store'
 import { Button } from '@/components/ui/button'
 import { api, fileSrc } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { AudioMainOperations } from './AudioMainOperations'
+import { AudioFullscreenPlayer } from '../fullscreen/AudioFullscreenPlayer'
 import { AudioTrackDescription } from './AudioTrackDescription'
 import { AudioVolume } from './AudioVolume'
 import { z } from 'zod'
@@ -53,6 +55,8 @@ export function AudioPlayer() {
   )
   const playlistsData = usePlaylistsStore(state => state.data)
   const setPlaylistsData = usePlaylistsStore(state => state.setData)
+  const isFullscreen = useFullscreenStore(state => state.isFullscreen)
+  const exitFullscreen = useFullscreenStore(state => state.exitFullscreen)
 
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
@@ -78,7 +82,7 @@ export function AudioPlayer() {
   }, [playlistsData, track?.id])
 
   const playAudio = (audio: HTMLAudioElement, generation: number) => {
-    void audio
+    audio
       .play()
       .then(() => {
         if (loadGenerationRef.current !== generation || !isPlayingRef.current) {
@@ -114,6 +118,13 @@ export function AudioPlayer() {
     isSeekingRef.current = false
   }
 
+  const handleSeek = (time: number) => {
+    if (!audioRef.current) return
+    isSeekingRef.current = true
+    audioRef.current.currentTime = time
+    setCurrentTime(time)
+  }
+
   const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setIsMuted(false)
     const nextVolume = Number(e.target.value)
@@ -146,6 +157,9 @@ export function AudioPlayer() {
   useEffect(() => {
     isPlayingRef.current = isPlaying
   }, [isPlaying])
+  useEffect(() => {
+    if (!track && isFullscreen) exitFullscreen()
+  }, [exitFullscreen, isFullscreen, track])
 
   // Load (and, on first play, download+cache) the current track from disk.
   useEffect(() => {
@@ -272,19 +286,45 @@ export function AudioPlayer() {
         className="hidden"
       />
 
-      {track
+      {track && isFullscreen
+        ? (
+            <AudioFullscreenPlayer
+              track={track}
+              isPlaying={isPlaying}
+              currentTime={currentTime}
+              duration={duration}
+              bufferedTime={bufferedTime}
+              isBuffering={isBuffering}
+              volume={volume}
+              isLiked={isLiked}
+              repeatState={repeat}
+              shuffleState={shuffle}
+              onPlayToggle={togglePlay}
+              onPreviousTrack={handlePreviousTrack}
+              onNextTrack={playNext}
+              onRepeatToggle={toggleRepeat}
+              onShuffleToggle={toggleShuffle}
+              onLikeToggle={handleToggleLike}
+              onVolumeChange={handleVolumeChange}
+              onMuteToggle={handleMuteToggle}
+              onSeek={handleSeek}
+              onSeekStart={() => {
+                isSeekingRef.current = true
+              }}
+              onSeekEnd={handleSeekEnd}
+            />
+          )
+        : null}
+
+      {track && !isFullscreen
         ? (
             <div className="relative flex h-24 w-full flex-col border-t border-border bg-card/80 backdrop-blur-xl">
               <AudioProgressBar
                 currentTime={currentTime}
                 duration={duration}
                 bufferedTime={bufferedTime}
-                onSeek={(time) => {
-                  if (!audioRef.current) return
-                  isSeekingRef.current = true
-                  audioRef.current.currentTime = time
-                  setCurrentTime(time)
-                }}
+                isBuffering={isBuffering}
+                onSeek={handleSeek}
                 onSeekStart={() => {
                   isSeekingRef.current = true
                 }}
@@ -308,7 +348,6 @@ export function AudioPlayer() {
                     onShuffleToggle={toggleShuffle}
                   />
                   <div className="flex items-center gap-1.5 font-mono text-xs tabular-nums text-muted-foreground">
-                    {isBuffering ? <Loader2 className="size-3 animate-spin text-primary" /> : null}
                     {formatTime(currentTime)}
                     <span className="mx-1 text-muted-foreground/60">/</span>
                     {formatTime(duration)}

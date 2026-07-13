@@ -5,6 +5,7 @@ export interface AudioProgressBarProps {
   currentTime: number
   duration: number
   bufferedTime?: number
+  isBuffering?: boolean
   onSeek: (time: number) => void
   onSeekStart?: () => void
   onSeekEnd?: () => void
@@ -15,6 +16,7 @@ export function AudioProgressBar({
   currentTime,
   duration,
   bufferedTime = 0,
+  isBuffering = false,
   onSeek,
   onSeekStart,
   onSeekEnd,
@@ -54,16 +56,24 @@ export function AudioProgressBar({
     >
       <div
         aria-hidden
-        className="pointer-events-none absolute inset-x-0 top-4 h-1 bg-foreground/15"
+        className="pointer-events-none absolute inset-x-0 top-4 h-1 overflow-hidden bg-foreground/15"
       >
-        <div
-          className="absolute inset-y-0 left-0 bg-foreground/25"
-          style={{ width: `${bufferedProgress}%` }}
-        />
-        <div
-          className="absolute inset-y-0 left-0 bg-primary transition-all duration-200"
-          style={{ width: `${progress}%` }}
-        />
+        {isBuffering
+          ? (
+              <div className="barbershop-buffer absolute inset-0" />
+            )
+          : (
+              <>
+                <div
+                  className="absolute inset-y-0 left-0 bg-foreground/25"
+                  style={{ width: `${bufferedProgress}%` }}
+                />
+                <div
+                  className="absolute inset-y-0 left-0 bg-primary transition-all duration-200"
+                  style={{ width: `${progress}%` }}
+                />
+              </>
+            )}
         <div
           className={cn(
             'absolute top-1/2 size-0.5 -translate-y-1/2 rounded-full bg-primary opacity-0 transition-all duration-200 group-hover/audiobar:opacity-100 group-hover/audiobar:scale-700',

@@ -138,8 +138,9 @@ pub async fn prefetch_track(
 pub async fn get_track_thumbnail(
     state: State<'_, AppState>,
     track_id: i64,
+    high_quality: Option<bool>,
 ) -> AppResult<Option<String>> {
-    let path = cache::ensure_thumbnail(&state, track_id).await?;
+    let path = cache::ensure_thumbnail(&state, track_id, high_quality.unwrap_or(false)).await?;
     Ok(path.map(|p| p.to_string_lossy().into_owned()))
 }
 
@@ -205,7 +206,7 @@ pub async fn track_metadata(state: State<'_, AppState>, track_id: i64) -> AppRes
             dc_id: doc.dc_id,
             mime_type: Some(doc.mime_type.clone()),
             size: Some(doc.size_bytes()),
-            has_remote_thumb: doc.thumb_size.is_some(),
+            has_remote_thumb: doc.thumb_size.is_some() || !doc.thumbnails.is_empty(),
             attributes: doc.attributes,
         },
         None => TrackMetadataDoc {

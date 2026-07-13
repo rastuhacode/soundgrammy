@@ -72,16 +72,21 @@ pub async fn ensure_audio(state: &AppState, app: &AppHandle, track_id: i64) -> A
 
 /// Ensures the track's thumbnail is cached (remote thumb first, then embedded
 /// cover art from the cached audio) and returns its path, if any exists.
-pub async fn ensure_thumbnail(state: &AppState, track_id: i64) -> AppResult<Option<PathBuf>> {
+pub async fn ensure_thumbnail(
+    state: &AppState,
+    track_id: i64,
+    high_quality: bool,
+) -> AppResult<Option<PathBuf>> {
     let track = require_track(state, track_id)?;
-    let dest = thumb_dir(state).join(format!("{}.jpg", track.file_unique_id));
+    let suffix = if high_quality { ".full" } else { "" };
+    let dest = thumb_dir(state).join(format!("{}{}.jpg", track.file_unique_id, suffix));
     if dest.exists() {
         return Ok(Some(dest));
     }
 
     tokio::fs::create_dir_all(thumb_dir(state)).await?;
 
-    let key = format!("thumb:{}", track.file_unique_id);
+    let key = format!("thumb:{}:{}", track.file_unique_id, high_quality);
     let lock = state.lock_for(&key).await;
     let _guard = lock.lock().await;
 
@@ -89,7 +94,7 @@ pub async fn ensure_thumbnail(state: &AppState, track_id: i64) -> AppResult<Opti
         return Ok(Some(dest));
     }
 
-    if download::download_thumbnail(state, &track, &dest).await? {
+    if download::download_thumbnail(state, &track, &dest, high_quality).await? {
         return Ok(Some(dest));
     }
 

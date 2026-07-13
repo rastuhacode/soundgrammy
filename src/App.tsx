@@ -13,6 +13,7 @@ import {
   usePlaylistsStore,
 } from '@/stores/playlists-store'
 import { useSessionStore } from '@/stores/session-store'
+import { useFullscreenStore } from '@/stores/fullscreen-store'
 
 type AppStatus = 'loading' | 'login' | 'ready'
 
@@ -77,7 +78,7 @@ export default function App() {
       setSession(authUserToSession(authStatus.user))
       await loadLibrary(true)
       setStatus('ready')
-      void runSync()
+      runSync()
     }
     catch {
       setStatus('login')
@@ -94,10 +95,10 @@ export default function App() {
   useEffect(() => {
     if (status !== 'ready') return
     const promise = onSyncDone(() => {
-      void loadLibrary(false)
+      loadLibrary(false)
     })
     return () => {
-      void promise.then(unlisten => unlisten())
+      promise.then(unlisten => unlisten())
     }
   }, [status])
 
@@ -112,12 +113,13 @@ export default function App() {
         // ignore; sync will populate
       }
       setStatus('ready')
-      void runSync()
+      runSync()
     },
     [setSession, runSync],
   )
 
   const handleLogout = useCallback(() => {
+    useFullscreenStore.getState().exitFullscreen()
     clearSession()
     useLibraryStore.getState().setLibrary([])
     usePlayerStore.getState().clearQueue()

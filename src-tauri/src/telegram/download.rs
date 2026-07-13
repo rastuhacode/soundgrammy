@@ -106,9 +106,21 @@ pub async fn download_audio(
 
 /// Downloads the remote thumbnail (if the document has one) to `dest`.
 /// Returns `false` when the document has no remote thumbnail.
-pub async fn download_thumbnail(state: &AppState, track: &Track, dest: &Path) -> AppResult<bool> {
-    let doc = stored_document(track)?;
-    let Some(location) = doc.thumb_input_location() else {
+pub async fn download_thumbnail(
+    state: &AppState,
+    track: &Track,
+    dest: &Path,
+    high_quality: bool,
+) -> AppResult<bool> {
+    let mut doc = stored_document(track)?;
+    if high_quality && doc.thumbnails.is_empty() {
+        // Older rows only persisted one medium thumbnail. Refresh once so a
+        // fullscreen request can discover the complete Telegram size list.
+        if let Ok(refreshed) = refresh_file_reference(state, track).await {
+            doc = refreshed;
+        }
+    }
+    let Some(location) = doc.thumb_input_location_for(high_quality) else {
         return Ok(false);
     };
     let part = with_part_extension(dest);
@@ -119,7 +131,7 @@ pub async fn download_thumbnail(state: &AppState, track: &Track, dest: &Path) ->
         }
         Err(err) if is_file_reference_error(&err) => {
             let refreshed = refresh_file_reference(state, track).await?;
-            let Some(location) = refreshed.thumb_input_location() else {
+            let Some(location) = refreshed.thumb_input_location_for(high_quality) else {
                 return Ok(false);
             };
             let bytes = download_bytes(&state.client, location).await?;

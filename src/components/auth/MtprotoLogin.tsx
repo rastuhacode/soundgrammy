@@ -255,7 +255,7 @@ export function MtprotoLogin({
                             type="button"
                             variant="ghost"
                             size="sm"
-                            onClick={() => void startQrLogin()}
+                            onClick={startQrLogin}
                             disabled={qrStarting}
                           >
                             Refresh QR code
@@ -264,7 +264,7 @@ export function MtprotoLogin({
                       )
                     : (
                         <form
-                          onSubmit={e => void handleQrPassword(e)}
+                          onSubmit={e => handleQrPassword(e)}
                           className="flex w-full flex-col gap-3"
                         >
                           <p className="text-center text-sm text-muted-foreground">
@@ -297,7 +297,7 @@ export function MtprotoLogin({
             : step === 'phone'
               ? (
                   <form
-                    onSubmit={e => void handleSendCode(e)}
+                    onSubmit={e => handleSendCode(e)}
                     className="flex w-full flex-col gap-3"
                   >
                     <p className="text-center text-xs leading-relaxed text-muted-foreground">
@@ -322,7 +322,7 @@ export function MtprotoLogin({
               : step === 'code'
                 ? (
                     <form
-                      onSubmit={e => void handleSignIn(e)}
+                      onSubmit={e => handleSignIn(e)}
                       className="flex w-full flex-col gap-3"
                     >
                       <p className="text-center text-sm leading-relaxed text-muted-foreground">
@@ -348,7 +348,7 @@ export function MtprotoLogin({
                   )
                 : (
                     <form
-                      onSubmit={e => void handlePhonePassword(e)}
+                      onSubmit={e => handlePhonePassword(e)}
                       className="flex w-full flex-col gap-3"
                     >
                       <p className="text-center text-sm text-muted-foreground">
