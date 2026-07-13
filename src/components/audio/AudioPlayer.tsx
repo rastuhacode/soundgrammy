@@ -8,7 +8,13 @@ import { useShuffleStore } from '@/stores/shuffle-store'
 import { usePlaylistsStore } from '@/stores/playlists-store'
 import { useFullscreenStore } from '@/stores/fullscreen-store'
 import { Button } from '@/components/ui/button'
-import { api, fileSrc } from '@/lib/api'
+import {
+  api,
+  fileSrc,
+  onDownloadProgress,
+  streamSrc,
+  type DownloadProgress,
+} from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { AudioMainOperations } from './AudioMainOperations'
 import { AudioFullscreenPlayer } from '../fullscreen/AudioFullscreenPlayer'
@@ -18,6 +24,11 @@ import { z } from 'zod'
 
 const VOLUME_STORAGE_KEY = 'soundgrammy-volume'
 const VOLUME_DEFAULT = 25 // 25% (players shouldn't scream by default)
+
+interface BufferAnchor {
+  time: number
+  received: number
+}
 
 function formatTime(seconds: number): string {
   if (!Number.isFinite(seconds)) return '0:00'
@@ -60,8 +71,10 @@ export function AudioPlayer() {
 
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
-  const [bufferedTime, setBufferedTime] = useState(0)
-  const [isBuffering, setIsBuffering] = useState(false)
+  const [downloadProgress, setDownloadProgress]
+    = useState<DownloadProgress | null>(null)
+  const [showInitialLoading, setShowInitialLoading] = useState(false)
+  const [bufferAnchor, setBufferAnchor] = useState<BufferAnchor | null>(null)
   const [volume, setVolume] = useLocalStorage<number>({
     key: VOLUME_STORAGE_KEY,
     defaultValue: VOLUME_DEFAULT,
@@ -73,6 +86,8 @@ export function AudioPlayer() {
   const volumeRef = useRef(volume)
   const preMuteVolumeRef = useRef(volume)
   const isSeekingRef = useRef(false)
+  const pendingSeekRef = useRef<number | null>(null)
+  const resumeAfterSeekRef = useRef(false)
   const loadGenerationRef = useRef(0)
   const loadedTrackIdRef = useRef<number | null>(null)
   const isPlayingRef = useRef(isPlaying)
@@ -80,6 +95,43 @@ export function AudioPlayer() {
   const isLiked = useMemo(() => {
     return playlistsData?.liked.trackIds.includes(track?.id ?? 0) ?? false
   }, [playlistsData, track?.id])
+  const cachedRanges = useMemo(() => {
+    return duration > 0 && downloadProgress?.total
+      ? downloadProgress.ranges.map(range => ({
+          start: (range.start / downloadProgress.total) * duration,
+          end: (range.end / downloadProgress.total) * duration,
+        }))
+      : []
+  }, [downloadProgress, duration])
+  const bufferedRanges = useMemo(() => {
+    const leadingRange = cachedRanges.find(range => range.start === 0)
+    const leadingIncludesAnchor = bufferAnchor !== null
+      && leadingRange
+      && bufferAnchor.time < leadingRange.end
+
+    if (bufferAnchor !== null && !leadingIncludesAnchor) {
+      const receivedSinceSeek = Math.max(
+        0,
+        (downloadProgress?.received ?? bufferAnchor.received)
+        - bufferAnchor.received,
+      )
+      if (receivedSinceSeek > 0 && downloadProgress?.total) {
+        const bufferedDuration
+          = (receivedSinceSeek / downloadProgress.total) * duration
+        return [{
+          start: bufferAnchor.time,
+          end: Math.min(duration, bufferAnchor.time + bufferedDuration),
+        }]
+      }
+      return []
+    }
+
+    const activeRange = cachedRanges.find(
+      range => currentTime >= range.start && currentTime < range.end,
+    )
+    const displayedRange = activeRange ?? leadingRange ?? cachedRanges[0]
+    return displayedRange ? [displayedRange] : []
+  }, [bufferAnchor, cachedRanges, currentTime, downloadProgress, duration])
 
   const playAudio = (audio: HTMLAudioElement, generation: number) => {
     audio
@@ -114,14 +166,58 @@ export function AudioPlayer() {
     setPlaying(!isPlaying)
   }
 
+  const finishPendingSeek = (audio: HTMLAudioElement) => {
+    if (
+      isSeekingRef.current
+      || pendingSeekRef.current === null
+      || audio.seeking
+      || audio.readyState < HTMLMediaElement.HAVE_CURRENT_DATA
+    ) {
+      return
+    }
+
+    pendingSeekRef.current = null
+    setCurrentTime(audio.currentTime)
+    const shouldResume = resumeAfterSeekRef.current && isPlayingRef.current
+    resumeAfterSeekRef.current = false
+    if (shouldResume && loadedTrackIdRef.current === track?.id) {
+      playAudio(audio, loadGenerationRef.current)
+    }
+  }
+
+  const handleSeekStart = () => {
+    isSeekingRef.current = true
+    setBufferAnchor(null)
+  }
+
   const handleSeekEnd = () => {
     isSeekingRef.current = false
+    const audio = audioRef.current
+    if (audio) finishPendingSeek(audio)
   }
 
   const handleSeek = (time: number) => {
-    if (!audioRef.current) return
-    isSeekingRef.current = true
-    audioRef.current.currentTime = time
+    const audio = audioRef.current
+    if (!audio) return
+
+    const isCached = cachedRanges.some(
+      range => time >= range.start && time < range.end,
+    )
+    setBufferAnchor(current => isCached
+      ? null
+      : {
+          time,
+          received: current?.received ?? downloadProgress?.received ?? 0,
+        })
+    if (!isCached && !resumeAfterSeekRef.current) {
+      resumeAfterSeekRef.current = isPlayingRef.current
+      audio.pause()
+    }
+
+    pendingSeekRef.current = time
+    if (audio.readyState > HTMLMediaElement.HAVE_NOTHING) {
+      audio.currentTime = time
+    }
     setCurrentTime(time)
   }
 
@@ -160,22 +256,27 @@ export function AudioPlayer() {
   useEffect(() => {
     if (!track && isFullscreen) exitFullscreen()
   }, [exitFullscreen, isFullscreen, track])
-
-  // Load (and, on first play, download+cache) the current track from disk.
+  // Resolve a complete local file or attach the progressive range protocol.
   useEffect(() => {
     const audio = audioRef.current
     const generation = ++loadGenerationRef.current
+    let disposed = false
+    let unlisten: (() => void) | undefined
 
     loadedTrackIdRef.current = null
 
     queueMicrotask(() => {
       if (loadGenerationRef.current !== generation) return
       setCurrentTime(0)
-      setDuration(0)
-      setBufferedTime(0)
-      setIsBuffering(Boolean(audio && track))
+      setDuration(track?.duration ?? 0)
+      setDownloadProgress(null)
+      setShowInitialLoading(Boolean(audio && track))
+      setBufferAnchor(null)
     })
 
+    pendingSeekRef.current = null
+    resumeAfterSeekRef.current = false
+    isSeekingRef.current = false
     if (!audio) return
 
     audio.pause()
@@ -184,25 +285,79 @@ export function AudioPlayer() {
 
     if (!track) return
 
-    api
-      .getTrackSource(track.id)
-      .then((path) => {
-        if (loadGenerationRef.current !== generation) return
-        audio.src = fileSrc(path)
+    const initializeSource = async () => {
+      try {
+        const stop = await onDownloadProgress((progress) => {
+          if (
+            !disposed
+            && loadGenerationRef.current === generation
+            && progress.trackId === track.id
+          ) {
+            setDownloadProgress(progress)
+            if (progress.received > 0) {
+              setShowInitialLoading(false)
+            }
+          }
+        })
+        if (disposed || loadGenerationRef.current !== generation) {
+          stop()
+          return
+        }
+        unlisten = stop
+
+        const source = await api.getTrackSource(track.id)
+        if (disposed || loadGenerationRef.current !== generation) return
+        if (source.kind === 'cached') {
+          const total = track.file_size ?? 1
+          setDownloadProgress({
+            trackId: track.id,
+            received: total,
+            total,
+            ranges: [{ start: 0, end: total }],
+            complete: true,
+          })
+          setShowInitialLoading(false)
+          audio.src = fileSrc(source.path)
+        }
+        else {
+          setDownloadProgress(current =>
+            current?.trackId === source.trackId
+              ? current
+              : {
+                  trackId: source.trackId,
+                  received: 0,
+                  total: source.total,
+                  ranges: [],
+                  complete: false,
+                },
+          )
+          audio.src = streamSrc(source.trackId)
+        }
         loadedTrackIdRef.current = track.id
         applyVolume()
         audio.load()
-        setIsBuffering(false)
         if (isPlayingRef.current) {
-          playAudio(audio, generation)
+          if (pendingSeekRef.current === null) {
+            playAudio(audio, generation)
+          }
+          else {
+            resumeAfterSeekRef.current = true
+          }
         }
-      })
-      .catch(() => {
-        if (loadGenerationRef.current === generation) {
-          setIsBuffering(false)
+      }
+      catch {
+        if (!disposed && loadGenerationRef.current === generation) {
+          setShowInitialLoading(false)
           setPlaying(false)
         }
-      })
+      }
+    }
+    void initializeSource()
+
+    return () => {
+      disposed = true
+      unlisten?.()
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [track?.id])
 
@@ -213,27 +368,53 @@ export function AudioPlayer() {
     const generation = loadGenerationRef.current
 
     if (isPlaying && loadedTrackIdRef.current === track.id) {
-      playAudio(audio, generation)
+      if (pendingSeekRef.current === null) {
+        playAudio(audio, generation)
+      }
+      else {
+        resumeAfterSeekRef.current = true
+        finishPendingSeek(audio)
+      }
     }
     else {
+      resumeAfterSeekRef.current = false
       audio.pause()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isPlaying, setPlaying])
 
   const onTimeUpdate = (event: React.SyntheticEvent<HTMLAudioElement>) => {
-    if (isSeekingRef.current) return
+    if (isSeekingRef.current || pendingSeekRef.current !== null) return
     setCurrentTime(event.currentTarget.currentTime)
   }
 
   const onDurationChange = (event: React.SyntheticEvent<HTMLAudioElement>) => {
-    setDuration(event.currentTarget.duration)
+    const nextDuration = event.currentTarget.duration
+    if (Number.isFinite(nextDuration) && nextDuration > 0) {
+      setDuration(nextDuration)
+    }
   }
 
-  const onProgress = (event: React.SyntheticEvent<HTMLAudioElement>) => {
-    const audio = event.currentTarget
-    if (!audio.buffered.length) return setBufferedTime(0)
-    setBufferedTime(audio.buffered.end(audio.buffered.length - 1))
+  const onLoadedMetadata = (event: React.SyntheticEvent<HTMLAudioElement>) => {
+    const pendingSeek = pendingSeekRef.current
+    if (pendingSeek === null) return
+    event.currentTarget.currentTime = pendingSeek
+  }
+
+  const onSeeked = (event: React.SyntheticEvent<HTMLAudioElement>) => {
+    finishPendingSeek(event.currentTarget)
+  }
+
+  const onCanPlay = (event: React.SyntheticEvent<HTMLAudioElement>) => {
+    finishPendingSeek(event.currentTarget)
+  }
+
+  const onMediaError = () => {
+    if (loadedTrackIdRef.current !== track?.id) return
+    setShowInitialLoading(false)
+    pendingSeekRef.current = null
+    resumeAfterSeekRef.current = false
+    setPlaying(false)
   }
 
   function handlePreviousTrack() {
@@ -279,10 +460,13 @@ export function AudioPlayer() {
       <audio
         ref={setAudioRef}
         preload="metadata"
+        onLoadedMetadata={onLoadedMetadata}
+        onSeeked={onSeeked}
+        onCanPlay={onCanPlay}
         onTimeUpdate={onTimeUpdate}
         onDurationChange={onDurationChange}
-        onProgress={onProgress}
         onEnded={handleTrackEnded}
+        onError={onMediaError}
         className="hidden"
       />
 
@@ -293,8 +477,8 @@ export function AudioPlayer() {
               isPlaying={isPlaying}
               currentTime={currentTime}
               duration={duration}
-              bufferedTime={bufferedTime}
-              isBuffering={isBuffering}
+              bufferedRanges={bufferedRanges}
+              showInitialLoading={showInitialLoading}
               volume={volume}
               isLiked={isLiked}
               repeatState={repeat}
@@ -308,9 +492,7 @@ export function AudioPlayer() {
               onVolumeChange={handleVolumeChange}
               onMuteToggle={handleMuteToggle}
               onSeek={handleSeek}
-              onSeekStart={() => {
-                isSeekingRef.current = true
-              }}
+              onSeekStart={handleSeekStart}
               onSeekEnd={handleSeekEnd}
             />
           )
@@ -322,12 +504,10 @@ export function AudioPlayer() {
               <AudioProgressBar
                 currentTime={currentTime}
                 duration={duration}
-                bufferedTime={bufferedTime}
-                isBuffering={isBuffering}
+                bufferedRanges={bufferedRanges}
+                showInitialLoading={showInitialLoading}
                 onSeek={handleSeek}
-                onSeekStart={() => {
-                  isSeekingRef.current = true
-                }}
+                onSeekStart={handleSeekStart}
                 onSeekEnd={handleSeekEnd}
               />
 

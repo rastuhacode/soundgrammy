@@ -169,7 +169,7 @@ export function PlaylistView() {
 
   const handleDownload = async (track: Track) => {
     try {
-      const path = await api.getTrackSource(track.id)
+      const path = await api.downloadTrack(track.id)
       await revealItemInDir(path)
     }
     catch {

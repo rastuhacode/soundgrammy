@@ -15,6 +15,7 @@ use tokio::sync::Mutex;
 
 use crate::config::Config;
 use crate::db::Db;
+use crate::streaming::StreamingManager;
 
 /// Transient authentication state kept between login command calls.
 #[derive(Default)]
@@ -38,6 +39,8 @@ pub struct AppState {
     pub pending: Mutex<PendingAuth>,
     /// Per-cache-key locks so concurrent plays don't double-download a file.
     pub download_locks: Mutex<HashMap<String, Arc<Mutex<()>>>>,
+    /// Active progressive audio downloads, shared by playback and explicit saves.
+    pub streaming: StreamingManager,
 }
 
 impl AppState {

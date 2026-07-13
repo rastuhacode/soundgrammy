@@ -74,7 +74,19 @@ export function AudioMainOperations(props: AudioMainOperationsProps) {
       </button>
 
       <div className="flex items-center gap-4">
-        <button type="button" onClick={props.onNextTrack} aria-label="Next track">
+        <button
+          type="button"
+          onClick={props.onNextTrack}
+          aria-label="Next track"
+          className={
+            cn(
+              'flex items-center justify-center',
+              'text-primary-foreground',
+              'transition-transform hover:scale-105 active:scale-95',
+              '[&>svg]:fill-current [&>svg]:size-5',
+            )
+          }
+        >
           <SkipForward className="size-5" />
         </button>
         <button

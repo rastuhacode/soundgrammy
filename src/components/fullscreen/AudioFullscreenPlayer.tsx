@@ -11,7 +11,10 @@ import { usePlayerStore } from '@/stores/player-store'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { AudioMainOperations } from '../audio/AudioMainOperations'
-import { AudioProgressBar } from '../audio/AudioProgressBar'
+import {
+  AudioProgressBar,
+  type AudioBufferedRange,
+} from '../audio/AudioProgressBar'
 import { AudioVolume } from '../audio/AudioVolume'
 
 const CONTROLS_HIDE_DELAY = 3000
@@ -21,8 +24,8 @@ interface AudioFullscreenPlayerProps {
   isPlaying: boolean
   currentTime: number
   duration: number
-  bufferedTime: number
-  isBuffering: boolean
+  bufferedRanges: AudioBufferedRange[]
+  showInitialLoading: boolean
   volume: number
   isLiked: boolean
   repeatState: RepeatState
@@ -149,7 +152,7 @@ export function AudioFullscreenPlayer(props: AudioFullscreenPlayerProps) {
         >
           {failed || !url
             ? (
-                <div className="flex size-full items-center justify-center text-white/35">
+                <div className="flex size-full items-center justify-center text-muted-foreground">
                   <Music className="size-20" />
                 </div>
               )
@@ -205,8 +208,8 @@ export function AudioFullscreenPlayer(props: AudioFullscreenPlayerProps) {
             <AudioProgressBar
               currentTime={props.currentTime}
               duration={props.duration}
-              bufferedTime={props.bufferedTime}
-              isBuffering={props.isBuffering}
+              bufferedRanges={props.bufferedRanges}
+              showInitialLoading={props.showInitialLoading}
               onSeek={props.onSeek}
               onSeekStart={props.onSeekStart}
               onSeekEnd={props.onSeekEnd}

@@ -11,9 +11,6 @@ use grammers_client::media::Downloadable;
 use grammers_client::Client;
 use grammers_mtsender::InvocationError;
 use grammers_tl_types as tl;
-use serde::Serialize;
-use tauri::{AppHandle, Emitter};
-use tokio::io::AsyncWriteExt;
 
 use crate::db::Track;
 use crate::error::{AppError, AppResult};
@@ -36,17 +33,7 @@ impl Downloadable for RawDownloadable {
     }
 }
 
-#[derive(Clone, Serialize)]
-struct DownloadProgress {
-    #[serde(rename = "trackId")]
-    track_id: i64,
-    received: i64,
-    total: i64,
-}
-
-const PROGRESS_EMIT_STEP: i64 = 256 * 1024;
-
-fn is_file_reference_error(err: &InvocationError) -> bool {
+pub(crate) fn is_file_reference_error(err: &InvocationError) -> bool {
     matches!(err, InvocationError::Rpc(e) if e.name.contains("FILE_REFERENCE"))
 }
 
@@ -58,50 +45,28 @@ pub fn stored_document(track: &Track) -> AppResult<StoredDocument> {
     Ok(serde_json::from_str(json)?)
 }
 
-/// Downloads the full audio document to `dest` (via a `.part` temp file, then an
-/// atomic rename). Emits `download:progress` events keyed by track id.
-pub async fn download_audio(
-    state: &AppState,
-    app: &AppHandle,
-    track: &Track,
-    dest: &Path,
-) -> AppResult<()> {
-    let doc = stored_document(track)?;
-    let part = with_part_extension(dest);
-
-    let total = doc.size_bytes();
-    let location = doc.input_location();
-    match stream_to_file(
-        &state.client,
-        location,
-        Some(total as usize),
-        app,
-        track.id,
-        total,
-        &part,
-    )
-    .await
-    {
-        Ok(()) => {}
-        Err(err) if is_file_reference_error(&err) => {
-            let refreshed = refresh_file_reference(state, track).await?;
-            let total = refreshed.size_bytes();
-            stream_to_file(
-                &state.client,
-                refreshed.input_location(),
-                Some(total as usize),
-                app,
-                track.id,
-                total,
-                &part,
-            )
-            .await?;
-        }
-        Err(err) => return Err(err.into()),
-    }
-
-    tokio::fs::rename(&part, dest).await?;
-    Ok(())
+/// Downloads one aligned 128 KiB streaming part.
+pub(crate) async fn download_chunk(
+    client: &Client,
+    document: &StoredDocument,
+    chunk_index: usize,
+) -> Result<Vec<u8>, InvocationError> {
+    const CHUNK_SIZE: i32 = 128 * 1024;
+    let chunk_index = i32::try_from(chunk_index).map_err(|_| {
+        InvocationError::Io(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "audio chunk index is too large",
+        ))
+    })?;
+    let downloadable = RawDownloadable {
+        location: document.input_location(),
+        size: Some(document.size_bytes() as usize),
+    };
+    let mut download = client
+        .iter_download(&downloadable)
+        .chunk_size(CHUNK_SIZE)
+        .skip_chunks(chunk_index);
+    Ok(download.next().await?.unwrap_or_default())
 }
 
 /// Downloads the remote thumbnail (if the document has one) to `dest`.
@@ -146,7 +111,10 @@ pub async fn download_thumbnail(
 
 /// Fetches a fresh document (renewed file reference) via GetSavedMusicByID and
 /// persists it back to the track row.
-async fn refresh_file_reference(state: &AppState, track: &Track) -> AppResult<StoredDocument> {
+pub(crate) async fn refresh_file_reference(
+    state: &AppState,
+    track: &Track,
+) -> AppResult<StoredDocument> {
     let doc = stored_document(track)?;
     let result = state
         .client
@@ -176,51 +144,6 @@ async fn refresh_file_reference(state: &AppState, track: &Track) -> AppResult<St
     Err(AppError::msg(
         "could not refresh the track's file reference",
     ))
-}
-
-async fn stream_to_file(
-    client: &Client,
-    location: tl::enums::InputFileLocation,
-    size: Option<usize>,
-    app: &AppHandle,
-    track_id: i64,
-    total: i64,
-    part: &Path,
-) -> Result<(), InvocationError> {
-    let downloadable = RawDownloadable { location, size };
-    let mut iter = client.iter_download(&downloadable);
-    let mut file = tokio::fs::File::create(part)
-        .await
-        .map_err(InvocationError::Io)?;
-
-    let mut received = 0i64;
-    let mut last_emitted = 0i64;
-    while let Some(chunk) = iter.next().await? {
-        file.write_all(&chunk).await.map_err(InvocationError::Io)?;
-        received += chunk.len() as i64;
-        if received - last_emitted >= PROGRESS_EMIT_STEP {
-            let _ = app.emit(
-                "download:progress",
-                DownloadProgress {
-                    track_id,
-                    received,
-                    total,
-                },
-            );
-            last_emitted = received;
-        }
-    }
-    file.flush().await.map_err(InvocationError::Io)?;
-
-    let _ = app.emit(
-        "download:progress",
-        DownloadProgress {
-            track_id,
-            received,
-            total,
-        },
-    );
-    Ok(())
 }
 
 /// Downloads a location with no file reference (e.g. profile photos) to `dest`.

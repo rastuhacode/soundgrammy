@@ -19,6 +19,15 @@ export interface Profile {
   username: string | null
 }
 
+export type TrackSource
+  = | { kind: 'cached', path: string }
+    | {
+      kind: 'stream'
+      trackId: number
+      mimeType: string
+      total: number
+    }
+
 // ---- auth ----------------------------------------------------------------
 
 export const api = {
@@ -41,7 +50,9 @@ export const api = {
 
   // ---- media ------------------------------------------------------------
   getTrackSource: (trackId: number) =>
-    invoke<string>('get_track_source', { trackId }),
+    invoke<TrackSource>('get_track_source', { trackId }),
+  downloadTrack: (trackId: number) =>
+    invoke<string>('download_track', { trackId }),
   prefetchTrack: (trackId: number) =>
     invoke<void>('prefetch_track', { trackId }),
   getTrackThumbnail: (trackId: number, highQuality = false) =>
@@ -92,6 +103,10 @@ export function fileSrc(path: string): string {
   return convertFileSrc(path)
 }
 
+export function streamSrc(trackId: number): string {
+  return convertFileSrc(String(trackId), 'stream')
+}
+
 // ---- events --------------------------------------------------------------
 
 export interface SyncProgress {
@@ -103,6 +118,8 @@ export interface DownloadProgress {
   trackId: number
   received: number
   total: number
+  ranges: Array<{ start: number, end: number }>
+  complete: boolean
 }
 
 export function onSyncStart(cb: () => void): Promise<UnlistenFn> {

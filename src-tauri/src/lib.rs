@@ -7,6 +7,7 @@ mod db;
 mod error;
 mod session;
 mod state;
+mod streaming;
 mod telegram;
 
 use tauri::Manager;
@@ -17,6 +18,12 @@ use crate::state::AppState;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .register_asynchronous_uri_scheme_protocol("stream", |context, request, responder| {
+            let app = context.app_handle().clone();
+            tauri::async_runtime::spawn(async move {
+                responder.respond(streaming::protocol_response(&app, request).await);
+            });
+        })
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             let handle = app.handle();
@@ -40,6 +47,7 @@ pub fn run() {
                 cache_dir,
                 pending: Default::default(),
                 download_locks: Default::default(),
+                streaming: Default::default(),
             });
 
             Ok(())
@@ -58,6 +66,7 @@ pub fn run() {
             commands::get_profile,
             commands::sync_status,
             commands::get_track_source,
+            commands::download_track,
             commands::prefetch_track,
             commands::get_track_thumbnail,
             commands::get_user_avatar,

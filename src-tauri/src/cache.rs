@@ -33,7 +33,7 @@ fn current_uid(state: &AppState) -> AppResult<i64> {
         .ok_or(AppError::NotAuthorized)
 }
 
-fn require_track(state: &AppState, track_id: i64) -> AppResult<Track> {
+pub(crate) fn require_track(state: &AppState, track_id: i64) -> AppResult<Track> {
     let uid = current_uid(state)?;
     state
         .db
@@ -41,7 +41,7 @@ fn require_track(state: &AppState, track_id: i64) -> AppResult<Track> {
         .ok_or_else(|| AppError::msg("track not found"))
 }
 
-fn audio_path(state: &AppState, track: &Track) -> AppResult<PathBuf> {
+pub(crate) fn audio_path(state: &AppState, track: &Track) -> AppResult<PathBuf> {
     let doc = download::stored_document(track)?;
     let ext = extension_for_mime(&doc.mime_type);
     Ok(audio_dir(state).join(format!("{}.{}", track.file_unique_id, ext)))
@@ -56,18 +56,11 @@ pub async fn ensure_audio(state: &AppState, app: &AppHandle, track_id: i64) -> A
     }
 
     tokio::fs::create_dir_all(audio_dir(state)).await?;
-
-    let key = format!("audio:{}", track.file_unique_id);
-    let lock = state.lock_for(&key).await;
-    let _guard = lock.lock().await;
-
-    // Another task may have finished while we waited for the lock.
-    if dest.exists() {
-        return Ok(dest);
-    }
-
-    download::download_audio(state, app, &track, &dest).await?;
-    Ok(dest)
+    let stream = state
+        .streaming
+        .start(app.clone(), track, dest.clone())
+        .await?;
+    stream.wait_complete().await
 }
 
 /// Ensures the track's thumbnail is cached (remote thumb first, then embedded

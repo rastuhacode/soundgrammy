@@ -114,8 +114,45 @@ pub async fn sync_status(state: State<'_, AppState>) -> AppResult<Option<String>
 
 // ---- media ---------------------------------------------------------------
 
+#[derive(Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum TrackSource {
+    Cached {
+        path: String,
+    },
+    Stream {
+        #[serde(rename = "trackId")]
+        track_id: i64,
+        #[serde(rename = "mimeType")]
+        mime_type: String,
+        total: u64,
+    },
+}
+
 #[tauri::command]
 pub async fn get_track_source(
+    state: State<'_, AppState>,
+    app: AppHandle,
+    track_id: i64,
+) -> AppResult<TrackSource> {
+    let track = cache::require_track(&state, track_id)?;
+    let path = cache::audio_path(&state, &track)?;
+    if path.exists() {
+        return Ok(TrackSource::Cached {
+            path: path.to_string_lossy().into_owned(),
+        });
+    }
+
+    let stream = state.streaming.start(app, track, path).await?;
+    Ok(TrackSource::Stream {
+        track_id: stream.track_id(),
+        mime_type: stream.mime_type().to_string(),
+        total: stream.total(),
+    })
+}
+
+#[tauri::command]
+pub async fn download_track(
     state: State<'_, AppState>,
     app: AppHandle,
     track_id: i64,
