@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import {
   ArrowUpDown,
-  Check,
   Ellipsis,
   List,
   Pencil,
@@ -29,15 +28,14 @@ import { CSS } from '@dnd-kit/utilities'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
+  DropdownMenuCheckboxItem,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from '@/components/ui/popover'
 import { PlaylistFormDialog } from '@/components/playlist/PlaylistFormDialog'
 import { SidebarPlaylistThumbnail } from '@/components/playlist/SidebarPlaylistThumbnail'
 import type { CustomPlaylistSummary } from '@/lib/db'
@@ -317,13 +315,6 @@ export function SidebarPlaylists() {
     writeSortMode(mode)
   }
 
-  const handleReverseToggle = () => {
-    if (sortMode === 'custom') return
-    const next = !sortReversed
-    setSortReversed(next)
-    writeSortReversed(next)
-  }
-
   const handleDragEnd = (event: DragEndEvent) => {
     if (!canReorder) return
     const { active, over } = event
@@ -353,8 +344,6 @@ export function SidebarPlaylists() {
       setDeletingId(null)
     }
   }
-
-  const showReverseIcon = sortReversed && sortMode !== 'custom'
 
   return (
     <div className="flex min-h-0 grow flex-col gap-4">
@@ -387,8 +376,8 @@ export function SidebarPlaylists() {
           </InputGroup>
         </div>
 
-        <Popover>
-          <PopoverTrigger
+        <DropdownMenu>
+          <DropdownMenuTrigger
             render={(
               <Button
                 aria-label="Sort playlists"
@@ -396,50 +385,36 @@ export function SidebarPlaylists() {
                 className="shrink-0 text-muted-foreground"
               >
                 {PLAYLIST_SORT_MODE_LABELS[sortMode]}
-                {showReverseIcon
-                  ? <ArrowUpDown className="size-3.5" />
-                  : <List className="size-4" />}
+                <List className="size-4" />
               </Button>
             )}
           />
-          <PopoverContent align="end" className="w-52 gap-1 p-1.5">
-            {SORT_MODES.map(mode => (
-              <button
-                key={mode}
-                type="button"
-                className={cn(
-                  'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-hidden transition-colors hover:bg-accent hover:text-accent-foreground',
-                  sortMode === mode && 'bg-accent/60',
-                )}
-                onClick={() => handleSortModeChange(mode)}
-              >
-                <span className="grow">{PLAYLIST_SORT_MODE_LABELS[mode]}</span>
-                {sortMode === mode
-                  ? <Check className="size-4 shrink-0" />
-                  : <span className="size-4 shrink-0" />}
-              </button>
-            ))}
-            <div className="my-1 h-px bg-border" />
-            <button
-              type="button"
-              disabled={sortMode === 'custom'}
-              className={cn(
-                'flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm outline-hidden transition-colors',
-                sortMode === 'custom'
-                  ? 'cursor-not-allowed text-muted-foreground opacity-50'
-                  : 'hover:bg-accent hover:text-accent-foreground',
-                sortReversed && sortMode !== 'custom' && 'bg-accent/60',
-              )}
-              onClick={handleReverseToggle}
+          <DropdownMenuContent align="end" className="w-52">
+            <DropdownMenuRadioGroup
+              value={sortMode}
+              onValueChange={value => handleSortModeChange(value as PlaylistSortMode)}
             >
-              <ArrowUpDown className="size-4 shrink-0" />
-              <span className="grow">Reverse</span>
-              {sortReversed && sortMode !== 'custom'
-                ? <Check className="size-4 shrink-0" />
-                : <span className="size-4 shrink-0" />}
-            </button>
-          </PopoverContent>
-        </Popover>
+              {SORT_MODES.map(mode => (
+                <DropdownMenuRadioItem key={mode} value={mode}>
+                  {PLAYLIST_SORT_MODE_LABELS[mode]}
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
+            <DropdownMenuSeparator />
+            <DropdownMenuCheckboxItem
+              checked={sortReversed && sortMode !== 'custom'}
+              disabled={sortMode === 'custom'}
+              onCheckedChange={(checked) => {
+                if (sortMode === 'custom') return
+                setSortReversed(checked)
+                writeSortReversed(checked)
+              }}
+            >
+              <ArrowUpDown className="size-4" />
+              Reverse
+            </DropdownMenuCheckboxItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
 
       <DndContext

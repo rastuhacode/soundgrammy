@@ -221,7 +221,7 @@ export function AudioProgressBar({
                     )
                   })}
                   <div
-                    className="absolute inset-y-0 left-0 bg-primary transition-all duration-200"
+                    className="absolute inset-y-0 left-0 bg-primary transition-all duration-100"
                     style={{ width: `${progress}%` }}
                   />
                 </div>
@@ -229,7 +229,7 @@ export function AudioProgressBar({
                 <div
                   aria-hidden
                   className={cn(
-                    'pointer-events-none absolute top-[18px] z-10 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary opacity-0 transition-all duration-200 group-hover/audiobar:opacity-100',
+                    'pointer-events-none absolute top-[18px] z-10 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary opacity-0 transition-all duration-100 group-hover/audiobar:opacity-100',
                     isDragging && 'scale-125 opacity-100',
                   )}
                   style={{ left: `${progress}%` }}
@@ -237,7 +237,12 @@ export function AudioProgressBar({
 
                 <input
                   type="range"
-                  className="absolute inset-0 h-full w-full appearance-none opacity-0 [&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:w-0 [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-transparent [&::-moz-range-track]:bg-transparent [&::-webkit-slider-runnable-track]:bg-transparent [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-0 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:bg-transparent"
+                  className={
+                    cn(
+                      'absolute inset-0 h-full w-full appearance-none opacity-0',
+                      '[&::-moz-range-thumb]:h-4 [&::-moz-range-thumb]:w-0 [&::-moz-range-thumb]:border-0 [&::-moz-range-thumb]:bg-transparent [&::-moz-range-track]:bg-transparent',
+                      '[&::-webkit-slider-runnable-track]:bg-transparent [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:w-0 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:bg-transparent')
+                  }
                   min={0}
                   max={duration || 0}
                   step={0.1}
