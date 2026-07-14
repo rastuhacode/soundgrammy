@@ -17,6 +17,7 @@ export interface Track {
 export interface LikedPlaylist {
   id: number
   trackIds: number[]
+  updatedAt: string
 }
 
 export interface CustomPlaylistSummary {
@@ -24,6 +25,7 @@ export interface CustomPlaylistSummary {
   name: string
   trackIds: number[]
   hasThumbnail: boolean
+  updatedAt: string
 }
 
 export interface PlaylistsBundle {

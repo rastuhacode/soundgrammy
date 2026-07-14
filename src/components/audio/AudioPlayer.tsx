@@ -444,10 +444,10 @@ export function AudioPlayer() {
   async function handleToggleLike() {
     if (!track || !playlistsData) return
     try {
-      const trackIds = await api.toggleLike(track.id)
+      const liked = await api.toggleLike(track.id)
       setPlaylistsData({
         ...playlistsData,
-        liked: { ...playlistsData.liked, trackIds },
+        liked,
       })
     }
     catch {

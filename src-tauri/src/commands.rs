@@ -4,7 +4,7 @@ use serde::Serialize;
 use tauri::{AppHandle, State};
 
 use crate::cache;
-use crate::db::{CustomPlaylistSummary, PlaylistsBundle, Profile, Track};
+use crate::db::{CustomPlaylistSummary, LikedPlaylist, PlaylistsBundle, Profile, Track};
 use crate::error::AppResult;
 use crate::state::AppState;
 use crate::telegram::auth::{self, AuthOutcome, AuthUser, QrOutcome};
@@ -347,7 +347,7 @@ pub async fn add_track_to_playlist(
     state: State<'_, AppState>,
     playlist_id: i64,
     track_id: i64,
-) -> AppResult<()> {
+) -> AppResult<String> {
     let uid = require_uid(&state)?;
     state.db.add_track_to_playlist(playlist_id, track_id, uid)
 }
@@ -357,7 +357,7 @@ pub async fn remove_track_from_playlist(
     state: State<'_, AppState>,
     playlist_id: i64,
     track_id: i64,
-) -> AppResult<()> {
+) -> AppResult<String> {
     let uid = require_uid(&state)?;
     state
         .db
@@ -365,7 +365,10 @@ pub async fn remove_track_from_playlist(
 }
 
 #[tauri::command]
-pub async fn toggle_like(state: State<'_, AppState>, track_id: i64) -> AppResult<Vec<i64>> {
+pub async fn toggle_like(
+    state: State<'_, AppState>,
+    track_id: i64,
+) -> AppResult<LikedPlaylist> {
     let uid = require_uid(&state)?;
     state.db.toggle_like(track_id, uid)
 }

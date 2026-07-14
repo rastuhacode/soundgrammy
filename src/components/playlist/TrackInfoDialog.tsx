@@ -118,7 +118,7 @@ export function TrackInfoDialog({
         </DialogHeader>
 
         {track && (
-          <div className="min-h-0 flex-1 overflow-y-auto">
+          <div className="min-h-0 grow overflow-y-auto">
             <div className="flex flex-col gap-5 pr-1">
               <div className="flex items-start gap-4">
                 <div className="size-24 shrink-0 overflow-hidden rounded-lg border border-border bg-muted">

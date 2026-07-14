@@ -5,6 +5,7 @@ import type {
   AuthStatus,
   AuthUser,
   CustomPlaylistSummary,
+  LikedPlaylist,
   PlaylistsBundle,
   QrOutcome,
   SyncResult,
@@ -92,10 +93,10 @@ export const api = {
   getPlaylistThumbnail: (playlistId: number) =>
     invoke<string | null>('get_playlist_thumbnail', { playlistId }),
   addTrackToPlaylist: (playlistId: number, trackId: number) =>
-    invoke<void>('add_track_to_playlist', { playlistId, trackId }),
+    invoke<string>('add_track_to_playlist', { playlistId, trackId }),
   removeTrackFromPlaylist: (playlistId: number, trackId: number) =>
-    invoke<void>('remove_track_from_playlist', { playlistId, trackId }),
-  toggleLike: (trackId: number) => invoke<number[]>('toggle_like', { trackId }),
+    invoke<string>('remove_track_from_playlist', { playlistId, trackId }),
+  toggleLike: (trackId: number) => invoke<LikedPlaylist>('toggle_like', { trackId }),
 }
 
 /** Turns an absolute cache path into an `asset:` URL for `<audio>`/`<img>`. */

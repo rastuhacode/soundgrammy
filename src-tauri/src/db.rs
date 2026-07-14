@@ -42,6 +42,8 @@ pub struct LikedPlaylist {
     pub id: i64,
     #[serde(rename = "trackIds")]
     pub track_ids: Vec<i64>,
+    #[serde(rename = "updatedAt")]
+    pub updated_at: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -52,6 +54,8 @@ pub struct CustomPlaylistSummary {
     pub track_ids: Vec<i64>,
     #[serde(rename = "hasThumbnail")]
     pub has_thumbnail: bool,
+    #[serde(rename = "updatedAt")]
+    pub updated_at: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -114,7 +118,8 @@ impl Db {
               kind TEXT NOT NULL CHECK (kind IN ('liked', 'custom')),
               thumbnail_data TEXT,
               thumbnail_mime TEXT,
-              created_at TEXT NOT NULL DEFAULT (datetime('now'))
+              created_at TEXT NOT NULL DEFAULT (datetime('now')),
+              updated_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
 
             CREATE UNIQUE INDEX IF NOT EXISTS idx_playlists_user_liked
@@ -143,7 +148,39 @@ impl Db {
             );
             "#,
         )?;
+        Self::migrate_playlists_updated_at(conn)?;
         Ok(())
+    }
+
+    fn migrate_playlists_updated_at(conn: &Connection) -> AppResult<()> {
+        let mut stmt = conn.prepare("PRAGMA table_info(playlists)")?;
+        let columns = stmt
+            .query_map([], |row| row.get::<_, String>(1))?
+            .collect::<Result<Vec<_>, _>>()?;
+        if columns.iter().any(|c| c == "updated_at") {
+            return Ok(());
+        }
+        conn.execute_batch(
+            "ALTER TABLE playlists ADD COLUMN updated_at TEXT NOT NULL DEFAULT (datetime('now'));
+             UPDATE playlists SET updated_at = created_at;",
+        )?;
+        Ok(())
+    }
+
+    fn playlist_updated_at(conn: &Connection, playlist_id: i64) -> AppResult<String> {
+        Ok(conn.query_row(
+            "SELECT updated_at FROM playlists WHERE id = ?1",
+            params![playlist_id],
+            |row| row.get(0),
+        )?)
+    }
+
+    fn touch_playlist_updated_at(conn: &Connection, playlist_id: i64) -> AppResult<String> {
+        conn.execute(
+            "UPDATE playlists SET updated_at = datetime('now') WHERE id = ?1",
+            params![playlist_id],
+        )?;
+        Self::playlist_updated_at(conn, playlist_id)
     }
 
     // ---- tracks ---------------------------------------------------------
@@ -376,10 +413,11 @@ impl Db {
         let liked = LikedPlaylist {
             id: liked_id,
             track_ids: Self::playlist_track_ids(&conn, liked_id)?,
+            updated_at: Self::playlist_updated_at(&conn, liked_id)?,
         };
 
         let mut stmt = conn.prepare(
-            "SELECT id, name, thumbnail_data, thumbnail_mime FROM playlists \
+            "SELECT id, name, thumbnail_data, thumbnail_mime, updated_at FROM playlists \
              WHERE tg_user_id = ?1 AND kind = 'custom' ORDER BY created_at ASC",
         )?;
         let rows = stmt
@@ -389,17 +427,19 @@ impl Db {
                     row.get::<_, String>(1)?,
                     row.get::<_, Option<String>>(2)?,
                     row.get::<_, Option<String>>(3)?,
+                    row.get::<_, String>(4)?,
                 ))
             })?
             .collect::<Result<Vec<_>, _>>()?;
 
         let mut custom = Vec::with_capacity(rows.len());
-        for (id, name, thumb_data, thumb_mime) in rows {
+        for (id, name, thumb_data, thumb_mime, updated_at) in rows {
             custom.push(CustomPlaylistSummary {
                 id,
                 name,
                 track_ids: Self::playlist_track_ids(&conn, id)?,
                 has_thumbnail: thumb_data.is_some() && thumb_mime.is_some(),
+                updated_at,
             });
         }
 
@@ -432,6 +472,7 @@ impl Db {
             name: trimmed.to_string(),
             track_ids: Vec::new(),
             has_thumbnail: data.is_some(),
+            updated_at: Self::playlist_updated_at(&conn, id)?,
         })
     }
 
@@ -485,7 +526,8 @@ impl Db {
         };
 
         conn.execute(
-            "UPDATE playlists SET name = ?1, thumbnail_data = ?2, thumbnail_mime = ?3 \
+            "UPDATE playlists SET name = ?1, thumbnail_data = ?2, thumbnail_mime = ?3, \
+             updated_at = datetime('now') \
              WHERE id = ?4 AND tg_user_id = ?5",
             params![next_name, next_data, next_mime, id, tg_user_id],
         )?;
@@ -495,6 +537,7 @@ impl Db {
             name: next_name,
             track_ids: Self::playlist_track_ids(&conn, id)?,
             has_thumbnail: next_data.is_some() && next_mime.is_some(),
+            updated_at: Self::playlist_updated_at(&conn, id)?,
         })
     }
 
@@ -558,7 +601,7 @@ impl Db {
         playlist_id: i64,
         track_id: i64,
         tg_user_id: i64,
-    ) -> AppResult<()> {
+    ) -> AppResult<String> {
         let conn = self.conn.lock().unwrap();
         let kind = conn
             .query_row(
@@ -574,12 +617,15 @@ impl Db {
             ));
         }
         let position = Self::next_position(&conn, playlist_id)?;
-        conn.execute(
+        let changed = conn.execute(
             "INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (?1, ?2, ?3) \
              ON CONFLICT (playlist_id, track_id) DO NOTHING",
             params![playlist_id, track_id, position],
         )?;
-        Ok(())
+        if changed > 0 {
+            return Self::touch_playlist_updated_at(&conn, playlist_id);
+        }
+        Self::playlist_updated_at(&conn, playlist_id)
     }
 
     pub fn remove_track_from_playlist(
@@ -587,7 +633,7 @@ impl Db {
         playlist_id: i64,
         track_id: i64,
         tg_user_id: i64,
-    ) -> AppResult<()> {
+    ) -> AppResult<String> {
         let conn = self.conn.lock().unwrap();
         let exists = conn
             .query_row(
@@ -599,15 +645,18 @@ impl Db {
         if exists.is_none() {
             return Err(crate::error::AppError::msg("Playlist not found"));
         }
-        conn.execute(
+        let changed = conn.execute(
             "DELETE FROM playlist_tracks WHERE playlist_id = ?1 AND track_id = ?2",
             params![playlist_id, track_id],
         )?;
-        Ok(())
+        if changed > 0 {
+            return Self::touch_playlist_updated_at(&conn, playlist_id);
+        }
+        Self::playlist_updated_at(&conn, playlist_id)
     }
 
-    /// Toggles the liked state of a track; returns the updated liked track ids.
-    pub fn toggle_like(&self, track_id: i64, tg_user_id: i64) -> AppResult<Vec<i64>> {
+    /// Toggles the liked state of a track; returns the updated liked playlist.
+    pub fn toggle_like(&self, track_id: i64, tg_user_id: i64) -> AppResult<LikedPlaylist> {
         let conn = self.conn.lock().unwrap();
         let liked_id = self.ensure_liked(&conn, tg_user_id)?;
         let already: Option<()> = conn
@@ -631,7 +680,12 @@ impl Db {
             )?;
         }
 
-        Self::playlist_track_ids(&conn, liked_id)
+        let updated_at = Self::touch_playlist_updated_at(&conn, liked_id)?;
+        Ok(LikedPlaylist {
+            id: liked_id,
+            track_ids: Self::playlist_track_ids(&conn, liked_id)?,
+            updated_at,
+        })
     }
 }
 

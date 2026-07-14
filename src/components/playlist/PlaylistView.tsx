@@ -89,7 +89,7 @@ export function PlaylistView() {
   } = selectedPlaylist
 
   const filteredTracks = playlistTracks.filter((track) => {
-    // TODO: this construction is invalid - maybe it is better to pass `fileName` from the rust
+    // TODO: maybe it is better to pass `fileName` from the rust
     return contains(`${track.performer} - ${track.title}`, search)
   })
 
@@ -112,8 +112,8 @@ export function PlaylistView() {
   const handleToggleLike = async (trackId: number) => {
     if (!data) return
     try {
-      const trackIds = await api.toggleLike(trackId)
-      setData({ ...data, liked: { ...data.liked, trackIds } })
+      const liked = await api.toggleLike(trackId)
+      setData({ ...data, liked })
     }
     catch {
       // keep UI unchanged on failure
@@ -123,13 +123,14 @@ export function PlaylistView() {
   const handleAddToPlaylist = async (targetId: number, trackId: number) => {
     if (!data) return
     try {
-      await api.addTrackToPlaylist(targetId, trackId)
+      const updatedAt = await api.addTrackToPlaylist(targetId, trackId)
       setData({
         ...data,
         custom: data.custom.map(playlist =>
           playlist.id === targetId
             ? {
                 ...playlist,
+                updatedAt,
                 trackIds: playlist.trackIds.includes(trackId)
                   ? playlist.trackIds
                   : [...playlist.trackIds, trackId],
@@ -149,13 +150,14 @@ export function PlaylistView() {
   ) => {
     if (!data) return
     try {
-      await api.removeTrackFromPlaylist(targetId, trackId)
+      const updatedAt = await api.removeTrackFromPlaylist(targetId, trackId)
       setData({
         ...data,
         custom: data.custom.map(playlist =>
           playlist.id === targetId
             ? {
                 ...playlist,
+                updatedAt,
                 trackIds: playlist.trackIds.filter(id => id !== trackId),
               }
             : playlist,
