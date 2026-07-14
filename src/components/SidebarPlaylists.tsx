@@ -136,7 +136,6 @@ function PlaylistItem({
         isActive
           ? 'bg-accent text-accent-foreground'
           : 'text-foreground hover:bg-muted/70',
-        sortable && 'cursor-grab active:cursor-grabbing',
         isDragging && 'z-10 bg-muted opacity-90 shadow-md',
       )}
       role="button"
@@ -373,8 +372,8 @@ export function SidebarPlaylists() {
           <Plus />
         </Button>
       </div>
-      <div className="flex items-center gap-2 px-4">
-        <div className="grow">
+      <div className="flex items-center gap-1 px-4 justify-between">
+        <div className="w-1/2">
           <InputGroup>
             <InputGroupInput value={search} onChange={e => setSearch(e.target.value)} placeholder="Search" />
             <InputGroupAddon>
