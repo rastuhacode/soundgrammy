@@ -1,11 +1,10 @@
-import { cn } from '@/lib/utils'
 import { SkipForward } from 'lucide-react'
+import { cn } from '@/lib/utils'
+import { usePlayerStore } from '@/stores/player-store'
 
-export type NextButtonProps = {
-  onNextTrack: () => void
-}
+export function NextButton() {
+  const playNext = usePlayerStore(state => state.playNext)
 
-export function NextButton(props: NextButtonProps) {
   return (
     <button
       type="button"
@@ -18,7 +17,7 @@ export function NextButton(props: NextButtonProps) {
           '[&>svg]:fill-current [&>svg]:size-5',
         )
       }
-      onClick={props.onNextTrack}
+      onClick={playNext}
     >
       <SkipForward />
     </button>

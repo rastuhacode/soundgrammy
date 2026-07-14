@@ -1,17 +1,22 @@
+import { Pause, Play } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { Pause, Play } from 'lucide-react'
+import { usePlayerStore } from '@/stores/player-store'
 
-export type PlayPauseButtonProps = {
-  isPlaying: boolean
-  onPlayToggle: () => void
-}
+export function PlayPauseButton() {
+  const isPlaying = usePlayerStore(state => state.isPlaying)
+  const setPlaying = usePlayerStore(state => state.setPlaying)
+  const track = usePlayerStore(state => state.currentTrack)
 
-export function PlayPauseButton(props: PlayPauseButtonProps) {
+  function handleToggle() {
+    if (!track) return
+    setPlaying(!isPlaying)
+  }
+
   return (
     <Button
-      onClick={props.onPlayToggle}
-      aria-label={props.isPlaying ? 'Pause' : 'Play'}
+      onClick={handleToggle}
+      aria-label={isPlaying ? 'Pause' : 'Play'}
       className={
         cn(
           'flex items-center justify-center',
@@ -21,8 +26,7 @@ export function PlayPauseButton(props: PlayPauseButtonProps) {
         )
       }
     >
-      { props.isPlaying ? <Pause /> : <Play /> }
+      {isPlaying ? <Pause /> : <Play />}
     </Button>
-
   )
 }

@@ -1,15 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { getCurrentWindow } from '@tauri-apps/api/window'
-import { Heart, Minimize2, Music } from 'lucide-react'
+import { Minimize2, Music } from 'lucide-react'
 import type { Track } from '@/lib/db'
-import type { RepeatState } from '@/lib/repeat'
-import type { ShuffleState } from '@/lib/shuffle'
 import { useCachedThumbnail } from '@/hooks/use-cached-thumbnail'
 import { useImagePalette } from '@/hooks/use-image-palette'
+import { formatTime } from '@/lib/format-time'
+import { cn } from '@/lib/utils'
 import { useFullscreenStore } from '@/stores/fullscreen-store'
 import { usePlayerStore } from '@/stores/player-store'
-import { cn } from '@/lib/utils'
-import { Button } from '@/components/ui/button'
+import { LikeButton } from '../audio/LikeButton'
 import { AudioMainOperations } from '../audio/operations/AudioMainOperations'
 import {
   AudioProgressBar,
@@ -21,33 +20,16 @@ const CONTROLS_HIDE_DELAY = 3000
 
 interface AudioFullscreenPlayerProps {
   track: Track
-  isPlaying: boolean
   currentTime: number
   duration: number
   bufferedRanges: AudioBufferedRange[]
   showInitialLoading: boolean
   volume: number
-  isLiked: boolean
-  repeatState: RepeatState
-  shuffleState: ShuffleState
-  onPlayToggle: () => void
-  onPreviousTrack: () => void
-  onNextTrack: () => void
-  onRepeatToggle: () => void
-  onShuffleToggle: () => void
-  onLikeToggle: () => void
   onVolumeChange: (event: React.ChangeEvent<HTMLInputElement>) => void
   onMuteToggle: () => void
   onSeek: (time: number) => void
   onSeekStart: () => void
   onSeekEnd: () => void
-}
-
-function formatTime(seconds: number): string {
-  if (!Number.isFinite(seconds)) return '0:00'
-  const mins = Math.floor(seconds / 60)
-  const secs = Math.floor(seconds % 60)
-  return `${mins}:${secs.toString().padStart(2, '0')}`
 }
 
 export function AudioFullscreenPlayer(props: AudioFullscreenPlayerProps) {
@@ -187,15 +169,7 @@ export function AudioFullscreenPlayer(props: AudioFullscreenPlayerProps) {
               </p>
             </div>
             <div className="flex shrink-0 items-center gap-2">
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label={props.isLiked ? 'Remove from liked' : 'Add to liked'}
-                onClick={props.onLikeToggle}
-                className="text-white hover:bg-white/10 hover:text-white"
-              >
-                <Heart className={cn('size-5', props.isLiked && 'fill-current')} />
-              </Button>
+              <LikeButton className="text-white hover:bg-white/10 hover:text-white" />
               <AudioVolume
                 classes={{ positioner: 'z-[250]' }}
                 volume={props.volume}
@@ -223,16 +197,7 @@ export function AudioFullscreenPlayer(props: AudioFullscreenPlayerProps) {
               {formatTime(props.currentTime)}
             </span>
             <div className="flex justify-center">
-              <AudioMainOperations
-                isPlaying={props.isPlaying}
-                onPlayToggle={props.onPlayToggle}
-                onPreviousTrack={props.onPreviousTrack}
-                onNextTrack={props.onNextTrack}
-                repeatState={props.repeatState}
-                onRepeatToggle={props.onRepeatToggle}
-                shuffleState={props.shuffleState}
-                onShuffleToggle={props.onShuffleToggle}
-              />
+              <AudioMainOperations />
             </div>
             <span className="text-right font-mono text-xs tabular-nums text-white/55">
               {formatTime(props.duration)}

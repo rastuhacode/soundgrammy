@@ -1,11 +1,8 @@
-import { cn } from '@/lib/utils'
 import { SkipBack } from 'lucide-react'
+import { previousOrRestart } from '@/lib/playback-controller'
+import { cn } from '@/lib/utils'
 
-export type PreviousButtonProps = {
-  onPreviousTrack: () => void
-}
-
-export function PreviousButton(props: PreviousButtonProps) {
+export function PreviousButton() {
   return (
     <button
       type="button"
@@ -18,7 +15,7 @@ export function PreviousButton(props: PreviousButtonProps) {
           '[&>svg]:fill-current [&>svg]:size-5',
         )
       }
-      onClick={props.onPreviousTrack}
+      onClick={previousOrRestart}
     >
       <SkipBack />
     </button>

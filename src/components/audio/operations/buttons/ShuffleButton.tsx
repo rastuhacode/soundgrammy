@@ -1,13 +1,12 @@
-import type { ShuffleState } from '@/lib/shuffle'
-import { cn } from '@/lib/utils'
 import { Shuffle } from 'lucide-react'
+import { cn } from '@/lib/utils'
+import { usePlayerStore } from '@/stores/player-store'
+import { useShuffleStore } from '@/stores/shuffle-store'
 
-export type ShuffleButtonProps = {
-  shuffleState: ShuffleState
-  onShuffleToggle: () => void
-}
+export function ShuffleButton() {
+  const shuffleState = useShuffleStore(state => state.shuffle)
+  const toggleShuffle = usePlayerStore(state => state.toggleShuffle)
 
-export function ShuffleButton(props: ShuffleButtonProps) {
   return (
     <button
       type="button"
@@ -15,12 +14,12 @@ export function ShuffleButton(props: ShuffleButtonProps) {
       className={
         cn(
           'flex items-center justify-center transition-transform hover:scale-105 active:scale-95 [&>svg]:size-4',
-          props.shuffleState === 'on'
+          shuffleState === 'on'
             ? 'text-primary'
             : 'text-muted-foreground',
         )
       }
-      onClick={props.onShuffleToggle}
+      onClick={toggleShuffle}
     >
       <Shuffle />
     </button>

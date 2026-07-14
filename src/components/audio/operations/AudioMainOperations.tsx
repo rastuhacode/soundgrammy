@@ -1,30 +1,22 @@
-import { ShuffleButton, type ShuffleButtonProps } from './buttons/ShuffleButton'
-import { NextButton, type NextButtonProps } from './buttons/NextButton'
-import { PlayPauseButton, type PlayPauseButtonProps } from './buttons/PlayPauseButton'
-import { PreviousButton, type PreviousButtonProps } from './buttons/PreviousButton'
-import { RepeatButton, type RepeatButtonProps } from './buttons/RepeatButton'
+import { NextButton } from './buttons/NextButton'
+import { PlayPauseButton } from './buttons/PlayPauseButton'
+import { PreviousButton } from './buttons/PreviousButton'
+import { RepeatButton } from './buttons/RepeatButton'
+import { ShuffleButton } from './buttons/ShuffleButton'
 
-type AudioMainOperationsProps
-  = ShuffleButtonProps
-    & NextButtonProps
-    & PlayPauseButtonProps
-    & PreviousButtonProps
-    & RepeatButtonProps
-    & {}
-
-export function AudioMainOperations(props: AudioMainOperationsProps) {
+export function AudioMainOperations() {
   return (
     <div className="flex items-center gap-6">
       <div className="flex items-center gap-4">
-        <RepeatButton repeatState={props.repeatState} onRepeatToggle={props.onRepeatToggle} />
-        <PreviousButton onPreviousTrack={props.onPreviousTrack} />
+        <RepeatButton />
+        <PreviousButton />
       </div>
 
-      <PlayPauseButton isPlaying={props.isPlaying} onPlayToggle={props.onPlayToggle} />
+      <PlayPauseButton />
 
       <div className="flex items-center gap-4">
-        <NextButton onNextTrack={props.onNextTrack} />
-        <ShuffleButton shuffleState={props.shuffleState} onShuffleToggle={props.onShuffleToggle} />
+        <NextButton />
+        <ShuffleButton />
       </div>
     </div>
   )

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { formatTime } from '@/lib/format-time'
 import { cn } from '@/lib/utils'
 import {
   Tooltip,
@@ -25,13 +26,6 @@ export interface AudioProgressBarProps {
 
 // Virtual anchor tooltip positioning offset. Set to remove tooltip flickering
 const HOVER_ZONE_EXTENSION = 3 // 3px
-
-function formatTime(seconds: number): string {
-  if (!Number.isFinite(seconds)) return '0:00'
-  const mins = Math.floor(seconds / 60)
-  const secs = Math.floor(seconds % 60)
-  return `${mins}:${secs.toString().padStart(2, '0')}`
-}
 
 interface PointerAnchor {
   clientX: number

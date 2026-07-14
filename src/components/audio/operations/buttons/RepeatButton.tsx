@@ -1,29 +1,27 @@
-import type { RepeatState } from '@/lib/repeat'
 import { Repeat, Repeat1 } from 'lucide-react'
+import { usePlayerStore } from '@/stores/player-store'
+import { useRepeatStore } from '@/stores/repeat-store'
 
-export type RepeatButtonProps = {
-  repeatState: RepeatState
-  onRepeatToggle: () => void
-}
+export function RepeatButton() {
+  const repeatState = useRepeatStore(state => state.repeat)
+  const toggleRepeat = usePlayerStore(state => state.toggleRepeat)
 
-export function RepeatButton(props: RepeatButtonProps) {
   return (
     <button
       type="button"
       aria-label="Toggle repeat"
       className="flex items-center justify-center text-primary transition-transform hover:scale-105 active:scale-95 [&>svg]:size-4"
-      onClick={props.onRepeatToggle}
+      onClick={toggleRepeat}
     >
-      {props.repeatState === 'none' || props.repeatState === 'all'
+      {repeatState === 'none' || repeatState === 'all'
         ? (
             <Repeat
-              className={props.repeatState === 'none' ? 'text-muted-foreground' : ''}
+              className={repeatState === 'none' ? 'text-muted-foreground' : ''}
             />
           )
         : (
             <Repeat1 />
           )}
-
     </button>
   )
 }
