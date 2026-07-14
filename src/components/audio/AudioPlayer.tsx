@@ -16,14 +16,14 @@ import {
   type DownloadProgress,
 } from '@/lib/api'
 import { cn } from '@/lib/utils'
-import { AudioMainOperations } from './AudioMainOperations'
+import { AudioMainOperations } from './operations/AudioMainOperations'
 import { AudioFullscreenPlayer } from '../fullscreen/AudioFullscreenPlayer'
 import { AudioTrackDescription } from './AudioTrackDescription'
 import { AudioVolume } from './AudioVolume'
 import { z } from 'zod'
 
 const VOLUME_STORAGE_KEY = 'soundgrammy-volume'
-const VOLUME_DEFAULT = 25 // 25% (players shouldn't scream by default)
+const VOLUME_DEFAULT = 25 // 25% (player shouldn't scream by default)
 
 interface BufferAnchor {
   time: number
@@ -352,7 +352,7 @@ export function AudioPlayer() {
         }
       }
     }
-    void initializeSource()
+    initializeSource()
 
     return () => {
       disposed = true

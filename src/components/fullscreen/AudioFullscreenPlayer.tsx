@@ -10,7 +10,7 @@ import { useFullscreenStore } from '@/stores/fullscreen-store'
 import { usePlayerStore } from '@/stores/player-store'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import { AudioMainOperations } from '../audio/AudioMainOperations'
+import { AudioMainOperations } from '../audio/operations/AudioMainOperations'
 import {
   AudioProgressBar,
   type AudioBufferedRange,
