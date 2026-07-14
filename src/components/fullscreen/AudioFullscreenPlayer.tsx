@@ -197,6 +197,7 @@ export function AudioFullscreenPlayer(props: AudioFullscreenPlayerProps) {
                 <Heart className={cn('size-5', props.isLiked && 'fill-current')} />
               </Button>
               <AudioVolume
+                classes={{ positioner: 'z-[250]' }}
                 volume={props.volume}
                 onVolumeChange={props.onVolumeChange}
                 onMuteToggle={props.onMuteToggle}

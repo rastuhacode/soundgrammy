@@ -7,12 +7,14 @@ import {
   Popover,
   PopoverContent,
   PopoverTrigger,
+  type PopoverClasses,
 } from '@/components/ui/popover'
 
 export interface AudioVolumeProps {
   volume: number
   onVolumeChange: (e: React.ChangeEvent<HTMLInputElement>) => void
   onMuteToggle: () => void
+  classes?: PopoverClasses
 }
 
 export function AudioVolume(props: AudioVolumeProps) {
@@ -45,7 +47,12 @@ export function AudioVolume(props: AudioVolumeProps) {
           </Button>
         )}
       />
-      <PopoverContent side="top" align="center" className="w-fit px-1">
+      <PopoverContent
+        side="top"
+        align="center"
+        className="w-fit px-1"
+        classes={props.classes}
+      >
         <div className="flex h-24 w-8 items-center justify-center">
           <input
             type="range"

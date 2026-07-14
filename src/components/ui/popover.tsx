@@ -3,6 +3,10 @@ import { Popover as PopoverPrimitive } from '@base-ui/react/popover'
 
 import { cn } from '@/lib/utils'
 
+export type PopoverClasses = {
+  positioner?: string
+}
+
 function Popover({ ...props }: PopoverPrimitive.Root.Props) {
   return <PopoverPrimitive.Root data-slot="popover" {...props} />
 }
@@ -13,6 +17,7 @@ function PopoverTrigger({ ...props }: PopoverPrimitive.Trigger.Props) {
 
 function PopoverContent({
   className,
+  classes,
   align = 'center',
   alignOffset = 0,
   side = 'bottom',
@@ -22,7 +27,10 @@ function PopoverContent({
   & Pick<
     PopoverPrimitive.Positioner.Props,
     'align' | 'alignOffset' | 'side' | 'sideOffset'
-  >) {
+  >
+  & {
+    classes?: PopoverClasses
+  }) {
   return (
     <PopoverPrimitive.Portal>
       <PopoverPrimitive.Positioner
@@ -30,7 +38,7 @@ function PopoverContent({
         alignOffset={alignOffset}
         side={side}
         sideOffset={sideOffset}
-        className="isolate z-50"
+        className={cn('isolate z-50', classes?.positioner)}
       >
         <PopoverPrimitive.Popup
           data-slot="popover-content"
