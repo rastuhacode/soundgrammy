@@ -270,8 +270,93 @@ describe('attachMseSession', () => {
       received: smallTotal,
       total: smallTotal,
     }))
+    // currentTime is 0 → EOS is allowed immediately (nothing to clamp mid-track).
     await waitFor(() => mediaSource.endOfStreamCalls === 1)
     expect(mediaSource.readyState).toBe('ended')
+  })
+
+  it('defers endOfStream while the playhead is mid-track after full load', async () => {
+    const onError = vi.fn()
+    const smallTotal = MSE_APPEND_CHUNK
+    const { session: active, mediaSource } = await attach({
+      total: smallTotal,
+      onError,
+    })
+
+    // Simulate listening while bytes finish appending.
+    audio.currentTime = 40
+
+    active.notifyProgress(progress({
+      ranges: [{ start: 0, end: smallTotal }],
+      complete: true,
+      received: smallTotal,
+      total: smallTotal,
+    }))
+    await waitFor(() => active.getAppendedOffset() >= smallTotal)
+    await flushMicrotasks(16)
+
+    // Full file is in the SourceBuffer, but EOS must wait — WebKit clamps
+    // duration on EOS and can fire `ended` / pause mid-track.
+    expect(mediaSource.endOfStreamCalls).toBe(0)
+    expect(mediaSource.readyState).toBe('open')
+    expect(onError).not.toHaveBeenCalled()
+
+    // Near the end → EOS proceeds so the element can fire a real `ended`.
+    audio.tickTime(DURATION - 0.5)
+    await flushMicrotasks(8)
+    expect(mediaSource.endOfStreamCalls).toBe(1)
+    expect(mediaSource.readyState).toBe('ended')
+    expect(onError).not.toHaveBeenCalled()
+  })
+
+  it('retries a transient readStreamRange failure without calling onError', async () => {
+    const onError = vi.fn()
+    let attempts = 0
+    readStreamRange.mockImplementation(
+      async (_trackId: number, start: number, end: number) => {
+        attempts += 1
+        if (attempts === 1) {
+          throw new Error('ENOENT: partial renamed during finalize')
+        }
+        const length = Math.max(0, end - start + 1)
+        return fillMpegFrames(length)
+      },
+    )
+
+    const { session: active } = await attach({ onError })
+    await pumpPrefix(active, MSE_APPEND_CHUNK)
+
+    expect(onError).not.toHaveBeenCalled()
+    expect(active.getAppendedOffset()).toBeGreaterThan(0)
+    expect(attempts).toBeGreaterThanOrEqual(2)
+  })
+
+  it('does not call onError when endOfStream throws InvalidStateError', async () => {
+    const onError = vi.fn()
+    const smallTotal = MSE_APPEND_CHUNK
+    const { session: active, mediaSource } = await attach({
+      total: smallTotal,
+      onError,
+    })
+
+    mediaSource.endOfStream = () => {
+      mediaSource.endOfStreamCalls += 1
+      throw new DOMException('InvalidStateError')
+    }
+
+    active.notifyProgress(progress({
+      ranges: [{ start: 0, end: smallTotal }],
+      complete: true,
+      received: smallTotal,
+      total: smallTotal,
+    }))
+    await waitFor(() => active.getAppendedOffset() >= smallTotal)
+    await flushMicrotasks(16)
+
+    expect(mediaSource.endOfStreamCalls).toBeGreaterThanOrEqual(1)
+    expect(onError).not.toHaveBeenCalled()
+    // Remains open so a later retry can still finish the stream.
+    expect(mediaSource.readyState).toBe('open')
   })
 
   it('does not advance the append cursor when appendBuffer throws', async () => {

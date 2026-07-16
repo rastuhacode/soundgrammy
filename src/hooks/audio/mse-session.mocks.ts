@@ -210,13 +210,14 @@ export class FakeMediaSource extends EventTarget {
   }
 }
 
-export class FakeAudioElement {
+export class FakeAudioElement extends EventTarget {
   currentTime = 0
   duration = Number.NaN
   private _src = ''
   private readonly objectUrls: Map<string, FakeMediaSource>
 
   constructor(objectUrls: Map<string, FakeMediaSource>) {
+    super()
     this.objectUrls = objectUrls
   }
 
@@ -237,6 +238,12 @@ export class FakeAudioElement {
 
   removeAttribute(name: string) {
     if (name === 'src') this._src = ''
+  }
+
+  /** Test helper: advance the playhead and fire timeupdate (MSE EOS deferral). */
+  tickTime(time: number) {
+    this.currentTime = time
+    this.dispatchEvent(new Event('timeupdate'))
   }
 }
 

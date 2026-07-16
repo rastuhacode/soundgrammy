@@ -462,14 +462,37 @@ impl TrackStream {
 
     pub async fn read_range(self: &Arc<Self>, start: u64, end: u64) -> AppResult<Vec<u8>> {
         self.ensure_range(start, end).await?;
-        let path = if let Some(path) = self.final_path.lock().await.clone() {
-            path
-        } else if self.destination.exists() {
-            self.destination.clone()
-        } else {
-            self.partial.clone()
+        // Snapshot the path under the finalize lock so we do not start a read
+        // against a path that try_finalize is about to rename. If finalize
+        // still races the IO (rename between snapshot and open), retry once
+        // with a fresh path — MSE keeps appending after download:complete and
+        // a failed read would pause playback via onError.
+        let path = {
+            let _guard = self.finalize_lock.lock().await;
+            self.resolve_read_path().await
         };
-        read_file_range(&path, start, end).await
+        match read_file_range(&path, start, end).await {
+            Ok(bytes) => Ok(bytes),
+            Err(err) => {
+                let retry_path = {
+                    let _guard = self.finalize_lock.lock().await;
+                    self.resolve_read_path().await
+                };
+                if retry_path != path {
+                    read_file_range(&retry_path, start, end).await
+                } else {
+                    Err(err)
+                }
+            }
+        }
+    }
+
+    async fn resolve_read_path(&self) -> PathBuf {
+        resolve_stream_read_path(
+            self.final_path.lock().await.clone(),
+            &self.destination,
+            &self.partial,
+        )
     }
 
     pub async fn wait_complete(&self) -> AppResult<PathBuf> {
@@ -727,6 +750,21 @@ fn complete_path(destination: &Path) -> PathBuf {
     PathBuf::from(value)
 }
 
+/// Prefer the post-finalize path, then the destination, then the sparse partial.
+fn resolve_stream_read_path(
+    final_path: Option<PathBuf>,
+    destination: &Path,
+    partial: &Path,
+) -> PathBuf {
+    if let Some(path) = final_path {
+        return path;
+    }
+    if destination.exists() {
+        return destination.to_path_buf();
+    }
+    partial.to_path_buf()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -787,5 +825,67 @@ mod tests {
 
         assert_eq!(parse_single_range(Some(&multiple), 1_000), Err(()));
         assert_eq!(parse_single_range(Some(&outside), 1_000), Err(()));
+    }
+
+    #[test]
+    fn resolve_read_path_prefers_final_then_destination_then_partial() {
+        let dir = std::env::temp_dir().join(format!(
+            "soundgrammy-stream-path-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let destination = dir.join("track.mp3");
+        let partial = partial_path(&destination);
+        let finalized = dir.join("track.webm");
+
+        std::fs::write(&partial, b"partial").unwrap();
+        assert_eq!(
+            resolve_stream_read_path(None, &destination, &partial),
+            partial
+        );
+
+        std::fs::write(&destination, b"dest").unwrap();
+        assert_eq!(
+            resolve_stream_read_path(None, &destination, &partial),
+            destination
+        );
+
+        assert_eq!(
+            resolve_stream_read_path(Some(finalized.clone()), &destination, &partial),
+            finalized
+        );
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[tokio::test]
+    async fn read_file_range_succeeds_after_partial_renamed_to_destination() {
+        let dir = std::env::temp_dir().join(format!(
+            "soundgrammy-stream-rename-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let destination = dir.join("track.mp3");
+        let partial = partial_path(&destination);
+        let payload = b"abcdefghijklmnopqrstuvwxyz";
+        std::fs::write(&partial, payload).unwrap();
+
+        // Simulate the MSE race: path was snapshotted as .part, then finalize
+        // renamed it before open. Retry against the destination must succeed.
+        std::fs::rename(&partial, &destination).unwrap();
+        assert!(!partial.exists());
+
+        let bytes = read_file_range(&destination, 0, 4).await.unwrap();
+        assert_eq!(bytes, b"abcde");
+
+        let stale = read_file_range(&partial, 0, 4).await;
+        assert!(stale.is_err());
+        let retry = resolve_stream_read_path(None, &destination, &partial);
+        let recovered = read_file_range(&retry, 0, 4).await.unwrap();
+        assert_eq!(recovered, b"abcde");
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

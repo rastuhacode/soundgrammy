@@ -267,13 +267,36 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
       return
     }
     if (!shouldEndOfStream(nextAppendOffset, total, latestComplete)) return
+
+    // WebKit's endOfStream() clamps MediaSource.duration to SourceBuffer
+    // buffered end. Doing that mid-track can seek currentTime onto the clamp
+    // and fire `ended` / pause. Keep the source open until the playhead is
+    // near the real end; timeupdate retries this.
+    const dur = resolveDuration()
+    const current = audio.currentTime
+    if (Number.isFinite(current) && current > 0) {
+      const ranges = readBufferedRanges(sourceBuffer)
+      const bufferedEnd = ranges.length > 0 ? ranges[ranges.length - 1]!.end : 0
+      const endAnchor = dur > 0
+        ? (bufferedEnd > 0 ? Math.min(dur, bufferedEnd) : dur)
+        : bufferedEnd
+      if (endAnchor > 0 && current < endAnchor - 1.25) {
+        return
+      }
+    }
+
     try {
       mediaSource.endOfStream()
       ended = true
     }
     catch {
-      fail()
+      // InvalidStateError if a concurrent update started — retry on next
+      // updateend / timeupdate. Never treat EOS failure as a playback error.
     }
+  }
+
+  const onAudioTimeUpdate = () => {
+    if (!disposed) tryEndOfStream()
   }
 
   const onSourceBufferUpdateEnd = () => {
@@ -665,7 +688,16 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
 
     appendInFlight = true
     try {
-      const bytes = await api.readStreamRange(trackId, window.start, window.end)
+      // One retry: download finalize may rename `.part` → destination between
+      // path snapshot and open; a hard fail here pauses via onError.
+      let bytes: Uint8Array
+      try {
+        bytes = await api.readStreamRange(trackId, window.start, window.end)
+      }
+      catch {
+        if (disposed || discontinuityPending) return
+        bytes = await api.readStreamRange(trackId, window.start, window.end)
+      }
       if (
         disposed
         || discontinuityPending
@@ -675,7 +707,7 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
         return
       }
       if (sourceBuffer.updating) return
-      sourceBuffer.appendBuffer(bytes)
+      sourceBuffer.appendBuffer(new Uint8Array(bytes))
       // Wait for updateend before advancing the cursor — otherwise a failed
       // append leaves nextAppendOffset past bytes that never decoded.
       await waitForSourceBufferIdle(sourceBuffer)
@@ -797,6 +829,7 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
 
   mediaSource.addEventListener('sourceopen', onSourceOpen, { once: true })
   mediaSource.addEventListener('error', fail)
+  audio.addEventListener('timeupdate', onAudioTimeUpdate)
   audio.src = objectUrl
 
   return {
@@ -822,6 +855,7 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
       disposed = true
       seekGeneration += 1
       discontinuityPending = false
+      audio.removeEventListener('timeupdate', onAudioTimeUpdate)
       try {
         if (sourceBuffer && mediaSource.readyState === 'open') {
           if (sourceBuffer.updating) {
