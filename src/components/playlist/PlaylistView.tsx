@@ -2,6 +2,7 @@ import type { Track } from '@/lib/db'
 import { useLibraryStore } from '@/stores/library-store'
 import { usePlayerStore } from '@/stores/player-store'
 import {
+  getLikedTrackIdSet,
   isTrackLiked,
   LIKED_PLAYLIST_ID,
   resolveSelectedPlaylistTracks,
@@ -11,18 +12,31 @@ import type {
   CustomPlaylistId,
   ResolvedSelectedPlaylist,
 } from '@/stores/playlists-store'
-import { useVirtualizer } from '@tanstack/react-virtual'
-import { Music, Play, Search, Shuffle, X } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { Music, Play, Search, Shuffle, Undo2, X } from 'lucide-react'
+import { AnimatePresence, motion } from 'motion/react'
+import { useMemo, useState } from 'react'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
+import type { RowSelectionState, SortingState } from '@tanstack/react-table'
 import { Separator } from '@/components/ui/separator'
 import { api } from '@/lib/api'
 
-import { TRACK_ROW_HEIGHT, PlaylistTrackRow } from './PlaylistTrackRow'
+import { PlaylistBulkActions } from './PlaylistBulkActions'
+import { PlaylistTracksTable } from './PlaylistTracksTable'
 import { TrackInfoDialog } from './TrackInfoDialog'
+import {
+  enterSelectionWithTrack,
+  sortingStateToTrackSort,
+  sortTracks,
+  toPlayablePlaylist,
+} from './track-actions'
 import { Button } from '@/components/ui/button'
 import { useFilter } from '@/hooks/utils/use-filter'
-import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '@/components/ui/input-group'
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from '@/components/ui/input-group'
 
 function getEmptyStateCopy(
   libraryTrackCount: number,
@@ -31,7 +45,7 @@ function getEmptyStateCopy(
 ): { title: string, description: string } {
   if (libraryTrackCount === 0) {
     return {
-      title: 'No playlistTracks yet',
+      title: 'No tracks yet',
       description:
         'Pin music to your Telegram profile and it will tune in here automatically.',
     }
@@ -39,7 +53,7 @@ function getEmptyStateCopy(
 
   if (playlistId === LIKED_PLAYLIST_ID) {
     return {
-      title: 'No liked playlistTracks yet',
+      title: 'No liked tracks yet',
       description: 'Tap the heart on any track to save it here.',
     }
   }
@@ -47,19 +61,32 @@ function getEmptyStateCopy(
   if (isCustom) {
     return {
       title: 'This playlist is empty',
-      description: 'Add playlistTracks from your library using the list button.',
+      description: 'Add tracks from your library using the list button.',
     }
   }
 
   return {
-    title: 'No playlistTracks yet',
+    title: 'No tracks yet',
     description:
       'Pin music to your Telegram profile and it will tune in here automatically.',
   }
 }
 
 export function PlaylistView() {
+  const selectedPlaylistId = usePlaylistsStore(
+    state => state.selectedPlaylistId,
+  )
+
+  // Remount on playlist change so search / selection reset without an effect.
+  return <PlaylistViewContent key={selectedPlaylistId} />
+}
+
+function PlaylistViewContent() {
   const [search, setSearch] = useState('')
+  const [selectionMode, setSelectionMode] = useState(false)
+  const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
+  const [sorting, setSorting] = useState<SortingState>([])
+  const [infoTrack, setInfoTrack] = useState<Track | null>(null)
 
   const { contains } = useFilter()
 
@@ -74,8 +101,6 @@ export function PlaylistView() {
     state => state.selectedPlaylistId,
   )
   const setData = usePlaylistsStore(state => state.setData)
-  const scrollRef = useRef<HTMLDivElement>(null)
-  const [infoTrack, setInfoTrack] = useState<Track | null>(null)
 
   const selectedPlaylist = useMemo(
     () => resolveSelectedPlaylistTracks(libraryTracks, data, selectedPlaylistId),
@@ -84,49 +109,87 @@ export function PlaylistView() {
   const {
     tracks: playlistTracks,
     isCustom,
-    name: playlistName,
     id: playlistId,
   } = selectedPlaylist
 
-  const filteredTracks = playlistTracks.filter((track) => {
-    // TODO: maybe it is better to pass `fileName` from the rust
-    return contains(`${track.performer} - ${track.title}`, search)
-  })
+  const filteredTracks = useMemo(
+    () =>
+      playlistTracks.filter(track =>
+        contains(`${track.performer} - ${track.title}`, search),
+      ),
+    [playlistTracks, contains, search],
+  )
 
-  // TanStack Virtual intentionally returns live functions
-  // eslint-disable-next-line react-hooks/incompatible-library
-  const virtualizer = useVirtualizer({
-    count: filteredTracks.length,
-    gap: 8,
-    getScrollElement: () => scrollRef.current,
-    estimateSize: () => TRACK_ROW_HEIGHT,
-    overscan: 8,
-  })
+  const orderedTracks = useMemo(
+    () => sortTracks(filteredTracks, sortingStateToTrackSort(sorting)),
+    [filteredTracks, sorting],
+  )
 
-  useEffect(() => setSearch(''), [selectedPlaylist])
+  const playablePlaylist = useMemo(
+    () => toPlayablePlaylist(selectedPlaylist, orderedTracks),
+    [selectedPlaylist, orderedTracks],
+  )
+
+  const likedTrackIds = useMemo(() => getLikedTrackIdSet(data), [data])
+  const selectedTrackIds = useMemo(
+    () =>
+      Object.keys(rowSelection)
+        .filter(id => rowSelection[id])
+        .map(Number)
+        .filter(id => Number.isFinite(id)),
+    [rowSelection],
+  )
 
   const handleTrackSelect = (track: Track, startIndex: number) => {
-    playPlaylist(selectedPlaylist, { start: track, startIndex })
+    playPlaylist(playablePlaylist, { start: track, startIndex })
+  }
+
+  const handleEnterSelection = (trackId: number) => {
+    const next = enterSelectionWithTrack(trackId)
+    setSelectionMode(next.selectionMode)
+    setRowSelection(next.rowSelection)
+  }
+
+  const handleExitSelection = () => {
+    setSelectionMode(false)
+    setRowSelection({})
   }
 
   const handleToggleLike = async (trackId: number) => {
-    if (!data) return
+    if (!usePlaylistsStore.getState().data) return
     try {
       const liked = await api.toggleLike(trackId)
-      setData({ ...data, liked })
+      const latest = usePlaylistsStore.getState().data
+      if (!latest) return
+      setData({ ...latest, liked })
     }
     catch {
       // keep UI unchanged on failure
     }
   }
 
+  const handleBulkAddToLiked = async (trackIds: number[]) => {
+    for (const trackId of trackIds) {
+      await handleToggleLike(trackId)
+    }
+  }
+
+  const handleBulkRemoveFromLiked = async (trackIds: number[]) => {
+    for (const trackId of trackIds) {
+      await handleToggleLike(trackId)
+    }
+    setRowSelection({})
+  }
+
   const handleAddToPlaylist = async (targetId: number, trackId: number) => {
-    if (!data) return
+    if (!usePlaylistsStore.getState().data) return
     try {
       const updatedAt = await api.addTrackToPlaylist(targetId, trackId)
+      const latest = usePlaylistsStore.getState().data
+      if (!latest) return
       setData({
-        ...data,
-        custom: data.custom.map(playlist =>
+        ...latest,
+        custom: latest.custom.map(playlist =>
           playlist.id === targetId
             ? {
                 ...playlist,
@@ -144,16 +207,27 @@ export function PlaylistView() {
     }
   }
 
+  const handleBulkAddToPlaylist = async (
+    targetId: number,
+    trackIds: number[],
+  ) => {
+    for (const trackId of trackIds) {
+      await handleAddToPlaylist(targetId, trackId)
+    }
+  }
+
   const handleDeleteFromPlaylist = async (
     targetId: CustomPlaylistId,
     trackId: number,
   ) => {
-    if (!data) return
+    if (!usePlaylistsStore.getState().data) return
     try {
       const updatedAt = await api.removeTrackFromPlaylist(targetId, trackId)
+      const latest = usePlaylistsStore.getState().data
+      if (!latest) return
       setData({
-        ...data,
-        custom: data.custom.map(playlist =>
+        ...latest,
+        custom: latest.custom.map(playlist =>
           playlist.id === targetId
             ? {
                 ...playlist,
@@ -169,6 +243,16 @@ export function PlaylistView() {
     }
   }
 
+  const handleBulkRemoveFromPlaylist = async (
+    targetId: number,
+    trackIds: number[],
+  ) => {
+    for (const trackId of trackIds) {
+      await handleDeleteFromPlaylist(targetId, trackId)
+    }
+    setRowSelection({})
+  }
+
   const handleDownload = async (track: Track) => {
     try {
       const path = await api.downloadTrack(track.id)
@@ -179,12 +263,20 @@ export function PlaylistView() {
     }
   }
 
+  const handleBulkDownload = async (trackIds: number[]) => {
+    const byId = new Map(playlistTracks.map(track => [track.id, track]))
+    for (const trackId of trackIds) {
+      const track = byId.get(trackId)
+      if (track) await handleDownload(track)
+    }
+  }
+
   function handlePlaylistPlay() {
-    playPlaylist(selectedPlaylist, { startIndex: 0 })
+    playPlaylist(playablePlaylist, { startIndex: 0 })
   }
 
   function handlePlaylistShuffle() {
-    playPlaylist(selectedPlaylist, { shuffle: 'on' })
+    playPlaylist(playablePlaylist, { shuffle: 'on' })
   }
 
   const handleShowInfo = (track: Track) => {
@@ -217,23 +309,58 @@ export function PlaylistView() {
 
   return (
     <>
-      <div className="flex min-h-0 grow flex-col pt-4">
-        <div className="h-10 px-4 flex items-center gap-4 justify-between w-full shrink-0">
-          <div className="flex items-center gap-2 shrink-0 w-1/2">
-            <h2 className="text-lg font-semibold">{playlistName}</h2>
-            <Button onClick={handlePlaylistPlay}>
+      <div className="flex min-h-0 grow flex-col gap-4 pt-4">
+        <div className="flex h-fit w-full shrink-0 items-center justify-between gap-4 px-4">
+          <div className="grow flex gap-2">
+            <Button size="icon" onClick={handlePlaylistPlay}>
               <Play className="size-4" />
-              Play
             </Button>
             <Button variant="secondary" onClick={handlePlaylistShuffle}>
               <Shuffle className="size-4" />
               Shuffle
             </Button>
+
+            <AnimatePresence initial={false}>
+              {selectionMode && (
+                <motion.div
+                  key="bulk-actions"
+                  initial={{ opacity: 0, x: -8 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -8 }}
+                  transition={{ duration: 0.18, ease: 'easeOut' }}
+                  className="flex items-center gap-2"
+                >
+                  <Separator orientation="vertical" className="h-full" />
+
+                  {selectedTrackIds.length > 0 && (
+                    <PlaylistBulkActions
+                      selectedTrackIds={selectedTrackIds}
+                      currentPlaylist={selectedPlaylist}
+                      customPlaylists={customPlaylists}
+                      likedTrackIds={likedTrackIds}
+                      onAddToLiked={handleBulkAddToLiked}
+                      onRemoveFromLiked={handleBulkRemoveFromLiked}
+                      onAddToPlaylist={handleBulkAddToPlaylist}
+                      onRemoveFromPlaylist={handleBulkRemoveFromPlaylist}
+                      onDownload={handleBulkDownload}
+                    />
+                  )}
+
+                  <Button variant="outline" size="icon" onClick={handleExitSelection}>
+                    <Undo2 className="size-4" />
+                  </Button>
+                </motion.div>
+              )}
+            </AnimatePresence>
           </div>
 
-          <div className="w-1/2">
+          <div className="min-w-40 max-w-xl w-full px-2">
             <InputGroup>
-              <InputGroupInput value={search} onChange={e => setSearch(e.target.value)} placeholder="Search" />
+              <InputGroupInput
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                placeholder="Search"
+              />
               <InputGroupAddon>
                 <Search className="size-4" />
               </InputGroupAddon>
@@ -246,40 +373,26 @@ export function PlaylistView() {
           </div>
         </div>
 
-        <Separator className="mt-4" />
-
-        <div ref={scrollRef} className="min-h-0 grow overflow-y-auto p-4">
-          <ul
-            className="relative w-full list-none"
-            style={{ height: `${virtualizer.getTotalSize()}px` }}
-          >
-            {virtualizer.getVirtualItems().map((virtualRow) => {
-              const track = filteredTracks[virtualRow.index]
-              if (!track) return null
-
-              return (
-                <PlaylistTrackRow
-                  key={track.id}
-                  className="absolute left-0 top-0 w-full"
-                  style={{ height: `${virtualRow.size}px`, transform: `translateY(${virtualRow.start}px)` }}
-                  currentPlaylist={selectedPlaylist}
-                  track={track}
-                  isActive={currentTrackId === track.id}
-                  isPlaying={isPlaying}
-                  isLiked={isTrackLiked(data, track.id)}
-                  customPlaylists={customPlaylists}
-                  onTrackSelect={track =>
-                    handleTrackSelect(track, virtualRow.index)}
-                  onToggleLike={handleToggleLike}
-                  onAddToPlaylist={handleAddToPlaylist}
-                  onDeleteFromPlaylist={handleDeleteFromPlaylist}
-                  onDownload={handleDownload}
-                  onShowInfo={handleShowInfo}
-                />
-              )
-            })}
-          </ul>
-        </div>
+        <PlaylistTracksTable
+          tracks={filteredTracks}
+          currentPlaylist={selectedPlaylist}
+          customPlaylists={customPlaylists}
+          currentTrackId={currentTrackId}
+          isPlaying={isPlaying}
+          isTrackLiked={trackId => isTrackLiked(data, trackId)}
+          selectionMode={selectionMode}
+          rowSelection={rowSelection}
+          onRowSelectionChange={setRowSelection}
+          sorting={sorting}
+          onSortingChange={setSorting}
+          onEnterSelection={handleEnterSelection}
+          onTrackPlay={handleTrackSelect}
+          onToggleLike={handleToggleLike}
+          onAddToPlaylist={handleAddToPlaylist}
+          onDeleteFromPlaylist={handleDeleteFromPlaylist}
+          onDownload={handleDownload}
+          onShowInfo={handleShowInfo}
+        />
       </div>
 
       <TrackInfoDialog

@@ -54,3 +54,12 @@ Listeners live in `src/lib/api.ts`.
 | Telegram sync | `telegram/saved_music.rs` |
 | Auth flows | `telegram/auth.rs` + login UI |
 | Player UI / queue | `stores/player-store.ts`, `components/audio/` |
+| Playlist tracklist (table, sort, selection, context menu) | `components/playlist/` (`PlaylistView`, `PlaylistTracksTable`, `track-actions`) |
+
+## Playlist boundaries
+
+- **All tracks** (`id: all`) — virtual view of the synced library; not a DB playlist. Immutable membership (no remove-from-playlist).
+- **Liked** (`id: liked`) — app-owned; mutate only via `toggle_like`, not `add_track_to_playlist` / remove-from-playlist UI.
+- **Custom playlists** — editable membership; context menu and bulk actions may show “Remove from playlist”.
+
+Tracklist actions are gated in `src/components/playlist/track-actions.ts` so All tracks / Liked never expose remove-from-playlist.

@@ -1,127 +1,153 @@
 import type { Track } from '@/lib/db'
-import type { ResolvedSelectedPlaylist } from '@/stores/playlists-store'
 import { cn } from '@/lib/utils'
 import { Play } from 'lucide-react'
+import { Checkbox } from '@/components/ui/checkbox'
 import { TrackThumbnail } from './PlaylistTrackThumbnail'
-import { PlaylistTrackDropdown } from './PlaylistTrackDropdown'
+import { formatTrackDuration } from './track-actions'
 
-export const TRACK_ROW_HEIGHT = 70 // 70px
+export const TRACK_ROW_HEIGHT = 70
+export const TRACK_SELECT_COL = '2.25rem'
+export const TRACK_GRID_COLS = `minmax(0, 1.4fr) minmax(0, 1fr) 4.5rem`
+export const TRACK_GRID_COLS_SELECT = `${TRACK_SELECT_COL} ${TRACK_GRID_COLS}`
 
-export interface TrackRowProps {
+export interface PlaylistTrackRowProps {
   track: Track
   isActive: boolean
   isPlaying: boolean
-  isLiked: boolean
-  currentPlaylist: ResolvedSelectedPlaylist
-  customPlaylists: { id: number, name: string, trackIds: number[] }[]
+  isSelected: boolean
+  selectionMode: boolean
   className?: string
   style?: React.CSSProperties
-  onTrackSelect: (track: Track) => void
-  onToggleLike: (trackId: number) => void
-  onAddToPlaylist: (playlistId: number, trackId: number) => void
-  onDeleteFromPlaylist: (playlistId: number, trackId: number) => void
-  onDownload: (track: Track) => void
-  onShowInfo: (track: Track) => void
+  onRowClick: () => void
+  onToggleSelected: (selected: boolean) => void
+  onPlayFromThumb: () => void
 }
 
 export function PlaylistTrackRow({
   track,
   isActive,
   isPlaying,
-  isLiked,
-  currentPlaylist,
-  customPlaylists,
+  isSelected,
+  selectionMode,
   className,
   style,
-  onTrackSelect,
-  onToggleLike,
-  onAddToPlaylist,
-  onDeleteFromPlaylist,
-  onDownload,
-  onShowInfo,
-}: TrackRowProps) {
+  onRowClick,
+  onToggleSelected,
+  onPlayFromThumb,
+}: PlaylistTrackRowProps) {
   const showEqualizer = isActive && isPlaying
-  const availablePlaylists = customPlaylists.filter(
-    playlist => !playlist.trackIds.includes(track.id),
-  )
-
-  function formatDuration(seconds: number | null): string {
-    if (seconds === null) return '--:--'
-    const mins = Math.floor(seconds / 60)
-    const secs = seconds % 60
-    return `${mins}:${secs.toString().padStart(2, '0')}`
-  }
 
   return (
-    <li
-      role="button"
+    <div
+      role="row"
       tabIndex={0}
-      onClick={() => onTrackSelect(track)}
-      aria-label={showEqualizer ? 'Pause track' : 'Play track'}
+      onClick={onRowClick}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault()
+          onRowClick()
+        }
+      }}
+      aria-selected={isSelected}
+      aria-label={
+        selectionMode
+          ? `${isSelected ? 'Deselect' : 'Select'} ${track.title ?? 'track'}`
+          : showEqualizer
+            ? 'Pause track'
+            : 'Play track'
+      }
       className={cn(
-        'group relative flex items-center gap-3 rounded-lg px-2.5 transition-colors duration-200 hover:bg-card/70',
+        'group relative grid w-full cursor-default items-center gap-3 rounded-lg px-2.5 transition-[background-color,box-shadow,transform] duration-200',
+        'border-2 border-transparent hover:bg-card/70',
+        isSelected && 'border-primary/50 bg-primary/8',
+        isActive && !isSelected && 'bg-accent/40',
         className,
       )}
-      style={{ height: `${TRACK_ROW_HEIGHT}px`, ...style }}
+      style={{
+        height: `${TRACK_ROW_HEIGHT}px`,
+        gridTemplateColumns: selectionMode
+          ? TRACK_GRID_COLS_SELECT
+          : TRACK_GRID_COLS,
+        ...style,
+      }}
     >
-      <div className="relative shrink-0">
-        <TrackThumbnail trackId={track.id} fileUniqueId={track.file_unique_id} />
-        <span
-          className={`absolute inset-0 flex items-center justify-center rounded-sm bg-background/65 backdrop-blur-[1px] transition-opacity duration-200 ${
-            isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-          }`}
+      {selectionMode && (
+        <div
+          role="cell"
+          className="flex size-full items-center justify-center"
+          onClick={event => event.stopPropagation()}
         >
-          {showEqualizer
-            ? (
-                <span className="equalizer flex h-4 items-end gap-1">
-                  <span className="w-[3px] rounded-[1px] bg-foreground" />
-                  <span />
-                  <span />
-                </span>
-              )
-            : (
-                <Play
-                  className={cn(
-                    'size-5',
-                    isActive
-                      ? 'fill-primary text-primary'
-                      : 'fill-foreground text-foreground',
-                  )}
-                />
-              )}
-        </span>
-      </div>
+          <Checkbox
+            checked={isSelected}
+            onCheckedChange={(checked) => {
+              onToggleSelected(checked)
+            }}
+            aria-label={`Select ${track.title ?? 'track'}`}
+            className="animate-in fade-in-0 zoom-in-95 duration-150"
+          />
+        </div>
+      )}
 
-      <div className="flex min-w-0 grow flex-col items-start text-left">
+      <div role="cell" className="flex min-w-0 items-center gap-3">
+        <div className="relative shrink-0">
+          <TrackThumbnail
+            trackId={track.id}
+            fileUniqueId={track.file_unique_id}
+          />
+          <button
+            type="button"
+            aria-label={showEqualizer ? 'Now playing' : 'Play track'}
+            onClick={(event) => {
+              event.stopPropagation()
+              onPlayFromThumb()
+            }}
+            className={cn(
+              'absolute inset-0 flex items-center justify-center rounded-sm bg-background/65 backdrop-blur-[1px] transition-opacity duration-200',
+              isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
+            )}
+          >
+            {showEqualizer
+              ? (
+                  <span className="equalizer flex h-4 items-end gap-1">
+                    <span className="w-[3px] rounded-[1px] bg-foreground" />
+                    <span />
+                    <span />
+                  </span>
+                )
+              : (
+                  <Play
+                    className={cn(
+                      'size-5',
+                      isActive
+                        ? 'fill-primary text-primary'
+                        : 'fill-foreground text-foreground',
+                    )}
+                  />
+                )}
+          </button>
+        </div>
+
         <span
-          className={`max-w-full truncate text-sm font-medium ${
-            isActive ? 'text-primary' : 'text-foreground'
-          }`}
+          className={cn(
+            'max-w-full truncate text-sm font-medium',
+            isActive ? 'text-primary' : 'text-foreground',
+          )}
         >
           {track.title ?? 'Unknown Title'}
         </span>
-        <span className="max-w-full truncate text-sm text-muted-foreground">
+      </div>
+
+      <div role="cell" className="min-w-0">
+        <span className="block max-w-full truncate text-sm text-muted-foreground">
           {track.performer ?? 'Unknown Artist'}
         </span>
       </div>
 
-      <div className="flex shrink-0 items-center gap-2">
-        <span className="w-10 shrink-0 text-right font-mono text-xs text-muted-foreground">
-          {formatDuration(track.duration)}
+      <div role="cell" className="flex justify-end">
+        <span className="w-10 shrink-0 text-right font-mono text-xs tabular-nums text-muted-foreground">
+          {formatTrackDuration(track.duration)}
         </span>
-
-        <PlaylistTrackDropdown
-          availablePlaylists={availablePlaylists}
-          currentPlaylist={currentPlaylist}
-          onAddToPlaylist={onAddToPlaylist}
-          onToggleLike={onToggleLike}
-          onDeleteFromPlaylist={onDeleteFromPlaylist}
-          onDownload={onDownload}
-          onShowInfo={onShowInfo}
-          isLiked={isLiked}
-          track={track}
-        />
       </div>
-    </li>
+    </div>
   )
 }
