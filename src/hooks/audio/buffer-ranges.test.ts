@@ -27,6 +27,18 @@ describe('toCachedRanges', () => {
       200,
     )).toEqual([{ start: 0, end: 50 }])
   })
+
+  it('returns empty when duration or total is missing', () => {
+    expect(toCachedRanges(null, 200)).toEqual([])
+    expect(toCachedRanges(
+      progress({ ranges: [{ start: 0, end: 100 }], total: 0 }),
+      200,
+    )).toEqual([])
+    expect(toCachedRanges(
+      progress({ ranges: [{ start: 0, end: 100 }] }),
+      0,
+    )).toEqual([])
+  })
 })
 
 describe('timeIsInRanges', () => {
@@ -45,8 +57,24 @@ describe('snapTimeToRanges', () => {
     expect(snapTimeToRanges(9.2, [{ start: 10, end: 13 }])).toBe(10)
   })
 
+  it('snaps slightly-after targets onto the inside end of the island', () => {
+    expect(snapTimeToRanges(13.2, [{ start: 10, end: 13 }])).toBe(12.95)
+  })
+
+  it('picks the nearest island when several are within tolerance', () => {
+    expect(snapTimeToRanges(50, [
+      { start: 40, end: 45 },
+      { start: 51, end: 60 },
+    ])).toBe(51)
+  })
+
   it('returns null when no island is near enough', () => {
     expect(snapTimeToRanges(10, [{ start: 120, end: 125 }])).toBeNull()
+  })
+
+  it('ignores empty or inverted ranges', () => {
+    expect(snapTimeToRanges(10, [{ start: 10, end: 10 }])).toBeNull()
+    expect(snapTimeToRanges(10, [{ start: 12, end: 8 }])).toBeNull()
   })
 })
 
@@ -57,6 +85,10 @@ describe('landTimeOnRanges', () => {
 
   it('does not snap an earlier scrub onto a stale later island', () => {
     expect(landTimeOnRanges(30, [{ start: 120, end: 125 }])).toBeNull()
+  })
+
+  it('lands within the wider VBR tolerance window', () => {
+    expect(landTimeOnRanges(100, [{ start: 105, end: 110 }])).toBe(105)
   })
 })
 
@@ -75,6 +107,18 @@ describe('computeBufferedRanges', () => {
     })).toEqual([{ start: 80, end: 110 }])
   })
 
+  it('shows the newest island while a pending seek has not landed yet', () => {
+    expect(computeBufferedRanges({
+      mediaRanges: [
+        { start: 0, end: 30 },
+        { start: 80, end: 110 },
+      ],
+      playableEnd: 110,
+      duration,
+      currentTime: 50,
+    })).toEqual([{ start: 80, end: 110 }])
+  })
+
   it('falls back to playableEnd when media ranges are empty', () => {
     expect(computeBufferedRanges({
       playableEnd: 60,
@@ -89,5 +133,21 @@ describe('computeBufferedRanges', () => {
       duration,
       cachedRanges: [{ start: 0, end: 40 }],
     })).toEqual([{ start: 0, end: 40 }])
+  })
+
+  it('returns empty ranges when duration is unknown', () => {
+    expect(computeBufferedRanges({
+      mediaRanges: [{ start: 0, end: 10 }],
+      playableEnd: 10,
+      duration: 0,
+    })).toEqual([])
+  })
+
+  it('ignores non-leading cached ranges before any append', () => {
+    expect(computeBufferedRanges({
+      playableEnd: 0,
+      duration,
+      cachedRanges: [{ start: 40, end: 80 }],
+    })).toEqual([])
   })
 })

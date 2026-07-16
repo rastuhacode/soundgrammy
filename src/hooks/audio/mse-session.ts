@@ -15,9 +15,63 @@ export const MSE_APPEND_CHUNK = 128 * 1024
 const SEEK_PROBE_BACK = 4 * 1024
 
 export function isMseTypeSupported(mimeType: string): boolean {
-  return typeof MediaSource !== 'undefined'
-    && typeof MediaSource.isTypeSupported === 'function'
-    && MediaSource.isTypeSupported(mimeType)
+  return resolveMseMimeType(mimeType) !== null
+}
+
+/** Pick a SourceBuffer MIME WebKit/Chrome will actually accept. */
+export function resolveMseMimeType(mimeType: string): string | null {
+  if (
+    typeof MediaSource === 'undefined'
+    || typeof MediaSource.isTypeSupported !== 'function'
+  ) {
+    return null
+  }
+  for (const candidate of mseMimeCandidates(mimeType)) {
+    if (MediaSource.isTypeSupported(candidate)) return candidate
+  }
+  return null
+}
+
+function mseMimeCandidates(mimeType: string): string[] {
+  const base = mimeType.split(';')[0]?.trim().toLowerCase() || 'audio/mpeg'
+  switch (base) {
+    case 'audio/webm':
+    case 'video/webm':
+      return [
+        'audio/webm; codecs="opus"',
+        'audio/webm; codecs="vorbis"',
+        'audio/webm',
+      ]
+    case 'audio/ogg':
+    case 'audio/opus':
+      return [
+        'audio/ogg; codecs="opus"',
+        'audio/ogg; codecs="vorbis"',
+        'audio/ogg',
+      ]
+    case 'audio/mp4':
+    case 'audio/m4a':
+    case 'audio/x-m4a':
+      return [
+        'audio/mp4; codecs="mp4a.40.2"',
+        'audio/mp4',
+      ]
+    case 'audio/mpeg':
+    case 'audio/mp3':
+      return ['audio/mpeg']
+    default:
+      return [mimeType, base]
+  }
+}
+
+function isMpegMseMime(mimeType: string): boolean {
+  const base = mimeType.split(';')[0]?.trim().toLowerCase() || ''
+  return base === 'audio/mpeg' || base === 'audio/mp3'
+}
+
+/** Raw MPEG has no timestamps; WebM/MP4 do — use segments for the latter. */
+function preferredBufferMode(mimeType: string): 'sequence' | 'segments' {
+  return isMpegMseMime(mimeType) ? 'sequence' : 'segments'
 }
 
 export interface MseSessionCallbacks {
@@ -69,11 +123,28 @@ function waitForSourceBufferIdle(sourceBuffer: SourceBuffer): Promise<void> {
   })
 }
 
-function bufferCoversTime(buffer: SourceBuffer, time: number): boolean {
-  for (let i = 0; i < buffer.buffered.length; i++) {
-    if (time >= buffer.buffered.start(i) && time < buffer.buffered.end(i)) {
-      return true
+/** WebKit throws InvalidStateError reading `.buffered` during some MSE updates. */
+function readBufferedRanges(
+  buffer: SourceBuffer,
+): Array<{ start: number, end: number }> {
+  try {
+    const ranges: Array<{ start: number, end: number }> = []
+    for (let i = 0; i < buffer.buffered.length; i++) {
+      ranges.push({
+        start: buffer.buffered.start(i),
+        end: buffer.buffered.end(i),
+      })
     }
+    return ranges
+  }
+  catch {
+    return []
+  }
+}
+
+function bufferCoversTime(buffer: SourceBuffer, time: number): boolean {
+  for (const range of readBufferedRanges(buffer)) {
+    if (time >= range.start && time < range.end) return true
   }
   return false
 }
@@ -83,11 +154,12 @@ function snapTimeIntoBuffer(
   time: number,
   tolerance = 1.5,
 ): number | null {
-  if (buffer.buffered.length === 0) return null
+  const ranges = readBufferedRanges(buffer)
+  if (ranges.length === 0) return null
   let best: { snapped: number, distance: number } | null = null
-  for (let i = 0; i < buffer.buffered.length; i++) {
-    const start = buffer.buffered.start(i)
-    const end = buffer.buffered.end(i)
+  for (const range of ranges) {
+    const start = range.start
+    const end = range.end
     if (!(end > start)) continue
     const insideEnd = Math.max(start, end - 0.05)
     let snapped: number
@@ -115,10 +187,11 @@ function snapTimeIntoBuffer(
 function landOnBufferedIsland(buffer: SourceBuffer, time: number): number | null {
   const near = snapTimeIntoBuffer(buffer, time, 1.5)
   if (near !== null) return near
-  if (buffer.buffered.length === 0) return null
+  const ranges = readBufferedRanges(buffer)
+  if (ranges.length === 0) return null
   // Proportional byte mapping can miss by more than 1.5s on VBR — still land.
-  const start = buffer.buffered.start(0)
-  const end = buffer.buffered.end(buffer.buffered.length - 1)
+  const start = ranges[0]!.start
+  const end = ranges[ranges.length - 1]!.end
   const insideEnd = Math.max(start, end - 0.05)
   if (time < start) return start
   if (time >= end) return insideEnd
@@ -141,8 +214,8 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
     onError,
   } = options
 
-  const mediaSource = new MediaSource()
-  const objectUrl = URL.createObjectURL(mediaSource)
+  let mediaSource = new MediaSource()
+  let objectUrl = URL.createObjectURL(mediaSource)
   let sourceBuffer: SourceBuffer | null = null
   let nextAppendOffset = 0
   let disposed = false
@@ -212,10 +285,10 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
 
   const configureSourceBuffer = (buffer: SourceBuffer) => {
     try {
-      buffer.mode = 'sequence'
+      buffer.mode = preferredBufferMode(mimeType)
     }
     catch {
-      // ignore unsupported mode
+      // ignore unsupported mode / mode already locked after first append
     }
     if (Number.isFinite(resolvedDuration) && resolvedDuration > 0) {
       try {
@@ -229,9 +302,10 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
     buffer.addEventListener('error', fail)
   }
 
-  const clearBuffered = async (buffer: SourceBuffer) => {
+  /** Clears buffered media. Returns false if remove failed — callers must abort the seek. */
+  const clearBuffered = async (buffer: SourceBuffer): Promise<boolean> => {
     await waitForSourceBufferIdle(buffer)
-    if (disposed || mediaSource.readyState !== 'open') return
+    if (disposed || mediaSource.readyState !== 'open') return false
     if (buffer.updating) {
       try {
         buffer.abort()
@@ -241,8 +315,10 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
       }
       await waitForSourceBufferIdle(buffer)
     }
-    if (buffer.buffered.length === 0) return
-    const bufferedEnd = buffer.buffered.end(buffer.buffered.length - 1)
+    if (disposed || mediaSource.readyState !== 'open') return false
+    const existing = readBufferedRanges(buffer)
+    if (existing.length === 0) return true
+    const bufferedEnd = existing[existing.length - 1]!.end
     const removeEnd = Number.isFinite(mediaSource.duration) && mediaSource.duration > 0
       ? Math.max(mediaSource.duration, bufferedEnd)
       : bufferedEnd + 1
@@ -250,9 +326,12 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
       buffer.remove(0, removeEnd)
     }
     catch {
-      buffer.remove(buffer.buffered.start(0), bufferedEnd)
+      // Do not continue a discontinuous seek on an uncleared buffer — overlapping
+      // MP3 timeline data breaks WebKit seeks.
+      return false
     }
     await waitForSourceBufferIdle(buffer)
+    return !disposed && mediaSource.readyState === 'open'
   }
 
   const setAudioTimeInBuffer = (buffer: SourceBuffer, time: number) => {
@@ -291,12 +370,118 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
     ) {
       return false
     }
-    buffer.appendBuffer(new Uint8Array(bytes))
+    try {
+      buffer.appendBuffer(new Uint8Array(bytes))
+    }
+    catch {
+      return false
+    }
     await waitForSourceBufferIdle(buffer)
     if (disposed || generation !== seekGeneration) return false
     nextAppendOffset = end + 1
     emitAppended()
     return true
+  }
+
+  /**
+   * Grow the existing leading buffer until `clampedTime` is covered.
+   * WebM/MP4: do not clear+rebuild — WebKit closes MediaSource after
+   * remove()+re-append of the init segment mid-session.
+   */
+  const growUntilTime = async (
+    buffer: SourceBuffer,
+    clampedTime: number,
+    generation: number,
+  ) => {
+    ended = false
+    const ranges = readBufferedRanges(buffer)
+    let lastBufferedEnd = ranges.length > 0 ? ranges[ranges.length - 1]!.end : 0
+    let stagnantAppends = 0
+
+    while (
+      !disposed
+      && generation === seekGeneration
+      && nextAppendOffset < total
+      && !bufferCoversTime(buffer, clampedTime)
+    ) {
+      const end = Math.min(total - 1, nextAppendOffset + MSE_APPEND_CHUNK - 1)
+      if (end < nextAppendOffset) break
+
+      await api.ensureStreamRange(trackId, nextAppendOffset, end)
+      if (disposed || generation !== seekGeneration) return
+
+      const ok = await appendChunk(buffer, nextAppendOffset, end, generation)
+      if (!ok) return
+
+      const nextRanges = readBufferedRanges(buffer)
+      const bufferedEnd = nextRanges.length > 0
+        ? nextRanges[nextRanges.length - 1]!.end
+        : 0
+      if (bufferedEnd <= lastBufferedEnd + 0.01) {
+        stagnantAppends += 1
+        const limit = lastBufferedEnd > 0 ? 8 : 24
+        if (stagnantAppends >= limit) break
+      }
+      else {
+        stagnantAppends = 0
+        lastBufferedEnd = bufferedEnd
+      }
+    }
+
+    if (disposed || generation !== seekGeneration) return
+    // Stagnant or incomplete growth: do not snap a far target onto the buffer tip
+    // and pretend the seek landed.
+    if (snapTimeIntoBuffer(buffer, clampedTime) === null) {
+      fail()
+      return
+    }
+    setAudioTimeInBuffer(buffer, clampedTime)
+  }
+
+  /**
+   * Non-MP3: after a fatal WebKit MediaSource close, attach a fresh MSE pipeline
+   * and rebuild from byte 0 until the seek time is covered.
+   */
+  const reattachAndRebuild = async (
+    clampedTime: number,
+    generation: number,
+  ): Promise<void> => {
+    const previousUrl = objectUrl
+    mediaSource = new MediaSource()
+    objectUrl = URL.createObjectURL(mediaSource)
+    sourceBuffer = null
+    nextAppendOffset = 0
+    ended = false
+
+    const opened = new Promise<boolean>((resolve) => {
+      const onOpen = () => {
+        mediaSource.removeEventListener('sourceopen', onOpen)
+        resolve(true)
+      }
+      mediaSource.addEventListener('sourceopen', onOpen)
+      mediaSource.addEventListener('error', () => resolve(false), { once: true })
+    })
+    audio.src = objectUrl
+    try {
+      URL.revokeObjectURL(previousUrl)
+    }
+    catch {
+      // ignore
+    }
+    const ok = await opened
+    if (!ok || disposed || generation !== seekGeneration) {
+      fail()
+      return
+    }
+    try {
+      sourceBuffer = mediaSource.addSourceBuffer(mimeType)
+      configureSourceBuffer(sourceBuffer)
+    }
+    catch {
+      fail()
+      return
+    }
+    await growUntilTime(sourceBuffer, clampedTime, generation)
   }
 
   /** Rebuild timeline from byte 0 until `clampedTime` is inside buffered. */
@@ -306,41 +491,66 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
     generation: number,
   ) => {
     const prefixEnd = leadingPrefixEnd(latestRanges)
+    await appendPrefixUntil(buffer, clampedTime, prefixEnd, generation)
+  }
+
+  const appendPrefixUntil = async (
+    buffer: SourceBuffer,
+    clampedTime: number,
+    prefixEndLimit: number,
+    generation: number,
+  ) => {
     nextAppendOffset = 0
     ended = false
     try {
-      buffer.timestampOffset = 0
+      if (!buffer.updating) buffer.timestampOffset = 0
     }
     catch {
-      try {
-        buffer.mode = 'sequence'
-        buffer.timestampOffset = 0
-      }
-      catch {
-        fail()
-        return
-      }
+      // segments mode may reject offset changes; continue and append from 0
     }
     emitAppended()
+
+    let lastBufferedEnd = 0
+    let stagnantAppends = 0
 
     while (
       !disposed
       && generation === seekGeneration
-      && nextAppendOffset < prefixEnd
+      && nextAppendOffset < prefixEndLimit
+      && nextAppendOffset < total
       && !bufferCoversTime(buffer, clampedTime)
     ) {
-      const window = nextAppendWindow({
-        nextAppendOffset,
-        prefixEnd,
-        total,
-        maxChunk: MSE_APPEND_CHUNK,
-      })
-      if (!window) break
-      const ok = await appendChunk(buffer, window.start, window.end, generation)
+      const end = Math.min(
+        total - 1,
+        prefixEndLimit - 1,
+        nextAppendOffset + MSE_APPEND_CHUNK - 1,
+      )
+      if (end < nextAppendOffset) break
+
+      await api.ensureStreamRange(trackId, nextAppendOffset, end)
+      if (disposed || generation !== seekGeneration) return
+
+      const ok = await appendChunk(buffer, nextAppendOffset, end, generation)
       if (!ok) return
+
+      const ranges = readBufferedRanges(buffer)
+      const bufferedEnd = ranges.length > 0 ? ranges[ranges.length - 1]!.end : 0
+      if (bufferedEnd <= lastBufferedEnd + 0.01) {
+        stagnantAppends += 1
+        const limit = lastBufferedEnd > 0 ? 8 : 24
+        if (stagnantAppends >= limit) break
+      }
+      else {
+        stagnantAppends = 0
+        lastBufferedEnd = bufferedEnd
+      }
     }
 
     if (disposed || generation !== seekGeneration) return
+    if (snapTimeIntoBuffer(buffer, clampedTime) === null) {
+      fail()
+      return
+    }
     setAudioTimeInBuffer(buffer, clampedTime)
   }
 
@@ -397,20 +607,19 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
 
     const timeAtSync = (appendStart / total) * resolveDuration()
     try {
-      buffer.timestampOffset = timeAtSync
+      if (!buffer.updating) buffer.timestampOffset = timeAtSync
     }
     catch {
-      try {
-        buffer.mode = 'sequence'
-        buffer.timestampOffset = timeAtSync
-      }
-      catch {
-        fail()
-        return
-      }
+      // keep going; sequence mode may already have generated timestamps
     }
 
-    buffer.appendBuffer(new Uint8Array(appendBytes))
+    try {
+      buffer.appendBuffer(new Uint8Array(appendBytes))
+    }
+    catch {
+      fail()
+      return
+    }
     await waitForSourceBufferIdle(buffer)
     if (disposed || generation !== seekGeneration) return
 
@@ -495,7 +704,7 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
     pumpQueued = true
     queueMicrotask(() => {
       pumpQueued = false
-      void pump()
+      pump()
     })
   }
 
@@ -520,30 +729,47 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
         await new Promise(resolve => setTimeout(resolve, 16))
       }
       if (disposed || generation !== seekGeneration) return
-      if (mediaSource.readyState !== 'open') return
+      if (mediaSource.readyState !== 'open') {
+        if (!isMpegMseMime(mimeType)) {
+          await reattachAndRebuild(clampedTime, generation)
+        }
+        return
+      }
 
       const targetByte = Math.min(
         total - 1,
         Math.floor((clampedTime / seekDuration) * total),
       )
 
+      const buffer = sourceBuffer
+      if (!buffer || mediaSource.readyState !== 'open') return
+
+      // WebM/MP4: grow the existing prefix — clear+rebuild closes MediaSource on WebKit.
+      if (!isMpegMseMime(mimeType)) {
+        ended = false
+        await growUntilTime(buffer, clampedTime, generation)
+        return
+      }
+
       if (shouldRebuildFromPrefix(targetByte, latestRanges)) {
-        // Clear in place and rebuild from byte 0. Recreating SourceBuffer on
-        // WebKit leaves HTMLMediaElement.buffered stale and skips resume.
-        const buffer = sourceBuffer
-        if (!buffer || mediaSource.readyState !== 'open') return
-        await clearBuffered(buffer)
+        ended = false
+        const cleared = await clearBuffered(buffer)
         if (disposed || generation !== seekGeneration) return
+        if (!cleared) {
+          fail()
+          return
+        }
         await rebuildFromPrefix(buffer, clampedTime, generation)
         return
       }
 
-      // Forward / mid-file island: clear in place. Recreating SourceBuffer on
-      // WebKit leaves HTMLMediaElement.buffered stale and freezes playback.
-      const buffer = sourceBuffer
-      if (!buffer || mediaSource.readyState !== 'open') return
-      await clearBuffered(buffer)
+      ended = false
+      const cleared = await clearBuffered(buffer)
       if (disposed || generation !== seekGeneration) return
+      if (!cleared) {
+        fail()
+        return
+      }
       await appendIsland(buffer, clampedTime, targetByte, generation)
     }
     catch {

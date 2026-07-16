@@ -60,6 +60,7 @@ export function useAudioEngine() {
     seekMseToTime,
     mseSnapToBufferedTime,
     mseLandToBufferedTime,
+    isMseActive,
     showInitialLoading,
     setShowInitialLoading,
   } = useAudioSource({
@@ -95,6 +96,7 @@ export function useAudioEngine() {
     seekMseToTime,
     mseSnapToBufferedTime,
     mseLandToBufferedTime,
+    isMseActive,
     duration,
     currentTime,
     setCurrentTime,
@@ -176,8 +178,21 @@ export function useAudioEngine() {
   }
 
   function handleTrackEnded() {
+    const audio = audioRef.current
+    const metaDuration = track?.duration ?? 0
+    // Mis-sniffed containers (e.g. WebM served as .mp3) can report a tiny
+    // duration; with repeat-one that becomes an endless seek/Range spam loop.
+    if (
+      audio
+      && metaDuration > 5
+      && Number.isFinite(audio.duration)
+      && audio.duration > 0
+      && audio.duration < Math.min(2, metaDuration * 0.05)
+    ) {
+      onMediaError()
+      return
+    }
     if (repeat === 'one') {
-      const audio = audioRef.current
       if (!audio) return
       handleSeek(0)
       finishPendingSeek(audio)

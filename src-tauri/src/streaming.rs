@@ -2,7 +2,7 @@
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Weak};
+use std::sync::{Arc, RwLock, Weak};
 
 use futures_util::stream::{FuturesUnordered, StreamExt};
 use serde::Serialize;
@@ -15,7 +15,7 @@ use crate::cache;
 use crate::db::Track;
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
-use crate::telegram::document::StoredDocument;
+use crate::telegram::document::{extension_for_mime, sniff_container_mime, StoredDocument};
 use crate::telegram::download;
 
 pub const CHUNK_SIZE: u64 = 128 * 1024;
@@ -70,7 +70,11 @@ struct StreamState {
 pub struct TrackStream {
     track: Track,
     document: Mutex<StoredDocument>,
+    /// Container MIME after header sniff (Telegram metadata is sometimes wrong).
+    mime_type: RwLock<String>,
     destination: PathBuf,
+    /// Set after finalize when the on-disk extension was corrected from a sniff.
+    final_path: Mutex<Option<PathBuf>>,
     partial: PathBuf,
     total: u64,
     app: AppHandle,
@@ -113,10 +117,13 @@ impl TrackStream {
         file.set_len(total).await?;
 
         let chunk_count = total.div_ceil(CHUNK_SIZE) as usize;
+        let mime_type = document.mime_type.clone();
         Ok(Arc::new(Self {
             track,
             document: Mutex::new(document),
+            mime_type: RwLock::new(mime_type),
             destination,
+            final_path: Mutex::new(None),
             partial,
             total,
             app,
@@ -141,8 +148,51 @@ impl TrackStream {
         self.total
     }
 
-    pub fn mime_type(&self) -> &str {
-        self.track.mime_type.as_deref().unwrap_or("audio/mpeg")
+    pub fn mime_type(&self) -> String {
+        self.mime_type
+            .read()
+            .map(|value| value.clone())
+            .unwrap_or_else(|_| {
+                self.track
+                    .mime_type
+                    .clone()
+                    .unwrap_or_else(|| "audio/mpeg".into())
+            })
+    }
+
+    /// Download the file header and correct MIME when Telegram's label is wrong.
+    /// Must run before the frontend opens an MSE SourceBuffer.
+    pub async fn ensure_container_mime(self: &Arc<Self>) -> AppResult<()> {
+        let last = 15u64.min(self.total.saturating_sub(1));
+        self.ensure_range(0, last).await?;
+        let header = read_file_range(&self.partial, 0, last).await?;
+        let Some(sniffed) = sniff_container_mime(&header) else {
+            return Ok(());
+        };
+        self.apply_sniffed_mime(sniffed).await
+    }
+
+    async fn apply_sniffed_mime(&self, sniffed: &str) -> AppResult<()> {
+        let current = self.mime_type();
+        if extension_for_mime(&current) == extension_for_mime(sniffed) {
+            return Ok(());
+        }
+
+        if let Ok(mut guard) = self.mime_type.write() {
+            *guard = sniffed.to_string();
+        }
+        {
+            let mut doc = self.document.lock().await;
+            doc.mime_type = sniffed.to_string();
+            if let Ok(json) = serde_json::to_string(&*doc) {
+                let state = self.app.state::<AppState>();
+                if let Some(uid) = state.db.load_profile()?.map(|p| p.tg_user_id) {
+                    let _ = state.db.update_track_mime(self.track.id, uid, sniffed);
+                    let _ = state.db.update_track_document(self.track.id, uid, &json);
+                }
+            }
+        }
+        Ok(())
     }
 
     fn start_background(self: &Arc<Self>) {
@@ -321,7 +371,7 @@ impl TrackStream {
     }
 
     async fn try_finalize(&self) -> AppResult<()> {
-        if self.destination.exists() {
+        if self.final_path.lock().await.is_some() {
             self.completion.notify_waiters();
             return Ok(());
         }
@@ -334,25 +384,30 @@ impl TrackStream {
                     .iter()
                     .all(|slot| slot.status == ChunkStatus::Ready)
         };
-        if !ready {
+        if !ready && !self.destination.exists() {
             return Ok(());
         }
 
         let _guard = self.finalize_lock.lock().await;
-        if self.destination.exists() {
+        if self.final_path.lock().await.is_some() {
             self.completion.notify_waiters();
             return Ok(());
         }
 
-        match tokio::fs::rename(&self.partial, &self.destination).await {
-            Ok(()) => {}
-            Err(_) => {
-                let complete = complete_path(&self.destination);
-                tokio::fs::copy(&self.partial, &complete).await?;
-                tokio::fs::rename(&complete, &self.destination).await?;
-                let _ = tokio::fs::remove_file(&self.partial).await;
+        if !self.destination.exists() {
+            match tokio::fs::rename(&self.partial, &self.destination).await {
+                Ok(()) => {}
+                Err(_) => {
+                    let complete = complete_path(&self.destination);
+                    tokio::fs::copy(&self.partial, &complete).await?;
+                    tokio::fs::rename(&complete, &self.destination).await?;
+                    let _ = tokio::fs::remove_file(&self.partial).await;
+                }
             }
         }
+
+        let path = self.correct_cached_extension().await?;
+        *self.final_path.lock().await = Some(path);
 
         let state = self.state.lock().await;
         let _ = self.app.emit(
@@ -364,20 +419,66 @@ impl TrackStream {
         Ok(())
     }
 
+    /// Telegram MIME is sometimes wrong (e.g. Opus-in-WebM as `audio/mpeg`).
+    /// Fix the cache extension once when the download completes.
+    async fn correct_cached_extension(&self) -> AppResult<PathBuf> {
+        let path = self.destination.clone();
+        let mut header = vec![0u8; 16];
+        {
+            let mut file = tokio::fs::File::open(&path).await?;
+            let read = file.read(&mut header).await?;
+            header.truncate(read);
+        }
+        let Some(sniffed) = sniff_container_mime(&header) else {
+            return Ok(path);
+        };
+
+        let correct_ext = extension_for_mime(sniffed);
+        let current_ext = path
+            .extension()
+            .and_then(|value| value.to_str())
+            .unwrap_or("");
+        let path = if current_ext != correct_ext {
+            let renamed = path.with_extension(correct_ext);
+            if renamed != path {
+                if renamed.exists() {
+                    let _ = tokio::fs::remove_file(&path).await;
+                } else {
+                    tokio::fs::rename(&path, &renamed).await?;
+                }
+            }
+            renamed
+        } else {
+            path
+        };
+
+        let declared = self.mime_type();
+        if extension_for_mime(&declared) != correct_ext {
+            self.apply_sniffed_mime(sniffed).await?;
+        }
+
+        Ok(path)
+    }
+
     pub async fn read_range(self: &Arc<Self>, start: u64, end: u64) -> AppResult<Vec<u8>> {
         self.ensure_range(start, end).await?;
-        let path = if self.destination.exists() {
-            &self.destination
+        let path = if let Some(path) = self.final_path.lock().await.clone() {
+            path
+        } else if self.destination.exists() {
+            self.destination.clone()
         } else {
-            &self.partial
+            self.partial.clone()
         };
-        read_file_range(path, start, end).await
+        read_file_range(&path, start, end).await
     }
 
     pub async fn wait_complete(&self) -> AppResult<PathBuf> {
         let mut notified = Box::pin(self.completion.notified());
         loop {
             notified.as_mut().enable();
+            if let Some(path) = self.final_path.lock().await.clone() {
+                return Ok(path);
+            }
             if self.destination.exists() {
                 return Ok(self.destination.clone());
             }
@@ -407,6 +508,7 @@ impl StreamingManager {
         if let Some(stream) = streams.get(&track.id).and_then(Weak::upgrade) {
             drop(streams);
             stream.restart_background_if_failed().await;
+            stream.ensure_container_mime().await?;
             return Ok(stream);
         }
 
@@ -415,6 +517,7 @@ impl StreamingManager {
         streams.insert(track.id, Arc::downgrade(&stream));
         drop(streams);
         stream.start_background();
+        stream.ensure_container_mime().await?;
         Ok(stream)
     }
 

@@ -33,6 +33,8 @@ export interface UseAudioSeekOptions {
   mseSnapToBufferedTime?: (time: number) => number | null
   /** Land onto the active SourceBuffer island after discontinuous append. */
   mseLandToBufferedTime?: (time: number) => number | null
+  /** True while an MSE session owns the element (even after download completes). */
+  isMseActive: () => boolean
   duration: number
   currentTime: number
   setCurrentTime: Dispatch<SetStateAction<number>>
@@ -74,6 +76,7 @@ export function useAudioSeek(options: UseAudioSeekOptions) {
     seekMseToTime,
     mseSnapToBufferedTime,
     mseLandToBufferedTime,
+    isMseActive,
     duration,
     currentTime,
     setCurrentTime,
@@ -170,7 +173,8 @@ export function useAudioSeek(options: UseAudioSeekOptions) {
     syncMediaRanges(audio)
 
     let landed = pending
-    if (!downloadProgress?.complete) {
+    // Cached asset: any time is fine once complete. MSE: only SourceBuffer.
+    if (isMseActive() || !downloadProgress?.complete) {
       const snapped = landSeekTime(pending, mediaBufferedRanges(audio))
       if (snapped === null) return
       landed = snapped
@@ -235,9 +239,13 @@ export function useAudioSeek(options: UseAudioSeekOptions) {
           }
 
           syncMediaRanges(audio)
-          const snapped = downloadProgress?.complete
-            ? pending
-            : landSeekTime(pending, mediaBufferedRanges(audio))
+          let snapped: number | null = null
+          try {
+            snapped = landSeekTime(pending, mediaBufferedRanges(audio))
+          }
+          catch {
+            return
+          }
 
           if (snapped === null) {
             // Island not visible on SourceBuffer yet — canplay / range sync
@@ -268,6 +276,9 @@ export function useAudioSeek(options: UseAudioSeekOptions) {
           return
         }
       }
+      catch {
+        // Discontinuity failed — leave pending seek for canplay / next scrub.
+      }
       finally {
         discontinuitySeekRef.current = false
       }
@@ -276,20 +287,21 @@ export function useAudioSeek(options: UseAudioSeekOptions) {
 
   /** Scrub playable check — tight snap so distant stale islands are not playable. */
   const landPlayableTime = (time: number, ranges: TimeRange[]): number | null => {
-    if (downloadProgress?.complete) return time
-    // Streamed MSE: trust SourceBuffer only — element buffered can lag after remove.
-    if (mseSnapToBufferedTime && downloadProgress && !downloadProgress.complete) {
-      return mseSnapToBufferedTime(time)
+    // MSE owns the timeline even after the file has finished downloading —
+    // `complete` only means bytes are on disk, not that SourceBuffer has them.
+    if (isMseActive()) {
+      return mseSnapToBufferedTime?.(time) ?? null
     }
+    if (downloadProgress?.complete) return time
     return snapTimeToRanges(time, ranges)
   }
 
   /** Finish/land after discontinuity — SourceBuffer island, not element buffered. */
   const landSeekTime = (time: number, ranges: TimeRange[]): number | null => {
-    if (downloadProgress?.complete) return time
-    if (mseLandToBufferedTime && downloadProgress && !downloadProgress.complete) {
-      return mseLandToBufferedTime(time)
+    if (isMseActive()) {
+      return mseLandToBufferedTime?.(time) ?? null
     }
+    if (downloadProgress?.complete) return time
     return landTimeOnRanges(time, ranges)
   }
 
@@ -330,7 +342,13 @@ export function useAudioSeek(options: UseAudioSeekOptions) {
 
     if (landed !== null) {
       if (audio.readyState > HTMLMediaElement.HAVE_NOTHING) {
-        audio.currentTime = landed
+        try {
+          audio.currentTime = landed
+        }
+        catch {
+          pendingSeekRef.current = time
+          startDiscontinuitySeek()
+        }
       }
       return
     }
@@ -347,13 +365,23 @@ export function useAudioSeek(options: UseAudioSeekOptions) {
     syncMediaRanges(audio)
     const pendingSeek = pendingSeekRef.current
     if (pendingSeek === null) return
-    if (!downloadProgress?.complete) {
+    if (isMseActive() || !downloadProgress?.complete) {
       const snapped = landSeekTime(pendingSeek, mediaBufferedRanges(audio))
       if (snapped === null) return
-      audio.currentTime = snapped
+      try {
+        audio.currentTime = snapped
+      }
+      catch {
+        // canplay / discontinuity will retry
+      }
       return
     }
-    audio.currentTime = pendingSeek
+    try {
+      audio.currentTime = pendingSeek
+    }
+    catch {
+      // ignore
+    }
   }
 
   const onSeeked = (event: React.SyntheticEvent<HTMLAudioElement>) => {
@@ -371,12 +399,17 @@ export function useAudioSeek(options: UseAudioSeekOptions) {
     const pending = pendingSeekRef.current
     const audio = audioRef.current
     if (pending === null || !audio || discontinuitySeekRef.current) return
-    if (!downloadProgress?.complete) {
+    if (isMseActive() || !downloadProgress?.complete) {
       const snapped = landSeekTime(pending, mediaRanges)
       if (snapped === null) return
       if (audio.readyState > HTMLMediaElement.HAVE_NOTHING) {
         if (Math.abs(audio.currentTime - snapped) > 0.25) {
-          audio.currentTime = snapped
+          try {
+            audio.currentTime = snapped
+          }
+          catch {
+            return
+          }
         }
         finishPendingSeek(audio)
       }
@@ -384,7 +417,12 @@ export function useAudioSeek(options: UseAudioSeekOptions) {
     }
     if (audio.readyState > HTMLMediaElement.HAVE_NOTHING) {
       if (Math.abs(audio.currentTime - pending) > 0.25) {
-        audio.currentTime = pending
+        try {
+          audio.currentTime = pending
+        }
+        catch {
+          return
+        }
       }
       finishPendingSeek(audio)
     }
@@ -397,7 +435,7 @@ export function useAudioSeek(options: UseAudioSeekOptions) {
     if (!(duration > 0)) return
     const pending = pendingSeekRef.current
     if (pending === null || discontinuitySeekRef.current) return
-    if (downloadProgress?.complete) return
+    if (!isMseActive() && downloadProgress?.complete) return
     const audio = audioRef.current
     if (!audio) return
     if (landPlayableTime(pending, mediaBufferedRanges(audio)) !== null) return

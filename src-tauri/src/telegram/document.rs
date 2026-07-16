@@ -278,8 +278,39 @@ pub fn extension_for_mime(mime: &str) -> &'static str {
         "audio/ogg" | "audio/opus" => "ogg",
         "audio/flac" | "audio/x-flac" => "flac",
         "audio/wav" | "audio/x-wav" => "wav",
+        "audio/webm" | "video/webm" => "webm",
         _ => "mp3",
     }
+}
+
+/// Sniffs a container MIME from the first bytes of a media file.
+///
+/// Telegram metadata is sometimes wrong (e.g. Opus-in-WebM labeled `audio/mpeg`).
+/// Returning `None` means the header was too short or unrecognized.
+pub fn sniff_container_mime(header: &[u8]) -> Option<&'static str> {
+    if header.len() >= 4 && header[0] == 0x1a && header[1] == 0x45 && header[2] == 0xdf && header[3] == 0xa3
+    {
+        return Some("audio/webm");
+    }
+    if header.starts_with(b"ID3") {
+        return Some("audio/mpeg");
+    }
+    if header.len() >= 2 && header[0] == 0xff && header[1] & 0xe0 == 0xe0 {
+        return Some("audio/mpeg");
+    }
+    if header.len() >= 8 && &header[4..8] == b"ftyp" {
+        return Some("audio/mp4");
+    }
+    if header.starts_with(b"fLaC") {
+        return Some("audio/flac");
+    }
+    if header.starts_with(b"OggS") {
+        return Some("audio/ogg");
+    }
+    if header.len() >= 12 && header.starts_with(b"RIFF") && &header[8..12] == b"WAVE" {
+        return Some("audio/wav");
+    }
+    None
 }
 
 #[cfg(test)]
@@ -333,5 +364,25 @@ mod tests {
 
         assert_eq!(document.thumb_size.as_deref(), Some("m"));
         assert!(document.thumbnails.is_empty());
+    }
+
+    #[test]
+    fn extension_for_mime_handles_webm() {
+        assert_eq!(extension_for_mime("audio/webm"), "webm");
+        assert_eq!(extension_for_mime("video/webm"), "webm");
+    }
+
+    #[test]
+    fn sniff_container_mime_detects_webm_and_mp3() {
+        assert_eq!(
+            sniff_container_mime(&[0x1a, 0x45, 0xdf, 0xa3, 0, 0, 0, 0]),
+            Some("audio/webm")
+        );
+        assert_eq!(sniff_container_mime(b"ID3\x04\0\0\0"), Some("audio/mpeg"));
+        assert_eq!(
+            sniff_container_mime(&[0xff, 0xfb, 0x90, 0x00]),
+            Some("audio/mpeg")
+        );
+        assert_eq!(sniff_container_mime(b"fLaC...."), Some("audio/flac"));
     }
 }

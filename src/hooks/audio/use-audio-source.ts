@@ -13,7 +13,7 @@ import {
   onDownloadProgress,
   type DownloadProgress,
 } from '@/lib/api'
-import { attachMseSession, isMseTypeSupported, type MseSession } from './mse-session'
+import { attachMseSession, resolveMseMimeType, type MseSession } from './mse-session'
 
 export interface UseAudioSourceOptions {
   audioRef: RefObject<HTMLAudioElement | null>
@@ -159,8 +159,8 @@ export function useAudioSource(options: UseAudioSourceOptions) {
               },
         )
 
-        const mimeType = source.mimeType || 'audio/mpeg'
-        if (!isMseTypeSupported(mimeType)) {
+        const mimeType = resolveMseMimeType(source.mimeType || 'audio/mpeg')
+        if (!mimeType) {
           // Do not fall back to progressive stream: — wait for a full cache file.
           const path = await api.downloadTrack(track.id)
           if (disposed || loadGenerationRef.current !== generation) return
@@ -242,6 +242,8 @@ export function useAudioSource(options: UseAudioSourceOptions) {
     return session.landToBufferedTime(time)
   }
 
+  const isMseActive = () => mseSessionRef.current !== null
+
   return {
     downloadProgress,
     appendedBytes,
@@ -249,6 +251,7 @@ export function useAudioSource(options: UseAudioSourceOptions) {
     seekMseToTime,
     mseSnapToBufferedTime,
     mseLandToBufferedTime,
+    isMseActive,
     showInitialLoading,
     setShowInitialLoading,
   }

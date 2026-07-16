@@ -12,8 +12,9 @@ Progressive `<audio src="stream:…">` under WKWebView/AVFoundation advertises a
 | Streamed track | `MediaSource` + `SourceBuffer.appendBuffer` |
 | Bytes | `read_stream_range` / `ensure_stream_range` → `StreamingManager` |
 | Progress / buffer UI | Honest `audio.buffered` islands → `buffer-ranges.ts` |
-| Seek into unloaded region | Discontinuous MSE: clear buffer, MP3 frame sync near target byte, `timestampOffset`, append island, grow forward |
+| Seek into unloaded region | MP3: discontinuous island via frame sync. WebM/MP4: grow the existing leading prefix until the target time is covered (clear+rebuild closes MediaSource on WebKit). |
 | Unsupported MSE mime | Wait for full `download_track`, then play cached `asset:` (never fall back to progressive `stream:` src) |
+| Wrong Telegram MIME | Stream sniffs the file header before MSE attach and corrects container MIME/extension |
 
 Primary frontend modules:
 
@@ -25,5 +26,4 @@ Primary frontend modules:
 
 ## Limits
 
-- Discontinuous seeks target `audio/mpeg` (frame sync). Other codecs may need remux (fMP4) later.
-- OS Now Playing and a native Rust decoder remain out of scope.
+- Discontinuous mid-file *island* seeks target `audio/mpeg` (frame sync). WebM/MP4 seek ahead by rebuilding from the leading prefix.

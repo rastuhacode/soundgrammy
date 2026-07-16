@@ -250,6 +250,21 @@ impl Db {
         Ok(())
     }
 
+    /// Corrects a track MIME after on-disk content sniffing disagrees with Telegram.
+    pub fn update_track_mime(
+        &self,
+        id: i64,
+        tg_user_id: i64,
+        mime_type: &str,
+    ) -> AppResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "UPDATE tracks SET mime_type = ?1 WHERE id = ?2 AND tg_user_id = ?3",
+            params![mime_type, id, tg_user_id],
+        )?;
+        Ok(())
+    }
+
     /// Removes mtproto tracks whose `file_unique_id` isn't in `keep`, returning
     /// the number of removed rows.
     pub fn delete_tracks_not_in(&self, tg_user_id: i64, keep: &[String]) -> AppResult<usize> {
