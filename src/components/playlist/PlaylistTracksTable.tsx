@@ -1,4 +1,20 @@
 import {
+  closestCenter,
+  DndContext,
+  type DragEndEvent,
+  type DragStartEvent,
+  DragOverlay,
+  KeyboardSensor,
+  PointerSensor,
+  useSensor,
+  useSensors,
+} from '@dnd-kit/core'
+import {
+  SortableContext,
+  sortableKeyboardCoordinates,
+  verticalListSortingStrategy,
+} from '@dnd-kit/sortable'
+import {
   flexRender,
   getCoreRowModel,
   getSortedRowModel,
@@ -10,14 +26,20 @@ import {
 } from '@tanstack/react-table'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react'
-import { useMemo, useRef } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import type { Track } from '@/lib/db'
 import type { ResolvedSelectedPlaylist } from '@/stores/playlists-store'
 import { cn } from '@/lib/utils'
 import { Checkbox } from '@/components/ui/checkbox'
 import { PlaylistTrackContextMenu } from './PlaylistTrackContextMenu'
-import { TRACK_GRID_COLS, TRACK_GRID_COLS_SELECT, TRACK_ROW_HEIGHT, PlaylistTrackRow } from './PlaylistTrackRow'
-import { compareTracks, type CustomPlaylistRef } from './track-actions'
+import {
+  TRACK_GRID_COLS,
+  TRACK_GRID_COLS_SELECT,
+  TRACK_ROW_STRIDE,
+  PlaylistTrackRow,
+  PlaylistTrackRowView,
+} from './PlaylistTrackRow'
+import { compareTracks, reorderTrackIds, type CustomPlaylistRef } from './track-actions'
 
 export interface PlaylistTracksTableProps {
   tracks: Track[]
@@ -31,6 +53,8 @@ export interface PlaylistTracksTableProps {
   onRowSelectionChange: OnChangeFn<RowSelectionState>
   sorting: SortingState
   onSortingChange: OnChangeFn<SortingState>
+  canReorder: boolean
+  onReorderTracks: (trackIds: number[]) => void
   onEnterSelection: (trackId: number) => void
   onTrackPlay: (track: Track, startIndex: number) => void
   onToggleLike: (trackId: number) => void
@@ -58,6 +82,8 @@ export function PlaylistTracksTable({
   onRowSelectionChange,
   sorting,
   onSortingChange,
+  canReorder,
+  onReorderTracks,
   onEnterSelection,
   onTrackPlay,
   onToggleLike,
@@ -67,6 +93,7 @@ export function PlaylistTracksTable({
   onShowInfo,
 }: PlaylistTracksTableProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
+  const [activeTrackId, setActiveTrackId] = useState<number | null>(null)
 
   const columns = useMemo<ColumnDef<Track>[]>(() => {
     const defs: ColumnDef<Track>[] = []
@@ -144,18 +171,55 @@ export function PlaylistTracksTable({
   })
 
   const rows = table.getRowModel().rows
+  const sortableIds = useMemo(() => tracks.map(track => track.id), [tracks])
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: { distance: 6 },
+    }),
+    useSensor(KeyboardSensor, {
+      coordinateGetter: sortableKeyboardCoordinates,
+    }),
+  )
 
   const virtualizer = useVirtualizer({
     count: rows.length,
-    gap: 8,
     getScrollElement: () => scrollRef.current,
-    estimateSize: () => TRACK_ROW_HEIGHT,
+    // Stride includes former gap so item height matches sortable strategy shifts.
+    estimateSize: () => TRACK_ROW_STRIDE,
     overscan: 8,
   })
 
   const headerGridClass = selectionMode
     ? TRACK_GRID_COLS_SELECT
     : TRACK_GRID_COLS
+
+  const activeTrack = activeTrackId === null
+    ? null
+    : tracks.find(track => track.id === activeTrackId) ?? null
+
+  const handleDragStart = (event: DragStartEvent) => {
+    setActiveTrackId(Number(event.active.id))
+  }
+
+  const handleDragCancel = () => {
+    setActiveTrackId(null)
+  }
+
+  const handleDragEnd = (event: DragEndEvent) => {
+    setActiveTrackId(null)
+    if (!canReorder) return
+    const { active, over } = event
+    if (!over || active.id === over.id) return
+
+    const next = reorderTrackIds(
+      sortableIds,
+      Number(active.id),
+      Number(over.id),
+    )
+    if (next === sortableIds) return
+    onReorderTracks(next)
+  }
 
   return (
     <div ref={scrollRef} className="min-h-0 grow overflow-y-auto px-4 pb-4">
@@ -231,61 +295,86 @@ export function PlaylistTracksTable({
           </div>
         </div>
 
-        <div
-          role="rowgroup"
-          className="relative w-full"
-          style={{ height: `${virtualizer.getTotalSize()}px` }}
+        <DndContext
+          sensors={sensors}
+          collisionDetection={closestCenter}
+          onDragStart={handleDragStart}
+          onDragCancel={handleDragCancel}
+          onDragEnd={handleDragEnd}
         >
-          {virtualizer.getVirtualItems().map((virtualRow) => {
-            const row = rows[virtualRow.index]
-            if (!row) return null
+          <SortableContext
+            items={sortableIds}
+            strategy={verticalListSortingStrategy}
+          >
+            <div
+              role="rowgroup"
+              className="relative w-full"
+              style={{ height: `${virtualizer.getTotalSize()}px` }}
+            >
+              {virtualizer.getVirtualItems().map((virtualRow) => {
+                const row = rows[virtualRow.index]
+                if (!row) return null
 
-            const track = row.original
-            const isSelected = row.getIsSelected()
+                const track = row.original
+                const isSelected = row.getIsSelected()
 
-            return (
-              <PlaylistTrackContextMenu
-                key={row.id}
-                track={track}
-                isLiked={isTrackLiked(track.id)}
-                currentPlaylist={currentPlaylist}
-                customPlaylists={customPlaylists}
-                onSelect={onEnterSelection}
-                onToggleLike={onToggleLike}
-                onAddToPlaylist={onAddToPlaylist}
-                onDeleteFromPlaylist={onDeleteFromPlaylist}
-                onDownload={onDownload}
-                onShowInfo={onShowInfo}
-              >
-                <PlaylistTrackRow
-                  className="absolute left-0 top-0 w-full"
-                  style={{
-                    height: `${virtualRow.size}px`,
-                    transform: `translateY(${virtualRow.start}px)`,
-                  }}
-                  track={track}
-                  isActive={currentTrackId === track.id}
-                  isPlaying={isPlaying}
-                  isSelected={isSelected}
-                  selectionMode={selectionMode}
-                  onRowClick={() => {
-                    if (selectionMode) {
-                      row.toggleSelected(!isSelected)
-                      return
-                    }
-                    onTrackPlay(track, virtualRow.index)
-                  }}
-                  onToggleSelected={(selected) => {
-                    row.toggleSelected(selected)
-                  }}
-                  onPlayFromThumb={() => {
-                    onTrackPlay(track, virtualRow.index)
-                  }}
-                />
-              </PlaylistTrackContextMenu>
-            )
-          })}
-        </div>
+                return (
+                  <PlaylistTrackContextMenu
+                    key={row.id}
+                    track={track}
+                    isLiked={isTrackLiked(track.id)}
+                    currentPlaylist={currentPlaylist}
+                    customPlaylists={customPlaylists}
+                    onSelect={onEnterSelection}
+                    onToggleLike={onToggleLike}
+                    onAddToPlaylist={onAddToPlaylist}
+                    onDeleteFromPlaylist={onDeleteFromPlaylist}
+                    onDownload={onDownload}
+                    onShowInfo={onShowInfo}
+                  >
+                    <PlaylistTrackRow
+                      virtualStart={virtualRow.start}
+                      track={track}
+                      isActive={currentTrackId === track.id}
+                      isPlaying={isPlaying}
+                      isSelected={isSelected}
+                      selectionMode={selectionMode}
+                      canReorder={canReorder}
+                      onRowClick={() => {
+                        if (selectionMode) {
+                          row.toggleSelected(!isSelected)
+                          return
+                        }
+                        onTrackPlay(track, virtualRow.index)
+                      }}
+                      onToggleSelected={(selected) => {
+                        row.toggleSelected(selected)
+                      }}
+                      onPlayFromThumb={() => {
+                        onTrackPlay(track, virtualRow.index)
+                      }}
+                    />
+                  </PlaylistTrackContextMenu>
+                )
+              })}
+            </div>
+          </SortableContext>
+
+          <DragOverlay dropAnimation={null}>
+            {activeTrack
+              ? (
+                  <PlaylistTrackRowView
+                    track={activeTrack}
+                    isActive={currentTrackId === activeTrack.id}
+                    isPlaying={isPlaying}
+                    isSelected={false}
+                    selectionMode={false}
+                    className="cursor-grabbing bg-muted opacity-95 shadow-md"
+                  />
+                )
+              : null}
+          </DragOverlay>
+        </DndContext>
       </div>
     </div>
   )

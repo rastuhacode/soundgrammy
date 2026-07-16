@@ -221,3 +221,20 @@ export function enterSelectionWithTrack(trackId: number): {
     rowSelection: { [String(trackId)]: true },
   }
 }
+
+/** Move `activeId` to the index of `overId` within a track id list. */
+export function reorderTrackIds(
+  order: number[],
+  activeId: number,
+  overId: number,
+): number[] {
+  const oldIndex = order.indexOf(activeId)
+  const newIndex = order.indexOf(overId)
+  if (oldIndex < 0 || newIndex < 0 || oldIndex === newIndex) {
+    return order
+  }
+  const next = [...order]
+  const [moved] = next.splice(oldIndex, 1)
+  next.splice(newIndex, 0, moved!)
+  return next
+}

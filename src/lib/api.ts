@@ -110,6 +110,8 @@ export const api = {
     invoke<string>('add_track_to_playlist', { playlistId, trackId }),
   removeTrackFromPlaylist: (playlistId: number, trackId: number) =>
     invoke<string>('remove_track_from_playlist', { playlistId, trackId }),
+  reorderPlaylistTracks: (playlistId: number, trackIds: number[]) =>
+    invoke<string>('reorder_playlist_tracks', { playlistId, trackIds }),
   toggleLike: (trackId: number) => invoke<LikedPlaylist>('toggle_like', { trackId }),
 }
 

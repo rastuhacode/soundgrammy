@@ -8,6 +8,7 @@ import {
   getAvailableCustomPlaylists,
   getBulkActions,
   getTrackContextActions,
+  reorderTrackIds,
   selectionModeAfterPlaylistChange,
   sortTracks,
   toPlayablePlaylist,
@@ -188,5 +189,17 @@ describe('selection mode helpers', () => {
       selectionMode: false,
       rowSelection: {},
     })
+  })
+})
+
+describe('reorderTrackIds', () => {
+  it('moves active id to over id index', () => {
+    expect(reorderTrackIds([1, 2, 3, 4], 1, 3)).toEqual([2, 3, 1, 4])
+  })
+
+  it('returns the same array when ids are missing or unchanged', () => {
+    const order = [1, 2, 3]
+    expect(reorderTrackIds(order, 1, 1)).toBe(order)
+    expect(reorderTrackIds(order, 9, 2)).toBe(order)
   })
 })

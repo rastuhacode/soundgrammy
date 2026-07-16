@@ -5,6 +5,7 @@
 //! guarded by a `Mutex`; all access goes through small prepared-statement
 //! helpers — no ORM.
 
+use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Mutex;
 
@@ -668,6 +669,53 @@ impl Db {
             return Self::touch_playlist_updated_at(&conn, playlist_id);
         }
         Self::playlist_updated_at(&conn, playlist_id)
+    }
+
+    /// Rewrites `position` for every membership row to match `track_ids` order.
+    /// `track_ids` must be a permutation of the playlist's current membership.
+    pub fn reorder_playlist_tracks(
+        &self,
+        playlist_id: i64,
+        track_ids: &[i64],
+        tg_user_id: i64,
+    ) -> AppResult<String> {
+        let mut conn = self.conn.lock().unwrap();
+        let exists = conn
+            .query_row(
+                "SELECT 1 FROM playlists WHERE id = ?1 AND tg_user_id = ?2",
+                params![playlist_id, tg_user_id],
+                |_| Ok(()),
+            )
+            .optional()?;
+        if exists.is_none() {
+            return Err(crate::error::AppError::msg("Playlist not found"));
+        }
+
+        let current = Self::playlist_track_ids(&conn, playlist_id)?;
+        if current.len() != track_ids.len() {
+            return Err(crate::error::AppError::msg(
+                "Track list does not match playlist membership",
+            ));
+        }
+        let current_set: HashSet<i64> = current.into_iter().collect();
+        let next_set: HashSet<i64> = track_ids.iter().copied().collect();
+        if current_set != next_set {
+            return Err(crate::error::AppError::msg(
+                "Track list does not match playlist membership",
+            ));
+        }
+
+        let tx = conn.transaction()?;
+        for (position, track_id) in track_ids.iter().enumerate() {
+            tx.execute(
+                "UPDATE playlist_tracks SET position = ?1 \
+                 WHERE playlist_id = ?2 AND track_id = ?3",
+                params![position as i64, playlist_id, track_id],
+            )?;
+        }
+        let updated_at = Self::touch_playlist_updated_at(&tx, playlist_id)?;
+        tx.commit()?;
+        Ok(updated_at)
     }
 
     /// Toggles the liked state of a track; returns the updated liked playlist.

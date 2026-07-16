@@ -2,6 +2,7 @@ import type { Track } from '@/lib/db'
 import { useLibraryStore } from '@/stores/library-store'
 import { usePlayerStore } from '@/stores/player-store'
 import {
+  ALL_TRACKS_PLAYLIST_ID,
   getLikedTrackIdSet,
   isTrackLiked,
   LIKED_PLAYLIST_ID,
@@ -140,8 +141,109 @@ function PlaylistViewContent() {
     [rowSelection],
   )
 
+  const canReorder
+    = selectedPlaylistId !== ALL_TRACKS_PLAYLIST_ID
+      && search.length === 0
+      && sorting.length === 0
+      && !selectionMode
+
   const handleTrackSelect = (track: Track, startIndex: number) => {
     playPlaylist(playablePlaylist, { start: track, startIndex })
+  }
+
+  const handleReorderTracks = async (trackIds: number[]) => {
+    const latest = usePlaylistsStore.getState().data
+    if (!latest) return
+
+    const dbPlaylistId
+      = selectedPlaylistId === LIKED_PLAYLIST_ID
+        ? latest.liked.id
+        : typeof selectedPlaylistId === 'number'
+          ? selectedPlaylistId
+          : null
+    if (dbPlaylistId === null) return
+
+    const previousTrackIds
+      = selectedPlaylistId === LIKED_PLAYLIST_ID
+        ? latest.liked.trackIds
+        : latest.custom.find(playlist => playlist.id === selectedPlaylistId)
+          ?.trackIds
+    if (!previousTrackIds) return
+
+    const trackIdsMatch = (current: number[]) =>
+      current.length === trackIds.length
+      && current.every((id, index) => id === trackIds[index])
+
+    if (selectedPlaylistId === LIKED_PLAYLIST_ID) {
+      setData({
+        ...latest,
+        liked: { ...latest.liked, trackIds },
+      })
+    }
+    else {
+      setData({
+        ...latest,
+        custom: latest.custom.map(playlist =>
+          playlist.id === selectedPlaylistId
+            ? { ...playlist, trackIds }
+            : playlist,
+        ),
+      })
+    }
+
+    try {
+      const updatedAt = await api.reorderPlaylistTracks(dbPlaylistId, trackIds)
+      const after = usePlaylistsStore.getState().data
+      if (!after) return
+      // Only stamp updatedAt if this playlist still has our optimistic order.
+      if (selectedPlaylistId === LIKED_PLAYLIST_ID) {
+        if (!trackIdsMatch(after.liked.trackIds)) return
+        setData({
+          ...after,
+          liked: { ...after.liked, updatedAt },
+        })
+      }
+      else {
+        const current = after.custom.find(
+          playlist => playlist.id === selectedPlaylistId,
+        )
+        if (!current || !trackIdsMatch(current.trackIds)) return
+        setData({
+          ...after,
+          custom: after.custom.map(playlist =>
+            playlist.id === selectedPlaylistId
+              ? { ...playlist, updatedAt }
+              : playlist,
+          ),
+        })
+      }
+    }
+    catch {
+      const after = usePlaylistsStore.getState().data
+      if (!after) return
+      // Roll back only this playlist, and only if nothing else changed its order.
+      if (selectedPlaylistId === LIKED_PLAYLIST_ID) {
+        if (!trackIdsMatch(after.liked.trackIds)) return
+        setData({
+          ...after,
+          liked: { ...after.liked, trackIds: previousTrackIds },
+        })
+      }
+      else {
+        const current = after.custom.find(
+          playlist => playlist.id === selectedPlaylistId,
+        )
+        if (!current || !trackIdsMatch(current.trackIds)) return
+        setData({
+          ...after,
+          custom: after.custom.map(playlist =>
+            playlist.id === selectedPlaylistId
+              ? { ...playlist, trackIds: previousTrackIds }
+              : playlist,
+          ),
+        })
+      }
+    }
   }
 
   const handleEnterSelection = (trackId: number) => {
@@ -385,6 +487,8 @@ function PlaylistViewContent() {
           onRowSelectionChange={setRowSelection}
           sorting={sorting}
           onSortingChange={setSorting}
+          canReorder={canReorder}
+          onReorderTracks={handleReorderTracks}
           onEnterSelection={handleEnterSelection}
           onTrackPlay={handleTrackSelect}
           onToggleLike={handleToggleLike}

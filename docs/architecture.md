@@ -58,8 +58,8 @@ Listeners live in `src/lib/api.ts`.
 
 ## Playlist boundaries
 
-- **All tracks** (`id: all`) — virtual view of the synced library; not a DB playlist. Immutable membership (no remove-from-playlist).
-- **Liked** (`id: liked`) — app-owned; mutate only via `toggle_like`, not `add_track_to_playlist` / remove-from-playlist UI.
-- **Custom playlists** — editable membership; context menu and bulk actions may show “Remove from playlist”.
+- **All tracks** (`id: all`) — virtual view of the synced library; not a DB playlist. Immutable membership (no remove-from-playlist). Track order follows Telegram sync (`track_position`); not drag-reorderable.
+- **Liked** (`id: liked`) — app-owned; membership via `toggle_like` only (not `add_track_to_playlist` / remove-from-playlist UI). Custom order persisted with `reorder_playlist_tracks`.
+- **Custom playlists** — editable membership; context menu and bulk actions may show “Remove from playlist”. Track order persisted with `reorder_playlist_tracks`.
 
-Tracklist actions are gated in `src/components/playlist/track-actions.ts` so All tracks / Liked never expose remove-from-playlist.
+Tracklist actions are gated in `src/components/playlist/track-actions.ts` so All tracks / Liked never expose remove-from-playlist. Drag-reorder is enabled only when search and column sort are clear and selection mode is off.

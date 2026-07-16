@@ -462,6 +462,18 @@ pub async fn remove_track_from_playlist(
 }
 
 #[tauri::command]
+pub async fn reorder_playlist_tracks(
+    state: State<'_, AppState>,
+    playlist_id: i64,
+    track_ids: Vec<i64>,
+) -> AppResult<String> {
+    let uid = require_uid(&state)?;
+    state
+        .db
+        .reorder_playlist_tracks(playlist_id, &track_ids, uid)
+}
+
+#[tauri::command]
 pub async fn toggle_like(
     state: State<'_, AppState>,
     track_id: i64,
