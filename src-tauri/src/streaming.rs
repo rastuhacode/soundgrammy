@@ -529,7 +529,7 @@ fn not_found_response() -> Response<Vec<u8>> {
         .expect("valid not-found response")
 }
 
-async fn read_file_range(path: &Path, start: u64, end: u64) -> AppResult<Vec<u8>> {
+pub async fn read_file_range(path: &Path, start: u64, end: u64) -> AppResult<Vec<u8>> {
     let mut file = tokio::fs::File::open(path).await?;
     file.seek(std::io::SeekFrom::Start(start)).await?;
     let mut bytes = vec![0; (end - start + 1) as usize];

@@ -19,6 +19,7 @@ bun i
 bun tauri:dev
 bun lint
 bun typecheck
+bun test
 cd src-tauri && cargo check
 ```
 
@@ -38,4 +39,5 @@ cd src-tauri && cargo check
 ## Docs
 
 - [docs/architecture.md](docs/architecture.md) — data flow, sync, media
+- [docs/MSE-integration.md](docs/MSE-integration.md) — streamed playback via MediaSource
 - [docs/security.md](docs/security.md) — credentials, session, high-risk areas

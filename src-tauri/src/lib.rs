@@ -66,6 +66,8 @@ pub fn run() {
             commands::get_profile,
             commands::sync_status,
             commands::get_track_source,
+            commands::read_stream_range,
+            commands::ensure_stream_range,
             commands::download_track,
             commands::prefetch_track,
             commands::get_track_thumbnail,

@@ -5,8 +5,9 @@ use tauri::{AppHandle, State};
 
 use crate::cache;
 use crate::db::{CustomPlaylistSummary, LikedPlaylist, PlaylistsBundle, Profile, Track};
-use crate::error::AppResult;
+use crate::error::{AppError, AppResult};
 use crate::state::AppState;
+use crate::streaming;
 use crate::telegram::auth::{self, AuthOutcome, AuthUser, QrOutcome};
 use crate::telegram::saved_music::{self, SyncResult};
 
@@ -149,6 +150,102 @@ pub async fn get_track_source(
         mime_type: stream.mime_type().to_string(),
         total: stream.total(),
     })
+}
+
+/// Reads a byte range from an active stream (or a fully cached file).
+///
+/// `start`/`end` are inclusive. Responses are capped at one streaming chunk
+/// so the MSE frontend can append progressively without huge IPC payloads.
+#[tauri::command]
+pub async fn read_stream_range(
+    state: State<'_, AppState>,
+    app: AppHandle,
+    track_id: i64,
+    start: u64,
+    end: u64,
+) -> AppResult<tauri::ipc::Response> {
+    if end < start {
+        return Err(AppError::msg("requested audio range is invalid"));
+    }
+
+    let capped_end = start
+        .saturating_add(streaming::CHUNK_SIZE.saturating_sub(1))
+        .min(end);
+
+    if let Some(stream) = state.streaming.get(track_id).await {
+        let last = stream.total().saturating_sub(1);
+        if start > last {
+            return Err(AppError::msg("requested audio range is invalid"));
+        }
+        let bytes = stream
+            .read_range(start, capped_end.min(last))
+            .await?;
+        return Ok(tauri::ipc::Response::new(bytes));
+    }
+
+    let track = cache::require_track(&state, track_id)?;
+    let path = cache::audio_path(&state, &track)?;
+    if path.exists() {
+        let total = tokio::fs::metadata(&path).await?.len();
+        if total == 0 {
+            return Err(AppError::msg("cached audio file is empty"));
+        }
+        let last = total.saturating_sub(1);
+        if start > last {
+            return Err(AppError::msg("requested audio range is invalid"));
+        }
+        let bytes = streaming::read_file_range(&path, start, capped_end.min(last)).await?;
+        return Ok(tauri::ipc::Response::new(bytes));
+    }
+
+    // Stream entry expired before cache finalize — restart download and read.
+    let stream = state.streaming.start(app, track, path).await?;
+    let last = stream.total().saturating_sub(1);
+    if start > last {
+        return Err(AppError::msg("requested audio range is invalid"));
+    }
+    let bytes = stream
+        .read_range(start, capped_end.min(last))
+        .await?;
+    Ok(tauri::ipc::Response::new(bytes))
+}
+
+/// Prioritizes downloading an inclusive byte range for an active stream.
+/// Used on seek-ahead so the gap toward the target fills before distant chunks.
+#[tauri::command]
+pub async fn ensure_stream_range(
+    state: State<'_, AppState>,
+    app: AppHandle,
+    track_id: i64,
+    start: u64,
+    end: u64,
+) -> AppResult<()> {
+    if end < start {
+        return Err(AppError::msg("requested audio range is invalid"));
+    }
+
+    if let Some(stream) = state.streaming.get(track_id).await {
+        let last = stream.total().saturating_sub(1);
+        if start > last {
+            return Err(AppError::msg("requested audio range is invalid"));
+        }
+        stream.ensure_range(start, end.min(last)).await?;
+        return Ok(());
+    }
+
+    let track = cache::require_track(&state, track_id)?;
+    let path = cache::audio_path(&state, &track)?;
+    if path.exists() {
+        return Ok(());
+    }
+
+    let stream = state.streaming.start(app, track, path).await?;
+    let last = stream.total().saturating_sub(1);
+    if start > last {
+        return Err(AppError::msg("requested audio range is invalid"));
+    }
+    stream.ensure_range(start, end.min(last)).await?;
+    Ok(())
 }
 
 #[tauri::command]

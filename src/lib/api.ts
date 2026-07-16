@@ -52,6 +52,20 @@ export const api = {
   // ---- media ------------------------------------------------------------
   getTrackSource: (trackId: number) =>
     invoke<TrackSource>('get_track_source', { trackId }),
+  /** Inclusive byte range from an active stream or cached file (chunk-capped). */
+  readStreamRange: async (trackId: number, start: number, end: number) => {
+    const bytes = await invoke<ArrayBuffer | number[]>('read_stream_range', {
+      trackId,
+      start,
+      end,
+    })
+    return bytes instanceof ArrayBuffer
+      ? new Uint8Array(bytes)
+      : Uint8Array.from(bytes)
+  },
+  /** Prioritize downloading an inclusive byte range (seek-ahead gap fill). */
+  ensureStreamRange: (trackId: number, start: number, end: number) =>
+    invoke<void>('ensure_stream_range', { trackId, start, end }),
   downloadTrack: (trackId: number) =>
     invoke<string>('download_track', { trackId }),
   prefetchTrack: (trackId: number) =>

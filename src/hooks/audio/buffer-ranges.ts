@@ -5,11 +5,6 @@ export interface TimeRange {
   end: number
 }
 
-export interface BufferAnchor {
-  time: number
-  received: number
-}
-
 export function toCachedRanges(
   downloadProgress: DownloadProgress | null,
   duration: number,
@@ -21,46 +16,109 @@ export function toCachedRanges(
   }))
 }
 
-export function computeBufferedRanges(options: {
-  cachedRanges: TimeRange[]
-  bufferAnchor: BufferAnchor | null
-  downloadProgress: DownloadProgress | null
-  duration: number
-  currentTime: number
-}): TimeRange[] {
-  const {
-    cachedRanges,
-    bufferAnchor,
-    downloadProgress,
-    duration,
-    currentTime,
-  } = options
+export function timeIsInRanges(time: number, ranges: TimeRange[]): boolean {
+  return ranges.some(range => time >= range.start && time < range.end)
+}
 
-  const leadingRange = cachedRanges.find(range => range.start === 0)
-  const leadingIncludesAnchor = bufferAnchor !== null
-    && leadingRange
-    && bufferAnchor.time < leadingRange.end
+/**
+ * How far outside a buffered island we still treat a seek as landed.
+ * Byte↔time mapping and decode delay often place the target slightly before
+ * the first presentable frame after a discontinuous MSE append.
+ */
+export const SEEK_SNAP_TOLERANCE_SEC = 1.5
 
-  if (bufferAnchor !== null && !leadingIncludesAnchor) {
-    const receivedSinceSeek = Math.max(
-      0,
-      (downloadProgress?.received ?? bufferAnchor.received)
-      - bufferAnchor.received,
-    )
-    if (receivedSinceSeek > 0 && downloadProgress?.total) {
-      const bufferedDuration
-        = (receivedSinceSeek / downloadProgress.total) * duration
-      return [{
-        start: bufferAnchor.time,
-        end: Math.min(duration, bufferAnchor.time + bufferedDuration),
-      }]
+/**
+ * Snap `time` into a nearby buffered range, or `null` if none are close.
+ */
+export function snapTimeToRanges(
+  time: number,
+  ranges: TimeRange[],
+  tolerance = SEEK_SNAP_TOLERANCE_SEC,
+): number | null {
+  let best: { snapped: number, distance: number } | null = null
+
+  for (const range of ranges) {
+    if (!(range.end > range.start)) continue
+    const insideEnd = Math.max(range.start, range.end - 0.05)
+
+    let snapped: number
+    let distance: number
+    if (time < range.start) {
+      snapped = range.start
+      distance = range.start - time
     }
-    return []
+    else if (time >= range.end) {
+      snapped = insideEnd
+      distance = time - range.end
+    }
+    else {
+      snapped = Math.min(time, insideEnd)
+      distance = 0
+    }
+
+    if (distance <= tolerance && (!best || distance < best.distance)) {
+      best = { snapped, distance }
+    }
   }
 
-  const activeRange = cachedRanges.find(
-    range => currentTime >= range.start && currentTime < range.end,
-  )
-  const displayedRange = activeRange ?? leadingRange ?? cachedRanges[0]
-  return displayedRange ? [displayedRange] : []
+  return best?.snapped ?? null
+}
+
+/**
+ * Wider than {@link SEEK_SNAP_TOLERANCE_SEC} for post-discontinuity byte↔time
+ * skew (VBR). Still bounded so a stale later island cannot absorb an earlier
+ * scrub target while HTMLMediaElement.buffered lags SourceBuffer.remove.
+ */
+export const SEEK_LAND_TOLERANCE_SEC = 10
+
+/**
+ * After a discontinuous MSE seek, land on a nearby island even when
+ * proportional byte↔time mapping misses by more than the normal snap window.
+ */
+export function landTimeOnRanges(
+  time: number,
+  ranges: TimeRange[],
+): number | null {
+  return snapTimeToRanges(time, ranges, SEEK_LAND_TOLERANCE_SEC)
+}
+
+/**
+ * Buffer chrome for the progress bar.
+ *
+ * Prefer decoder `buffered` ranges (honest under MSE, including seek islands).
+ * Fall back to append-tip / leading download prefix.
+ */
+export function computeBufferedRanges(options: {
+  mediaRanges?: TimeRange[]
+  playableEnd: number
+  duration: number
+  currentTime?: number
+  /** Fallback before any bytes are appended (leading download prefix only). */
+  cachedRanges?: TimeRange[]
+}): TimeRange[] {
+  const {
+    mediaRanges = [],
+    playableEnd,
+    duration,
+    currentTime = 0,
+    cachedRanges = [],
+  } = options
+  if (!(duration > 0)) return []
+
+  if (mediaRanges.length > 0) {
+    // Single coherent range around the playhead / active island.
+    const active = mediaRanges.find(
+      range => currentTime >= range.start && currentTime < range.end,
+    )
+    if (active) return [active]
+    // Pending seek into a new island — show the newest / last range.
+    return [mediaRanges[mediaRanges.length - 1]!]
+  }
+
+  if (playableEnd > 0) {
+    return [{ start: 0, end: Math.min(duration, playableEnd) }]
+  }
+
+  const leading = cachedRanges.find(range => range.start === 0)
+  return leading ? [leading] : []
 }

@@ -14,8 +14,10 @@
     "generate-icons": "tauri icon src-tauri/icons/original/soundgrammy-original.svg -o src-tauri/icons --ios-color \"#0088CC\" && cp src-tauri/icons/32x32.png public/favicon-32x32.png && cp src-tauri/icons/icon.ico public/favicon.ico && cp src-tauri/icons/ios/AppIcon-60x60@3x.png public/apple-touch-icon.png",
     "lint": "eslint .",
     "format": "eslint --fix .",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run"
   },
+
   "dependencies": {
     "@base-ui/react": "^1.6.0",
     "@dnd-kit/core": "^6.3.1",
@@ -55,7 +57,8 @@
     "tw-animate-css": "^1.4.0",
     "typescript": "^6.0.3",
     "typescript-eslint": "^8.64.0",
-    "vite": "^8.1.4"
+    "vite": "^8.1.4",
+    "vitest": "^3.2.4"
   },
   "packageManager": "bun@1.3.14",
   "engines": {

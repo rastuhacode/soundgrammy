@@ -31,8 +31,10 @@ flowchart LR
 ## Media
 
 - **Cached**: absolute path → `fileSrc()` (`asset:` URL) for `<audio>` / images.
-- **Uncached**: `get_track_source` may return `stream`; UI uses `streamSrc(trackId)` (`stream:` protocol in `lib.rs` / `streaming.rs`).
+- **Uncached (streamed)**: `get_track_source` returns `stream`; the UI attaches `<audio>` to a `MediaSource` object URL and appends bytes via `read_stream_range` as the download ledger grows (`src/hooks/audio/mse-session.ts`). Full track duration is set on the `MediaSource` from metadata. Buffer UI uses `download:progress` ranges, not WebKit’s optimistic `HTMLMediaElement.buffered`.
+- The `stream:` protocol in `streaming.rs` remains as the byte backend / range fetcher; playback must not assign `stream:` directly as `audio.src` (that progressive path lies about buffer and clock under WebKit).
 - Downloads / prefetch write into the app cache dir; progress via `download:progress`.
+- See [MSE-integration.md](./MSE-integration.md) for the why and transport notes.
 
 ## Events
 

@@ -55,6 +55,11 @@ export function useAudioEngine() {
 
   const {
     downloadProgress,
+    appendedBytes,
+    bufferRevision,
+    seekMseToTime,
+    mseSnapToBufferedTime,
+    mseLandToBufferedTime,
     showInitialLoading,
     setShowInitialLoading,
   } = useAudioSource({
@@ -85,6 +90,11 @@ export function useAudioEngine() {
   } = useAudioSeek({
     audioRef,
     downloadProgress,
+    appendedBytes,
+    bufferRevision,
+    seekMseToTime,
+    mseSnapToBufferedTime,
+    mseLandToBufferedTime,
     duration,
     currentTime,
     setCurrentTime,
@@ -98,6 +108,12 @@ export function useAudioEngine() {
     playAudio,
   })
 
+  const handleSeekRef = useRef(handleSeek)
+
+  useEffect(() => {
+    handleSeekRef.current = handleSeek
+  }, [handleSeek])
+
   useEffect(() => {
     isPlayingRef.current = isPlaying
   }, [isPlaying])
@@ -110,10 +126,7 @@ export function useAudioEngine() {
     return registerPlaybackController({
       getCurrentTime: () => currentTimeRef.current,
       seekTo: (time) => {
-        const audio = audioRef.current
-        if (audio) audio.currentTime = time
-        currentTimeRef.current = time
-        setCurrentTime(time)
+        handleSeekRef.current(time)
       },
     })
   }, [])
@@ -131,6 +144,8 @@ export function useAudioEngine() {
       else {
         resumeAfterSeekRef.current = true
         finishPendingSeek(audio)
+        // If still pending, discontinuity / canplay will resume — do not
+        // force-land onto a distant or stale island.
       }
     }
     else {
@@ -164,8 +179,16 @@ export function useAudioEngine() {
     if (repeat === 'one') {
       const audio = audioRef.current
       if (!audio) return
-      audio.currentTime = 0
-      return playAudio(audio, loadGenerationRef.current)
+      handleSeek(0)
+      finishPendingSeek(audio)
+      if (
+        isPlayingRef.current
+        && audio.paused
+        && pendingSeekRef.current === null
+      ) {
+        playAudio(audio, loadGenerationRef.current)
+      }
+      return
     }
     playNext()
   }
