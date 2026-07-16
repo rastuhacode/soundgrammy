@@ -28,3 +28,6 @@ npm-debug.log*
 # Misc
 .DS_Store
 *.pem
+
+# Local stuff
+__local
