@@ -25,7 +25,13 @@ function track(id: number): Track {
 beforeEach(() => {
   clearPendingListenEndReason()
   usePlayerStore.setState({
-    queue: { source: null, tracks: [], cursor: -1, sourceIndices: null },
+    queue: {
+      source: null,
+      tracks: [],
+      cursor: -1,
+      sourceIndices: null,
+      baseEntries: null,
+    },
     currentTrack: null,
     isPlaying: false,
     listenAttemptEpoch: 0,
@@ -37,7 +43,13 @@ describe('enqueueNext', () => {
     const a = track(1)
     const b = track(2)
     usePlayerStore.setState({
-      queue: { source: null, tracks: [a], cursor: 0, sourceIndices: null },
+      queue: {
+        source: null,
+        tracks: [a],
+        cursor: 0,
+        sourceIndices: null,
+        baseEntries: null,
+      },
       currentTrack: a,
       isPlaying: false,
     })
@@ -59,6 +71,7 @@ describe('playQueue', () => {
         tracks: [a, a, track(2)],
         cursor: 0,
         sourceIndices: null,
+        baseEntries: null,
       },
       currentTrack: a,
       isPlaying: true,
@@ -71,6 +84,7 @@ describe('playQueue', () => {
         tracks: [a, a, track(2)],
         cursor: 1,
         sourceIndices: null,
+        baseEntries: null,
       },
       1,
     )

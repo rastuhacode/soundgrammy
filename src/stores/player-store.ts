@@ -6,6 +6,7 @@ import {
   clearUpNext as clearUpNextHelper,
   enqueueNext as enqueueNextHelper,
   jumpToQueueIndex as jumpToQueueIndexHelper,
+  mapCursorAfterReorder,
   realignQueueAfterPlaylistReorder,
   remapSourceIndicesAfterReorder,
   removeFromQueue as removeFromQueueHelper,
@@ -41,6 +42,11 @@ export interface Queue {
    * Null after queue edits diverge from the source playlist.
    */
   sourceIndices: number[] | null
+  /**
+   * Unshuffled session order (membership-aware), e.g. UI column sort.
+   * Shuffle on/off reshuffles / restores this — not raw playlist membership.
+   */
+  baseEntries: PlaylistQueueEntry[] | null
 }
 
 interface GenerateQueueOptions {
@@ -155,6 +161,29 @@ function applyQueueMutation(
     tracks: result.tracks,
     cursor: result.cursor,
     sourceIndices: result.clearSource ? null : queue.sourceIndices,
+    baseEntries: result.clearSource ? null : queue.baseEntries,
+  }
+}
+
+/** Restore unshuffled session order, keeping the same membership as now playing. */
+function queueFromBaseEntries(
+  queue: Queue,
+  baseEntries: PlaylistQueueEntry[],
+  playingSourceIndex: number | undefined,
+): Queue {
+  const tracks = baseEntries.map(entry => entry.track)
+  const sourceIndices = baseEntries.map(entry => entry.sourceIndex)
+  let cursor = 0
+  if (playingSourceIndex != null) {
+    const mapped = sourceIndices.indexOf(playingSourceIndex)
+    cursor = mapped === -1 ? 0 : mapped
+  }
+  return {
+    ...queue,
+    tracks,
+    sourceIndices,
+    baseEntries,
+    cursor: normalizeCursor(tracks, cursor),
   }
 }
 
@@ -176,6 +205,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     tracks: [],
     cursor: -1,
     sourceIndices: null,
+    baseEntries: null,
   }
 
   return {
@@ -232,6 +262,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
         tracks,
         cursor,
         sourceIndices,
+        // Keep pre-shuffle order so shuffle off restores UI sort, not membership.
+        baseEntries,
       }
     },
 
@@ -295,7 +327,13 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
         setPendingListenEndReason('replaced')
         const queuedIndex = queue.tracks.findIndex(item => item.id === track.id)
         const nextQueue = queuedIndex === -1
-          ? { source: null, tracks: [track], cursor: 0, sourceIndices: null }
+          ? {
+              source: null,
+              tracks: [track],
+              cursor: 0,
+              sourceIndices: null,
+              baseEntries: null,
+            }
           : { ...queue, cursor: queuedIndex }
 
         set({
@@ -396,24 +434,41 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
       // Shuffled session order stays; remap membership indexes so highlight
       // follows the playing entry after playlist drag (A B C → B A C).
       if (shuffle !== 'off') {
+        const remappedIndices = move
+          ? remapSourceIndicesAfterReorder(queue.sourceIndices, move)
+          : queue.sourceIndices
+        const remappedBase = move && queue.baseEntries
+          ? queue.baseEntries.map(entry => ({
+              track: entry.track,
+              sourceIndex: mapCursorAfterReorder(
+                entry.sourceIndex,
+                move.fromIndex,
+                move.toIndex,
+              ),
+            }))
+          : queue.baseEntries
         set({
           queue: {
             ...queue,
             source: { ...queue.source, trackIds: nextTrackIds },
-            sourceIndices: move
-              ? remapSourceIndicesAfterReorder(queue.sourceIndices, move)
-              : queue.sourceIndices,
+            sourceIndices: remappedIndices,
+            baseEntries: remappedBase,
           },
         })
         return
       }
 
       const aligned = realignQueueAfterPlaylistReorder(queue, tracks, move)
+      const baseEntries = aligned.tracks.map((track, index) => ({
+        track,
+        sourceIndex: index,
+      }))
       const nextQueue: Queue = {
         source: { ...queue.source, trackIds: nextTrackIds },
         tracks: aligned.tracks,
         cursor: aligned.cursor,
         sourceIndices: aligned.tracks.map((_, index) => index),
+        baseEntries,
       }
       set({
         queue: nextQueue,
@@ -450,17 +505,19 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
           tracks: nextTracks,
           cursor: 0,
           sourceIndices: null,
+          baseEntries: null,
         }
         set({ queue: nextQueue, currentTrack: getCurrentTrack(nextQueue) })
         return
       }
 
-      const sourceTracks = resolveSourceTracks(queue)
       const playingSourceIndex = queue.sourceIndices?.[queue.cursor]
+      const baseEntries = queue.baseEntries
+        ?? buildPlaylistEntries(resolveSourceTracks(queue))
 
       if (shuffle === 'on') {
         const entries = shufflePlaylistEntries(
-          buildPlaylistEntries(sourceTracks),
+          baseEntries,
           shuffleStore.algorithm,
           playingSourceIndex,
         )
@@ -468,22 +525,18 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
           ...queue,
           tracks: entries.map(entry => entry.track),
           sourceIndices: entries.map(entry => entry.sourceIndex),
+          baseEntries,
           cursor: 0,
         }
         set({ queue: nextQueue, currentTrack: getCurrentTrack(nextQueue) })
         return
       }
 
-      const nextCursor = playingSourceIndex != null
-        ? normalizeCursor(sourceTracks, playingSourceIndex)
-        : resolveStartCursor(sourceTracks, currentTrack)
-      const nextQueue: Queue = {
-        ...queue,
-        tracks: sourceTracks,
-        sourceIndices: sourceTracks.map((_, index) => index),
-        cursor: nextCursor,
-      }
-
+      const nextQueue = queueFromBaseEntries(
+        queue,
+        baseEntries,
+        playingSourceIndex,
+      )
       set({ queue: nextQueue, currentTrack: getCurrentTrack(nextQueue) })
     },
     setShuffleAlgorithm: algorithm => useShuffleStore.getState().setAlgorithm(algorithm),
@@ -543,11 +596,24 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
         nextCursor = sameCurrentIndex === -1 ? queue.cursor : sameCurrentIndex
       }
 
+      const nextBaseEntries = queue.baseEntries
+        ?.map((entry) => {
+          const track = trackById.get(entry.track.id)
+          return track
+            ? { track, sourceIndex: entry.sourceIndex }
+            : null
+        })
+        .filter((entry): entry is PlaylistQueueEntry => entry !== null)
+        ?? null
+
       const nextQueue: Queue = {
         ...queue,
         tracks: refreshedTracks,
         cursor: normalizeCursor(refreshedTracks, nextCursor),
         sourceIndices,
+        baseEntries: nextBaseEntries && nextBaseEntries.length > 0
+          ? nextBaseEntries
+          : null,
         source: queue.source
           ? {
               ...queue.source,
