@@ -26,7 +26,7 @@ flowchart LR
 | Saved / profile music | Telegram | SQLite tracks (synced) |
 | Custom playlists | App | SQLite |
 | Liked playlist | App | SQLite |
-| Playback queue / UI state | App | Zustand (ephemeral) |
+| Playback queue / UI state | App | Zustand (ephemeral session order; not restored across restart) |
 | Listen statistics | App (listen behaviour) | SQLite events + aggregates ([listen-statistics.md](./listen-statistics.md)) |
 
 ## Media
@@ -54,14 +54,22 @@ Listeners live in `src/lib/api.ts`.
 | Track / playlist persistence | `db.rs` |
 | Telegram sync | `telegram/saved_music.rs` |
 | Auth flows | `telegram/auth.rs` + login UI |
-| Player UI / queue | `stores/player-store.ts`, `components/audio/` |
+| Player UI / queue | `stores/player-store.ts`, `lib/queue/`, `components/audio/` (queue popover under `components/audio/queue/`) |
 | Listen statistics | `listen_stats.rs`, `db.rs`, `hooks/audio/use-listen-tracker.ts` |
 | Playlist tracklist (table, sort, selection, context menu) | `components/playlist/` (`PlaylistView`, `PlaylistTracksTable`, `track-actions`) |
+
+## Playback queue
+
+- Session playback order lives in `player-store` (`tracks` + `cursor` + optional playlist `source` label).
+- Visible/editable via the queue control on the player (`components/audio/queue/`).
+- Edits (reorder / add / remove / clear up next) clear the source label so the queue is no longer presented as the original playlist.
+- Not persisted across app restart; durability is **Save as playlist** from the queue (full / from here / up next scopes).
+- Play next / Add to end from track context and bulk actions insert into the session queue; whole-playlist Play still replaces it.
 
 ## Playlist boundaries
 
 - **All tracks** (`id: all`) — virtual view of the synced library; not a DB playlist. Immutable membership (no remove-from-playlist). Track order follows Telegram sync (`track_position`); not drag-reorderable.
-- **Liked** (`id: liked`) — app-owned; membership via `toggle_like` only (not `add_track_to_playlist` / remove-from-playlist UI). Custom order persisted with `reorder_playlist_tracks`.
-- **Custom playlists** — editable membership; context menu and bulk actions may show “Remove from playlist”. Track order persisted with `reorder_playlist_tracks`.
+- **Liked** (`id: liked`) — app-owned; membership via `toggle_like` only (not `add_track_to_playlist` / remove-from-playlist UI). Unique membership. Custom order persisted with `reorder_playlist_tracks`.
+- **Custom playlists** — editable membership; the same track may appear more than once as distinct ordered entries. Context menu and bulk actions may show “Remove from playlist” (removes one occurrence by position). Track order persisted with `reorder_playlist_tracks`.
 
 Tracklist actions are gated in `src/components/playlist/track-actions.ts` so All tracks / Liked never expose remove-from-playlist. Drag-reorder is enabled only when search and column sort are clear and selection mode is off.

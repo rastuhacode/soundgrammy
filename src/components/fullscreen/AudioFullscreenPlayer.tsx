@@ -15,6 +15,7 @@ import {
   type AudioBufferedRange,
 } from '../audio/AudioProgressBar'
 import { AudioVolume } from '../audio/AudioVolume'
+import { QueueButton } from '../audio/queue/QueueButton'
 
 const CONTROLS_HIDE_DELAY = 3000
 
@@ -170,6 +171,10 @@ export function AudioFullscreenPlayer(props: AudioFullscreenPlayerProps) {
             </div>
             <div className="flex shrink-0 items-center gap-2">
               <LikeButton className="text-white hover:bg-white/10 hover:text-white" />
+              <QueueButton
+                className="text-white hover:bg-white/10 hover:text-white"
+                classes={{ positioner: 'z-[250]' }}
+              />
               <AudioVolume
                 classes={{ positioner: 'z-[250]' }}
                 volume={props.volume}

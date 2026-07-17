@@ -80,6 +80,7 @@ pub fn run() {
             commands::delete_playlist,
             commands::get_playlist_thumbnail,
             commands::add_track_to_playlist,
+            commands::add_tracks_to_playlist,
             commands::remove_track_from_playlist,
             commands::reorder_playlist_tracks,
             commands::toggle_like,

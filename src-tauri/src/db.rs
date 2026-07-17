@@ -5,7 +5,6 @@
 //! guarded by a `Mutex`; all access goes through small prepared-statement
 //! helpers — no ORM.
 
-use std::collections::HashSet;
 use std::path::Path;
 use std::sync::Mutex;
 
@@ -152,12 +151,15 @@ impl Db {
               ON playlists (tg_user_id) WHERE kind = 'liked';
 
             CREATE TABLE IF NOT EXISTS playlist_tracks (
+              id INTEGER PRIMARY KEY AUTOINCREMENT,
               playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
               track_id INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
               position INTEGER NOT NULL DEFAULT 0,
-              added_at TEXT NOT NULL DEFAULT (datetime('now')),
-              PRIMARY KEY (playlist_id, track_id)
+              added_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
+
+            CREATE INDEX IF NOT EXISTS idx_playlist_tracks_playlist_position
+              ON playlist_tracks (playlist_id, position);
 
             CREATE TABLE IF NOT EXISTS profile (
               tg_user_id INTEGER PRIMARY KEY,
@@ -202,6 +204,7 @@ impl Db {
             "#,
         )?;
         Self::migrate_playlists_updated_at(conn)?;
+        Self::migrate_playlist_tracks_entry_ids(conn)?;
         Ok(())
     }
 
@@ -216,6 +219,36 @@ impl Db {
         conn.execute_batch(
             "ALTER TABLE playlists ADD COLUMN updated_at TEXT NOT NULL DEFAULT (datetime('now'));
              UPDATE playlists SET updated_at = created_at;",
+        )?;
+        Ok(())
+    }
+
+    /// Allow duplicate track entries in a playlist (ordered slots with a row id).
+    fn migrate_playlist_tracks_entry_ids(conn: &Connection) -> AppResult<()> {
+        let mut stmt = conn.prepare("PRAGMA table_info(playlist_tracks)")?;
+        let columns = stmt
+            .query_map([], |row| row.get::<_, String>(1))?
+            .collect::<Result<Vec<_>, _>>()?;
+        if columns.iter().any(|c| c == "id") {
+            return Ok(());
+        }
+        conn.execute_batch(
+            "PRAGMA foreign_keys = OFF;
+             CREATE TABLE playlist_tracks_new (
+               id INTEGER PRIMARY KEY AUTOINCREMENT,
+               playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+               track_id INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+               position INTEGER NOT NULL DEFAULT 0,
+               added_at TEXT NOT NULL DEFAULT (datetime('now'))
+             );
+             INSERT INTO playlist_tracks_new (playlist_id, track_id, position, added_at)
+               SELECT playlist_id, track_id, position, added_at FROM playlist_tracks
+               ORDER BY playlist_id ASC, position ASC, added_at ASC;
+             DROP TABLE playlist_tracks;
+             ALTER TABLE playlist_tracks_new RENAME TO playlist_tracks;
+             CREATE INDEX IF NOT EXISTS idx_playlist_tracks_playlist_position
+               ON playlist_tracks (playlist_id, position);
+             PRAGMA foreign_keys = ON;",
         )?;
         Ok(())
     }
@@ -685,21 +718,57 @@ impl Db {
             ));
         }
         let position = Self::next_position(&conn, playlist_id)?;
-        let changed = conn.execute(
-            "INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (?1, ?2, ?3) \
-             ON CONFLICT (playlist_id, track_id) DO NOTHING",
+        conn.execute(
+            "INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (?1, ?2, ?3)",
             params![playlist_id, track_id, position],
         )?;
-        if changed > 0 {
-            return Self::touch_playlist_updated_at(&conn, playlist_id);
-        }
-        Self::playlist_updated_at(&conn, playlist_id)
+        Self::touch_playlist_updated_at(&conn, playlist_id)
     }
 
+    /// Appends tracks in order (duplicates allowed). Used when saving a queue as a playlist.
+    pub fn add_tracks_to_playlist(
+        &self,
+        playlist_id: i64,
+        track_ids: &[i64],
+        tg_user_id: i64,
+    ) -> AppResult<String> {
+        let mut conn = self.conn.lock().unwrap();
+        let kind = conn
+            .query_row(
+                "SELECT kind FROM playlists WHERE id = ?1 AND tg_user_id = ?2",
+                params![playlist_id, tg_user_id],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()?
+            .ok_or_else(|| crate::error::AppError::msg("Playlist not found"))?;
+        if kind == "liked" {
+            return Err(crate::error::AppError::msg(
+                "Use toggle_like for the Liked playlist",
+            ));
+        }
+        if track_ids.is_empty() {
+            return Self::playlist_updated_at(&conn, playlist_id);
+        }
+
+        let tx = conn.transaction()?;
+        let mut position = Self::next_position(&tx, playlist_id)?;
+        for track_id in track_ids {
+            tx.execute(
+                "INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (?1, ?2, ?3)",
+                params![playlist_id, track_id, position],
+            )?;
+            position += 1;
+        }
+        let updated_at = Self::touch_playlist_updated_at(&tx, playlist_id)?;
+        tx.commit()?;
+        Ok(updated_at)
+    }
+
+    /// Removes the membership entry at `position` (0-based order in the playlist).
     pub fn remove_track_from_playlist(
         &self,
         playlist_id: i64,
-        track_id: i64,
+        position: i64,
         tg_user_id: i64,
     ) -> AppResult<String> {
         let conn = self.conn.lock().unwrap();
@@ -713,18 +782,30 @@ impl Db {
         if exists.is_none() {
             return Err(crate::error::AppError::msg("Playlist not found"));
         }
-        let changed = conn.execute(
-            "DELETE FROM playlist_tracks WHERE playlist_id = ?1 AND track_id = ?2",
-            params![playlist_id, track_id],
-        )?;
-        if changed > 0 {
-            return Self::touch_playlist_updated_at(&conn, playlist_id);
+        if position < 0 {
+            return Err(crate::error::AppError::msg("Invalid playlist position"));
         }
-        Self::playlist_updated_at(&conn, playlist_id)
+        let entry_id: Option<i64> = conn
+            .query_row(
+                "SELECT id FROM playlist_tracks WHERE playlist_id = ?1 \
+                 ORDER BY position ASC, added_at ASC, id ASC \
+                 LIMIT 1 OFFSET ?2",
+                params![playlist_id, position],
+                |row| row.get(0),
+            )
+            .optional()?;
+        let Some(entry_id) = entry_id else {
+            return Self::playlist_updated_at(&conn, playlist_id);
+        };
+        conn.execute(
+            "DELETE FROM playlist_tracks WHERE id = ?1",
+            params![entry_id],
+        )?;
+        Self::touch_playlist_updated_at(&conn, playlist_id)
     }
 
-    /// Rewrites `position` for every membership row to match `track_ids` order.
-    /// `track_ids` must be a permutation of the playlist's current membership.
+    /// Rewrites membership to match `track_ids` order (duplicates allowed).
+    /// `track_ids` must be a multiset-equal permutation of the playlist's current membership.
     pub fn reorder_playlist_tracks(
         &self,
         playlist_id: i64,
@@ -744,30 +825,37 @@ impl Db {
         }
 
         let current = Self::playlist_track_ids(&conn, playlist_id)?;
-        if current.len() != track_ids.len() {
-            return Err(crate::error::AppError::msg(
-                "Track list does not match playlist membership",
-            ));
-        }
-        let current_set: HashSet<i64> = current.into_iter().collect();
-        let next_set: HashSet<i64> = track_ids.iter().copied().collect();
-        if current_set != next_set {
+        if !Self::track_id_multisets_equal(&current, track_ids) {
             return Err(crate::error::AppError::msg(
                 "Track list does not match playlist membership",
             ));
         }
 
         let tx = conn.transaction()?;
+        tx.execute(
+            "DELETE FROM playlist_tracks WHERE playlist_id = ?1",
+            params![playlist_id],
+        )?;
         for (position, track_id) in track_ids.iter().enumerate() {
             tx.execute(
-                "UPDATE playlist_tracks SET position = ?1 \
-                 WHERE playlist_id = ?2 AND track_id = ?3",
-                params![position as i64, playlist_id, track_id],
+                "INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (?1, ?2, ?3)",
+                params![playlist_id, track_id, position as i64],
             )?;
         }
         let updated_at = Self::touch_playlist_updated_at(&tx, playlist_id)?;
         tx.commit()?;
         Ok(updated_at)
+    }
+
+    fn track_id_multisets_equal(a: &[i64], b: &[i64]) -> bool {
+        if a.len() != b.len() {
+            return false;
+        }
+        let mut left = a.to_vec();
+        let mut right = b.to_vec();
+        left.sort_unstable();
+        right.sort_unstable();
+        left == right
     }
 
     /// Toggles the liked state of a track; returns the updated liked playlist.
@@ -1210,6 +1298,55 @@ mod tests {
             assert!(end.qualified);
             assert!(db.track_listen_stats(999)?.is_some());
         }
+        remove_sqlite_files(&path);
+        Ok(())
+    }
+
+    fn upsert_test_track(db: &Db, user: i64, unique: &str, position: i64) -> AppResult<i64> {
+        db.upsert_track(&UpsertTrack {
+            tg_user_id: user,
+            file_id: format!("file-{unique}"),
+            file_unique_id: unique.to_string(),
+            title: Some(unique.to_string()),
+            performer: None,
+            duration: Some(60),
+            mime_type: Some("audio/mpeg".into()),
+            file_size: Some(1000),
+            track_position: position,
+            mtproto_document: "{}".into(),
+        })?;
+        let tracks = db.tracks_by_user(user)?;
+        tracks
+            .into_iter()
+            .find(|t| t.file_unique_id == unique)
+            .map(|t| t.id)
+            .ok_or_else(|| crate::error::AppError::msg("track not found after upsert"))
+    }
+
+    #[test]
+    fn reorder_playlist_tracks_persists_duplicate_order() -> AppResult<()> {
+        let path = temp_db_path();
+        {
+            let db = Db::open(&path)?;
+            let user = 42;
+            db.save_profile(user, "User", None, None, None)?;
+            let a = upsert_test_track(&db, user, "dup-a", 0)?;
+            let b = upsert_test_track(&db, user, "dup-b", 1)?;
+            let playlist = db.create_playlist(user, "Dupes", None)?;
+            db.add_tracks_to_playlist(playlist.id, &[a, b, a], user)?;
+
+            let before = db.playlists_bundle(user)?;
+            assert_eq!(before.custom[0].track_ids, vec![a, b, a]);
+
+            db.reorder_playlist_tracks(playlist.id, &[b, a, a], user)?;
+            let after = db.playlists_bundle(user)?;
+            assert_eq!(after.custom[0].track_ids, vec![b, a, a]);
+
+            db.reorder_playlist_tracks(playlist.id, &[a, a, b], user)?;
+            let again = db.playlists_bundle(user)?;
+            assert_eq!(again.custom[0].track_ids, vec![a, a, b]);
+        }
+
         remove_sqlite_files(&path);
         Ok(())
     }

@@ -4,11 +4,21 @@ import type { ShuffleAlgorithm } from './model'
 export type { ShuffleState, ShuffleAlgorithm } from './model'
 export { isShuffleState } from './model'
 
+/** Playlist membership paired with its library track (duplicates share track id). */
+export interface PlaylistQueueEntry {
+  track: Track
+  sourceIndex: number
+}
+
+export function buildPlaylistEntries(tracks: Track[]): PlaylistQueueEntry[] {
+  return tracks.map((track, sourceIndex) => ({ track, sourceIndex }))
+}
+
 /**
  * Applies the shuffle algorithm to the tracks, pins the track with the given ID at the beginning.
- * @param original - The orifinal array of tracks to shuffle.
+ * @param original - The original array of tracks to shuffle.
  * @param algorithm - The shuffle algorithm to use.
- * @param pinnedId - The ID of the pinned tarck to keep at the beginning.
+ * @param pinnedId - The ID of the pinned track to keep at the beginning.
  * @returns The new shuffled tracks array.
  */
 export function applyAlgorithm(
@@ -27,5 +37,28 @@ export function applyAlgorithm(
     shuffled = [pinned!, ...shuffled]
   }
 
+  return shuffled
+}
+
+/**
+ * Shuffle playlist memberships while preserving which duplicate slot is which.
+ * Pins by `sourceIndex` (not track id) so A1 vs A2 stay distinct.
+ */
+export function shufflePlaylistEntries(
+  entries: PlaylistQueueEntry[],
+  algorithm: ShuffleAlgorithm,
+  pinSourceIndex?: number,
+): PlaylistQueueEntry[] {
+  if (entries.length <= 1) return entries
+
+  let shuffled = algorithm(entries)
+  if (pinSourceIndex === undefined) return shuffled
+
+  const pinIndex = shuffled.findIndex(entry => entry.sourceIndex === pinSourceIndex)
+  if (pinIndex > 0) {
+    const next = [...shuffled]
+    const [pinned] = next.splice(pinIndex, 1)
+    return [pinned!, ...next]
+  }
   return shuffled
 }

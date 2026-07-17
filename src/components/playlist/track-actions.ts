@@ -15,6 +15,8 @@ export type TrackContextActionId
     | 'toggleLike'
     | 'addToPlaylist'
     | 'removeFromPlaylist'
+    | 'playNext'
+    | 'addToEnd'
     | 'download'
     | 'showInfo'
 
@@ -23,6 +25,8 @@ export type BulkActionId
     | 'removeFromLiked'
     | 'addToPlaylist'
     | 'removeFromPlaylist'
+    | 'playNext'
+    | 'addToEnd'
     | 'download'
 
 export interface TrackContextActions {
@@ -30,6 +34,8 @@ export interface TrackContextActions {
   toggleLike: true
   addToPlaylist: true
   removeFromPlaylist: boolean
+  playNext: true
+  addToEnd: true
   download: true
   showInfo: true
 }
@@ -39,6 +45,8 @@ export interface BulkActions {
   removeFromLiked: boolean
   addToPlaylist: true
   removeFromPlaylist: boolean
+  playNext: true
+  addToEnd: true
   download: true
 }
 
@@ -50,18 +58,14 @@ export function canRemoveFromPlaylist(
 }
 
 /**
- * Custom playlists that do not already contain every selected track.
- * For a single track this matches the previous dropdown filter.
+ * Custom playlists available for "add to playlist".
+ * Duplicates are allowed, so every custom playlist is always available.
  */
 export function getAvailableCustomPlaylists(
   custom: CustomPlaylistRef[],
-  trackIds: number[],
+  _trackIds: number[],
 ): CustomPlaylistRef[] {
-  if (trackIds.length === 0) return custom
-
-  return custom.filter(playlist =>
-    trackIds.some(id => !playlist.trackIds.includes(id)),
-  )
+  return custom
 }
 
 export function getTrackContextActions(
@@ -72,6 +76,8 @@ export function getTrackContextActions(
     toggleLike: true,
     addToPlaylist: true,
     removeFromPlaylist: canRemoveFromPlaylist(playlist),
+    playNext: true,
+    addToEnd: true,
     download: true,
     showInfo: true,
   }
@@ -88,11 +94,14 @@ export function getBulkActions(
     removeFromLiked: inLiked,
     addToPlaylist: true,
     removeFromPlaylist: canRemoveFromPlaylist(playlist),
+    playNext: true,
+    addToEnd: true,
     download: true,
   }
 }
 
-/** Build a playable playlist snapshot that follows the current visible (filtered/sorted) order. */
+/** Build a playable playlist snapshot from an explicit track order (tests / helpers).
+ * Playback UI uses the full selected playlist — search/sort are display-only. */
 export function toPlayablePlaylist(
   playlist: ResolvedSelectedPlaylist,
   orderedTracks: Track[],
@@ -212,14 +221,35 @@ export function selectionModeAfterPlaylistChange(): {
   return { selectionMode: false, rowSelection: {} }
 }
 
-export function enterSelectionWithTrack(trackId: number): {
+export function enterSelectionWithTrack(rowId: number): {
   selectionMode: true
   rowSelection: Record<string, boolean>
 } {
   return {
     selectionMode: true,
-    rowSelection: { [String(trackId)]: true },
+    rowSelection: { [String(rowId)]: true },
   }
+}
+
+/** Move the item at `fromIndex` to `toIndex` within a list. */
+export function reorderByIndex<T>(
+  order: T[],
+  fromIndex: number,
+  toIndex: number,
+): T[] {
+  if (
+    fromIndex < 0
+    || toIndex < 0
+    || fromIndex >= order.length
+    || toIndex >= order.length
+    || fromIndex === toIndex
+  ) {
+    return order
+  }
+  const next = [...order]
+  const [moved] = next.splice(fromIndex, 1)
+  next.splice(toIndex, 0, moved!)
+  return next
 }
 
 /** Move `activeId` to the index of `overId` within a track id list. */
@@ -233,8 +263,5 @@ export function reorderTrackIds(
   if (oldIndex < 0 || newIndex < 0 || oldIndex === newIndex) {
     return order
   }
-  const next = [...order]
-  const [moved] = next.splice(oldIndex, 1)
-  next.splice(newIndex, 0, moved!)
-  return next
+  return reorderByIndex(order, oldIndex, newIndex)
 }

@@ -1,10 +1,10 @@
-import type { Track } from '@/types'
 import { z } from 'zod'
 
 export const ShuffleSchema = z.enum(['off', 'on'])
 
 export type ShuffleState = z.infer<typeof ShuffleSchema>
-export type ShuffleAlgorithm = (playlist: Track[]) => Track[]
+/** Fisher–Yates (or other) permutation — must preserve element identity. */
+export type ShuffleAlgorithm = <T>(playlist: T[]) => T[]
 
 /**
  * Checks if a value is a valid shuffle state.

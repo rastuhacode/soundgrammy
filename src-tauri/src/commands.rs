@@ -454,15 +454,27 @@ pub async fn add_track_to_playlist(
 }
 
 #[tauri::command]
-pub async fn remove_track_from_playlist(
+pub async fn add_tracks_to_playlist(
     state: State<'_, AppState>,
     playlist_id: i64,
-    track_id: i64,
+    track_ids: Vec<i64>,
 ) -> AppResult<String> {
     let uid = require_uid(&state)?;
     state
         .db
-        .remove_track_from_playlist(playlist_id, track_id, uid)
+        .add_tracks_to_playlist(playlist_id, &track_ids, uid)
+}
+
+#[tauri::command]
+pub async fn remove_track_from_playlist(
+    state: State<'_, AppState>,
+    playlist_id: i64,
+    position: i64,
+) -> AppResult<String> {
+    let uid = require_uid(&state)?;
+    state
+        .db
+        .remove_track_from_playlist(playlist_id, position, uid)
 }
 
 #[tauri::command]

@@ -3,7 +3,9 @@ import {
   Download,
   Heart,
   Info,
+  ListEnd,
   ListPlus,
+  ListStart,
   ListX,
 } from 'lucide-react'
 import type { Track } from '@/lib/db'
@@ -29,20 +31,24 @@ import {
 
 export interface PlaylistTrackContextMenuProps {
   track: Track
+  sourceIndex: number
   isLiked: boolean
   currentPlaylist: ResolvedSelectedPlaylist
   customPlaylists: CustomPlaylistRef[]
   children: React.ReactNode
-  onSelect: (trackId: number) => void
+  onSelect: (sourceIndex: number) => void
   onToggleLike: (trackId: number) => void
   onAddToPlaylist: (playlistId: number, trackId: number) => void
-  onDeleteFromPlaylist: (playlistId: number, trackId: number) => void
+  onDeleteFromPlaylist: (playlistId: number, position: number) => void
+  onPlayNext: (track: Track) => void
+  onAddToEnd: (track: Track) => void
   onDownload: (track: Track) => void
   onShowInfo: (track: Track) => void
 }
 
 export function PlaylistTrackContextMenu({
   track,
+  sourceIndex,
   isLiked,
   currentPlaylist,
   customPlaylists,
@@ -51,6 +57,8 @@ export function PlaylistTrackContextMenu({
   onToggleLike,
   onAddToPlaylist,
   onDeleteFromPlaylist,
+  onPlayNext,
+  onAddToEnd,
   onDownload,
   onShowInfo,
 }: PlaylistTrackContextMenuProps) {
@@ -67,10 +75,28 @@ export function PlaylistTrackContextMenu({
       <ContextMenuContent className="w-48">
         <ContextMenuGroup>
           <ContextMenuLabel>Selection</ContextMenuLabel>
-          <ContextMenuItem onClick={() => onSelect(track.id)}>
+          <ContextMenuItem onClick={() => onSelect(sourceIndex)}>
             <CheckSquare className="size-4" />
             Select
           </ContextMenuItem>
+        </ContextMenuGroup>
+
+        <ContextMenuSeparator />
+
+        <ContextMenuGroup>
+          <ContextMenuLabel>Queue</ContextMenuLabel>
+          {actions.playNext && (
+            <ContextMenuItem onClick={() => onPlayNext(track)}>
+              <ListStart className="size-4" />
+              Play next
+            </ContextMenuItem>
+          )}
+          {actions.addToEnd && (
+            <ContextMenuItem onClick={() => onAddToEnd(track)}>
+              <ListEnd className="size-4" />
+              Add to end
+            </ContextMenuItem>
+          )}
         </ContextMenuGroup>
 
         <ContextMenuSeparator />
@@ -118,7 +144,7 @@ export function PlaylistTrackContextMenu({
           {actions.removeFromPlaylist && (
             <ContextMenuItem
               onClick={() =>
-                onDeleteFromPlaylist(currentPlaylist.id as number, track.id)}
+                onDeleteFromPlaylist(currentPlaylist.id as number, sourceIndex)}
             >
               <ListX className="size-4" />
               Remove from playlist

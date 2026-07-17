@@ -5,6 +5,7 @@ import { AudioMainOperations } from '@/components/audio/operations/AudioMainOper
 import { AudioTrackDescription } from '@/components/audio/AudioTrackDescription'
 import { AudioVolume } from '@/components/audio/AudioVolume'
 import { LikeButton } from '@/components/audio/LikeButton'
+import { QueueButton } from '@/components/audio/queue/QueueButton'
 import { formatTime } from '@/lib/format-time'
 
 export interface AudioPlayerBarProps {
@@ -49,6 +50,7 @@ export function AudioPlayerBar(props: AudioPlayerBarProps) {
         </div>
 
         <div className="flex items-center justify-end gap-2">
+          <QueueButton />
           <LikeButton />
           <AudioVolume
             volume={props.volume}

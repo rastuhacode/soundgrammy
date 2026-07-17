@@ -10,6 +10,7 @@ import { useListenTracker } from './use-listen-tracker'
 export function useAudioEngine() {
   const track = usePlayerStore(state => state.currentTrack)
   const isPlaying = usePlayerStore(state => state.isPlaying)
+  const listenAttemptEpoch = usePlayerStore(state => state.listenAttemptEpoch)
   const setPlaying = usePlayerStore(state => state.setPlaying)
   const playNext = usePlayerStore(state => state.playNext)
   const repeat = useRepeatStore(state => state.repeat)
@@ -24,6 +25,7 @@ export function useAudioEngine() {
   const pendingSeekRef = useRef<number | null>(null)
   const resumeAfterSeekRef = useRef(false)
   const isSeekingRef = useRef(false)
+  const listenAttemptEpochRef = useRef(listenAttemptEpoch)
 
   const {
     volume,
@@ -164,6 +166,27 @@ export function useAudioEngine() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isPlaying, setPlaying])
 
+  // Same track id, new queue row (duplicate / single-track skip): seek to start.
+  useEffect(() => {
+    if (listenAttemptEpochRef.current === listenAttemptEpoch) return
+    listenAttemptEpochRef.current = listenAttemptEpoch
+
+    const audio = audioRef.current
+    if (!audio || !track) return
+    if (loadedTrackIdRef.current !== track.id) return
+
+    handleSeek(0)
+    finishPendingSeek(audio)
+    if (
+      isPlayingRef.current
+      && audio.paused
+      && pendingSeekRef.current === null
+    ) {
+      playAudio(audio, loadGenerationRef.current)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listenAttemptEpoch])
+
   const onTimeUpdate = (event: React.SyntheticEvent<HTMLAudioElement>) => {
     if (isSeekingRef.current || pendingSeekRef.current !== null) return
     setCurrentTime(event.currentTarget.currentTime)
@@ -182,6 +205,18 @@ export function useAudioEngine() {
     pendingSeekRef.current = null
     resumeAfterSeekRef.current = false
     setPlaying(false)
+  }
+
+  const restartFromStart = (audio: HTMLAudioElement) => {
+    handleSeek(0)
+    finishPendingSeek(audio)
+    if (
+      isPlayingRef.current
+      && audio.paused
+      && pendingSeekRef.current === null
+    ) {
+      playAudio(audio, loadGenerationRef.current)
+    }
   }
 
   function handleTrackEnded() {
@@ -204,21 +239,14 @@ export function useAudioEngine() {
     if (repeat === 'one') {
       notifyCompleted(true)
       if (!audio) return
-      handleSeek(0)
-      finishPendingSeek(audio)
-      if (
-        isPlayingRef.current
-        && audio.paused
-        && pendingSeekRef.current === null
-      ) {
-        playAudio(audio, loadGenerationRef.current)
-      }
+      restartFromStart(audio)
       return
     }
 
-    // Same-track continue (e.g. single-track repeat-all): trackId will not
-    // change, so restart the attempt here. Last-track + repeat-none stops —
-    // a later play resumes via the isPlaying effect in useListenTracker.
+    // Same-track continue (e.g. adjacent duplicates / single-track repeat-all):
+    // trackId will not change, so restart playback here after advancing cursor.
+    // Last-track + repeat-none stops — a later play resumes via the isPlaying
+    // effect in useListenTracker.
     const queue = usePlayerStore.getState().queue
     const isLast = queue.cursor === queue.tracks.length - 1
     const nextCursor = isLast ? 0 : queue.cursor + 1
@@ -229,6 +257,9 @@ export function useAudioEngine() {
 
     notifyCompleted(restartSameTrack)
     playNext({ reason: 'completed' })
+    if (restartSameTrack && audio) {
+      restartFromStart(audio)
+    }
   }
 
   return {

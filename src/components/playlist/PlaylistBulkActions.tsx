@@ -1,4 +1,4 @@
-import { Heart, ListPlus, ListX } from 'lucide-react'
+import { Heart, ListEnd, ListPlus, ListStart, ListX } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -22,18 +22,22 @@ import {
 
 export interface PlaylistBulkActionsProps {
   selectedTrackIds: number[]
+  selectedPositions: number[]
   currentPlaylist: ResolvedSelectedPlaylist
   customPlaylists: CustomPlaylistRef[]
   likedTrackIds: Set<number>
   onAddToLiked: (trackIds: number[]) => void
   onRemoveFromLiked: (trackIds: number[]) => void
   onAddToPlaylist: (playlistId: number, trackIds: number[]) => void
-  onRemoveFromPlaylist: (playlistId: number, trackIds: number[]) => void
+  onRemoveFromPlaylist: (playlistId: number, positions: number[]) => void
+  onPlayNext: (trackIds: number[]) => void
+  onAddToEnd: (trackIds: number[]) => void
   onDownload: (trackIds: number[]) => void
 }
 
 export function PlaylistBulkActions({
   selectedTrackIds,
+  selectedPositions,
   currentPlaylist,
   customPlaylists,
   likedTrackIds,
@@ -41,6 +45,8 @@ export function PlaylistBulkActions({
   onRemoveFromLiked,
   onAddToPlaylist,
   onRemoveFromPlaylist,
+  onPlayNext,
+  onAddToEnd,
 }: PlaylistBulkActionsProps) {
   const actions = getBulkActions(currentPlaylist)
   const availablePlaylists = getAvailableCustomPlaylists(
@@ -64,6 +70,22 @@ export function PlaylistBulkActions({
         )}
       />
       <DropdownMenuContent className="w-48" align="start">
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>Queue</DropdownMenuLabel>
+          {actions.playNext && (
+            <DropdownMenuItem onClick={() => onPlayNext(selectedTrackIds)}>
+              <ListStart className="size-4" />
+              Play next
+            </DropdownMenuItem>
+          )}
+          {actions.addToEnd && (
+            <DropdownMenuItem onClick={() => onAddToEnd(selectedTrackIds)}>
+              <ListEnd className="size-4" />
+              Add to end
+            </DropdownMenuItem>
+          )}
+        </DropdownMenuGroup>
+
         <DropdownMenuGroup>
           <DropdownMenuLabel>Playlist</DropdownMenuLabel>
           {actions.addToLiked && (
@@ -121,7 +143,7 @@ export function PlaylistBulkActions({
               onClick={() =>
                 onRemoveFromPlaylist(
                   currentPlaylist.id as number,
-                  selectedTrackIds,
+                  selectedPositions,
                 )}
             >
               <ListX className="size-4" />

@@ -161,6 +161,7 @@ export function PlaylistTrackRowView({
 
 export interface PlaylistTrackRowProps {
   track: Track
+  sortableId: string | number
   isActive: boolean
   isPlaying: boolean
   isSelected: boolean
@@ -175,6 +176,7 @@ export interface PlaylistTrackRowProps {
 
 export function PlaylistTrackRow({
   track,
+  sortableId,
   isActive,
   isPlaying,
   isSelected,
@@ -194,7 +196,7 @@ export function PlaylistTrackRow({
     transition,
     isDragging,
   } = useSortable({
-    id: track.id,
+    id: sortableId,
     disabled: !canReorder,
   })
 

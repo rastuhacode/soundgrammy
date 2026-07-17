@@ -8,6 +8,7 @@ import {
   getAvailableCustomPlaylists,
   getBulkActions,
   getTrackContextActions,
+  reorderByIndex,
   reorderTrackIds,
   selectionModeAfterPlaylistChange,
   sortTracks,
@@ -55,6 +56,13 @@ describe('getTrackContextActions', () => {
   it('shows removeFromPlaylist for custom playlists', () => {
     expect(getTrackContextActions({ isCustom: true }).removeFromPlaylist).toBe(true)
   })
+
+  it('includes playNext and addToEnd', () => {
+    expect(getTrackContextActions({ isCustom: false }).playNext).toBe(true)
+    expect(getTrackContextActions({ isCustom: false }).addToEnd).toBe(true)
+    expect(getBulkActions({ id: 'all', isCustom: false }).playNext).toBe(true)
+    expect(getBulkActions({ id: 'all', isCustom: false }).addToEnd).toBe(true)
+  })
 })
 
 describe('getBulkActions', () => {
@@ -89,14 +97,17 @@ describe('getAvailableCustomPlaylists', () => {
     { id: 3, name: 'C', trackIds: [] },
   ]
 
-  it('excludes playlists that already contain the single track', () => {
+  it('returns all custom playlists even when they already contain the track', () => {
     expect(getAvailableCustomPlaylists(playlists, [10]).map(p => p.id)).toEqual([
+      1,
+      2,
       3,
     ])
   })
 
-  it('keeps playlists missing at least one of the selected tracks', () => {
+  it('returns all playlists for a multi-track selection', () => {
     expect(getAvailableCustomPlaylists(playlists, [10, 20]).map(p => p.id)).toEqual([
+      1,
       2,
       3,
     ])
@@ -189,6 +200,18 @@ describe('selection mode helpers', () => {
       selectionMode: false,
       rowSelection: {},
     })
+  })
+})
+
+describe('reorderByIndex', () => {
+  it('moves an item by index', () => {
+    expect(reorderByIndex([2, 1, 1], 2, 1)).toEqual([2, 1, 1])
+    expect(reorderByIndex(['b', 'a1', 'a2'], 2, 1)).toEqual(['b', 'a2', 'a1'])
+  })
+
+  it('returns the same reference when indexes are unchanged', () => {
+    const order = [1, 2, 3]
+    expect(reorderByIndex(order, 1, 1)).toBe(order)
   })
 })
 

@@ -1,10 +1,27 @@
 import { create } from 'zustand'
 import type { Track } from '@/lib/db'
 import { setPendingListenEndReason } from '@/lib/listen-tracker'
+import {
+  appendToQueue as appendToQueueHelper,
+  clearUpNext as clearUpNextHelper,
+  enqueueNext as enqueueNextHelper,
+  jumpToQueueIndex as jumpToQueueIndexHelper,
+  realignQueueAfterPlaylistReorder,
+  remapSourceIndicesAfterReorder,
+  removeFromQueue as removeFromQueueHelper,
+  reorderQueue as reorderQueueHelper,
+  type QueueSaveScope,
+  trackIdsForSaveScope,
+} from '@/lib/queue'
 import { useRepeatStore } from '@/stores/repeat-store'
 import { useShuffleStore } from '@/stores/shuffle-store'
 import type { RepeatState } from '@/lib/repeat'
-import type { ShuffleAlgorithm, ShuffleState } from '@/lib/shuffle'
+import {
+  buildPlaylistEntries,
+  shufflePlaylistEntries,
+  type ShuffleAlgorithm,
+  type ShuffleState,
+} from '@/lib/shuffle'
 import type { PlaylistId, ResolvedSelectedPlaylist } from '@/stores/playlists-store'
 
 export interface QueueSource {
@@ -18,6 +35,11 @@ export interface Queue {
   source: QueueSource | null
   tracks: Track[]
   cursor: number
+  /**
+   * Parallel to `tracks`: playlist membership index for each queue slot.
+   * Null after queue edits diverge from the source playlist.
+   */
+  sourceIndices: number[] | null
 }
 
 interface GenerateQueueOptions {
@@ -45,12 +67,25 @@ interface PlayerState {
   generateQueue: (options: GenerateQueueOptions) => Queue
   setQueue: (queue: Queue) => void
   clearQueue: () => void
+  clearUpNext: () => void
   playQueue: (queue: Queue, cursor?: number) => void
   playPlaylist: (
     playlist: ResolvedSelectedPlaylist,
     options?: PlayPlaylistOptions,
   ) => void
   playTrack: (track: Track) => void
+  enqueueNext: (tracks: Track[]) => void
+  appendToQueue: (tracks: Track[]) => void
+  reorderQueue: (fromIndex: number, toIndex: number) => void
+  removeFromQueue: (indices: number[]) => void
+  jumpToQueueIndex: (index: number) => void
+  /** Keep session queue aligned when its source playlist membership is reordered. */
+  realignQueueToPlaylist: (
+    playlistId: PlaylistId,
+    tracks: Track[],
+    move?: { fromIndex: number, toIndex: number },
+  ) => void
+  trackIdsForSaveScope: (scope: QueueSaveScope) => number[]
   play: () => void
   pause: () => void
   setPlaying: (playing: boolean) => void
@@ -99,11 +134,40 @@ function resolveSourceTracks(queue: Queue): Track[] {
   return sourceTracks.length > 0 ? sourceTracks : queue.tracks
 }
 
+function applyQueueMutation(
+  queue: Queue,
+  result: {
+    tracks: Track[]
+    cursor: number
+    clearSource: boolean
+  },
+): Queue {
+  return {
+    source: result.clearSource ? null : queue.source,
+    tracks: result.tracks,
+    cursor: result.cursor,
+    sourceIndices: result.clearSource ? null : queue.sourceIndices,
+  }
+}
+
+/** Same track id at a new queue row still needs a listen/playback restart signal. */
+function sameTrackEpochPatch(
+  listenAttemptEpoch: number,
+  prevId: number | null | undefined,
+  nextTrack: Track | null,
+): { listenAttemptEpoch: number } | Record<string, never> {
+  if (nextTrack != null && nextTrack.id === prevId) {
+    return { listenAttemptEpoch: listenAttemptEpoch + 1 }
+  }
+  return {}
+}
+
 export const usePlayerStore = create<PlayerState>((set, get) => {
   const emptyQueue: Queue = {
     source: null,
     tracks: [],
     cursor: -1,
+    sourceIndices: null,
   }
 
   return {
@@ -124,19 +188,28 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
       const startTrack = start ?? (
         startIndex !== undefined ? playlist.tracks[startIndex] : undefined
       )
-      const tracks = shuffleState === 'on'
-        ? shuffleStore.process(
-            playlist.tracks,
-            startTrack?.id,
-            shuffleAlgorithm,
-            shuffleState,
-          )
-        : [...playlist.tracks]
-      const cursor = resolveStartCursor(
-        tracks,
-        startTrack,
-        shuffleState === 'off' ? startIndex : undefined,
+      const pinSourceIndex = startIndex ?? (
+        startTrack
+          ? playlist.tracks.findIndex(track => track.id === startTrack.id)
+          : undefined
       )
+      const pinIndex = pinSourceIndex !== undefined && pinSourceIndex >= 0
+        ? pinSourceIndex
+        : undefined
+
+      const entries = shuffleState === 'on'
+        ? shufflePlaylistEntries(
+            buildPlaylistEntries(playlist.tracks),
+            shuffleAlgorithm ?? shuffleStore.algorithm,
+            pinIndex,
+          )
+        : buildPlaylistEntries(playlist.tracks)
+
+      const tracks = entries.map(entry => entry.track)
+      const sourceIndices = entries.map(entry => entry.sourceIndex)
+      const cursor = shuffleState === 'on'
+        ? (tracks.length > 0 ? 0 : -1)
+        : resolveStartCursor(tracks, startTrack, startIndex)
 
       return {
         source: {
@@ -147,6 +220,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
         },
         tracks,
         cursor,
+        sourceIndices,
       }
     },
 
@@ -165,18 +239,34 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
       })
     },
 
+    clearUpNext: () => {
+      const { queue } = get()
+      const result = clearUpNextHelper(queue)
+      if (!result.clearSource && result.tracks === queue.tracks) return
+      const nextQueue = applyQueueMutation(queue, result)
+      set({
+        queue: nextQueue,
+        currentTrack: getCurrentTrack(nextQueue),
+        isPlaying: result.shouldPlay,
+      })
+    },
+
     playQueue: (queue, cursor = queue.cursor) => {
       const nextCursor = normalizeCursor(queue.tracks, cursor)
       const nextQueue = { ...queue, cursor: nextCursor }
       const currentTrack = getCurrentTrack(nextQueue)
       const prevId = get().currentTrack?.id
-      if (currentTrack && currentTrack.id !== prevId) {
+      // Include same-id restarts (duplicate membership / regenerate) so the
+      // listen tracker does not fall back to `skipped`.
+      if (currentTrack != null && prevId != null) {
         setPendingListenEndReason('replaced')
       }
       set({
         queue: nextQueue,
         currentTrack,
         isPlaying: currentTrack !== null,
+        // Same id (e.g. another duplicate membership) must still restart audio.
+        ...sameTrackEpochPatch(get().listenAttemptEpoch, prevId, currentTrack),
       })
     },
 
@@ -194,7 +284,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
         setPendingListenEndReason('replaced')
         const queuedIndex = queue.tracks.findIndex(item => item.id === track.id)
         const nextQueue = queuedIndex === -1
-          ? { source: null, tracks: [track], cursor: 0 }
+          ? { source: null, tracks: [track], cursor: 0, sourceIndices: null }
           : { ...queue, cursor: queuedIndex }
 
         set({
@@ -203,6 +293,125 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
           isPlaying: true,
         })
       }
+    },
+
+    enqueueNext: (tracks) => {
+      const { queue, isPlaying } = get()
+      const wasIdle = queue.tracks.length === 0 || queue.cursor < 0
+      const result = enqueueNextHelper(queue, tracks)
+      const nextQueue = applyQueueMutation(queue, result)
+      if (result.nowPlayingChanged) {
+        setPendingListenEndReason('replaced')
+      }
+      set({
+        queue: nextQueue,
+        currentTrack: getCurrentTrack(nextQueue),
+        // Idle add autoplays; while already in a session, do not resume pause.
+        isPlaying: wasIdle ? result.shouldPlay : isPlaying,
+      })
+    },
+
+    appendToQueue: (tracks) => {
+      const { queue, isPlaying } = get()
+      const wasIdle = queue.tracks.length === 0 || queue.cursor < 0
+      const result = appendToQueueHelper(queue, tracks)
+      const nextQueue = applyQueueMutation(queue, result)
+      if (result.nowPlayingChanged) {
+        setPendingListenEndReason('replaced')
+      }
+      set({
+        queue: nextQueue,
+        currentTrack: getCurrentTrack(nextQueue),
+        // Idle add autoplays; while already in a session, do not interrupt pause.
+        isPlaying: wasIdle ? result.shouldPlay : isPlaying,
+      })
+    },
+
+    reorderQueue: (fromIndex, toIndex) => {
+      const { queue } = get()
+      const result = reorderQueueHelper(queue, fromIndex, toIndex)
+      if (!result.clearSource && result.tracks === queue.tracks) return
+      const nextQueue = applyQueueMutation(queue, result)
+      set({
+        queue: nextQueue,
+        currentTrack: getCurrentTrack(nextQueue),
+        isPlaying: result.shouldPlay || get().isPlaying,
+      })
+    },
+
+    removeFromQueue: (indices) => {
+      const { queue } = get()
+      const result = removeFromQueueHelper(queue, indices)
+      if (!result.clearSource && result.tracks === queue.tracks) return
+      if (result.nowPlayingChanged) {
+        setPendingListenEndReason(
+          result.tracks.length === 0 ? 'stopped' : 'skipped',
+        )
+      }
+      const nextQueue = applyQueueMutation(queue, result)
+      set({
+        queue: nextQueue,
+        currentTrack: getCurrentTrack(nextQueue),
+        isPlaying: result.shouldPlay,
+      })
+    },
+
+    jumpToQueueIndex: (index) => {
+      const { queue, currentTrack: prevTrack, listenAttemptEpoch } = get()
+      const result = jumpToQueueIndexHelper(queue, index)
+      if (result.nowPlayingChanged) {
+        setPendingListenEndReason('replaced')
+      }
+      const nextQueue = applyQueueMutation(queue, result)
+      const nextTrack = getCurrentTrack(nextQueue)
+      set({
+        queue: nextQueue,
+        currentTrack: nextTrack,
+        isPlaying: result.shouldPlay,
+        ...(result.nowPlayingChanged
+          ? sameTrackEpochPatch(listenAttemptEpoch, prevTrack?.id, nextTrack)
+          : {}),
+      })
+    },
+
+    realignQueueToPlaylist: (playlistId, tracks, move) => {
+      const { queue } = get()
+      if (queue.source?.type !== 'playlist') return
+      if (queue.source.playlistId !== playlistId) return
+
+      const nextTrackIds = tracks.map(track => track.id)
+      const shuffle = useShuffleStore.getState().shuffle
+
+      // Shuffled session order stays; remap membership indexes so highlight
+      // follows the playing entry after playlist drag (A B C → B A C).
+      if (shuffle !== 'off') {
+        set({
+          queue: {
+            ...queue,
+            source: { ...queue.source, trackIds: nextTrackIds },
+            sourceIndices: move
+              ? remapSourceIndicesAfterReorder(queue.sourceIndices, move)
+              : queue.sourceIndices,
+          },
+        })
+        return
+      }
+
+      const aligned = realignQueueAfterPlaylistReorder(queue, tracks, move)
+      const nextQueue: Queue = {
+        source: { ...queue.source, trackIds: nextTrackIds },
+        tracks: aligned.tracks,
+        cursor: aligned.cursor,
+        sourceIndices: aligned.tracks.map((_, index) => index),
+      }
+      set({
+        queue: nextQueue,
+        currentTrack: getCurrentTrack(nextQueue),
+      })
+    },
+
+    trackIdsForSaveScope: (scope) => {
+      return trackIdsForSaveScope(get().queue, scope)
     },
 
     play: () => get().currentTrack && set({ isPlaying: true }),
@@ -216,17 +425,51 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
       const { queue, currentTrack } = get()
       if (!currentTrack || queue.tracks.length === 0) return
 
-      const sourceTracks = resolveSourceTracks(queue)
-      const nextTracks = shuffle === 'on'
-        ? shuffleStore.process(sourceTracks, currentTrack.id, undefined, shuffle)
-        : sourceTracks
-      const nextCursor = shuffle === 'on'
-        ? 0
-        : resolveStartCursor(nextTracks, currentTrack)
+      // Edited queue (no source): shuffle on reshuffles current list; shuffle off keeps it.
+      if (!queue.source) {
+        if (shuffle === 'off') return
+        const nextTracks = shuffleStore.process(
+          queue.tracks,
+          currentTrack.id,
+          undefined,
+          shuffle,
+        )
+        const nextQueue = {
+          ...queue,
+          tracks: nextTracks,
+          cursor: 0,
+          sourceIndices: null,
+        }
+        set({ queue: nextQueue, currentTrack: getCurrentTrack(nextQueue) })
+        return
+      }
 
-      const nextQueue = {
+      const sourceTracks = resolveSourceTracks(queue)
+      const playingSourceIndex = queue.sourceIndices?.[queue.cursor]
+
+      if (shuffle === 'on') {
+        const entries = shufflePlaylistEntries(
+          buildPlaylistEntries(sourceTracks),
+          shuffleStore.algorithm,
+          playingSourceIndex,
+        )
+        const nextQueue: Queue = {
+          ...queue,
+          tracks: entries.map(entry => entry.track),
+          sourceIndices: entries.map(entry => entry.sourceIndex),
+          cursor: 0,
+        }
+        set({ queue: nextQueue, currentTrack: getCurrentTrack(nextQueue) })
+        return
+      }
+
+      const nextCursor = playingSourceIndex != null
+        ? normalizeCursor(sourceTracks, playingSourceIndex)
+        : resolveStartCursor(sourceTracks, currentTrack)
+      const nextQueue: Queue = {
         ...queue,
-        tracks: nextTracks,
+        tracks: sourceTracks,
+        sourceIndices: sourceTracks.map((_, index) => index),
         cursor: nextCursor,
       }
 
@@ -251,24 +494,49 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
       if (queue.tracks.length === 0) return
 
       const trackById = new Map(libraryTracks.map(track => [track.id, track]))
-      const currentTrackId = getCurrentTrack(queue)?.id
-      const refreshedTracks = queue.tracks
-        .map(track => trackById.get(track.id))
-        .filter((track): track is Track => track !== undefined)
+      const playingSourceIndex = queue.sourceIndices?.[queue.cursor] ?? null
+      const refreshedPairs = queue.tracks
+        .map((track, index) => {
+          const next = trackById.get(track.id)
+          if (!next) return null
+          return {
+            track: next,
+            sourceIndex: queue.sourceIndices?.[index],
+          }
+        })
+        .filter((pair): pair is { track: Track, sourceIndex: number | undefined } =>
+          pair !== null,
+        )
 
-      if (refreshedTracks.length === 0) return get().clearQueue()
+      if (refreshedPairs.length === 0) return get().clearQueue()
 
-      const sameCurrentIndex = currentTrackId === undefined
-        ? -1
-        : refreshedTracks.findIndex(track => track.id === currentTrackId)
-      const nextCursor = normalizeCursor(
-        refreshedTracks,
-        sameCurrentIndex === -1 ? queue.cursor : sameCurrentIndex,
-      )
-      const nextQueue = {
+      const refreshedTracks = refreshedPairs.map(pair => pair.track)
+      const nextSourceIndices = queue.sourceIndices
+        ? refreshedPairs.map(pair => pair.sourceIndex ?? -1).filter(index => index >= 0)
+        : null
+      const sourceIndices
+        = nextSourceIndices && nextSourceIndices.length === refreshedTracks.length
+          ? nextSourceIndices
+          : null
+
+      let nextCursor = queue.cursor
+      if (playingSourceIndex != null && sourceIndices) {
+        const mapped = sourceIndices.indexOf(playingSourceIndex)
+        nextCursor = mapped === -1 ? queue.cursor : mapped
+      }
+      else {
+        const currentTrackId = getCurrentTrack(queue)?.id
+        const sameCurrentIndex = currentTrackId === undefined
+          ? -1
+          : refreshedTracks.findIndex(track => track.id === currentTrackId)
+        nextCursor = sameCurrentIndex === -1 ? queue.cursor : sameCurrentIndex
+      }
+
+      const nextQueue: Queue = {
         ...queue,
         tracks: refreshedTracks,
-        cursor: nextCursor,
+        cursor: normalizeCursor(refreshedTracks, nextCursor),
+        sourceIndices,
         source: queue.source
           ? {
               ...queue.source,
@@ -282,13 +550,12 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
 
     playNext: (options) => {
       const reason = options?.reason ?? 'skipped'
-      const { queue } = get()
+      const { queue, listenAttemptEpoch } = get()
       const { repeat } = useRepeatStore.getState()
       if (queue.tracks.length === 0 || queue.cursor < 0) return
 
       const isLast = queue.cursor === queue.tracks.length - 1
       if (isLast && repeat === 'none') return set({ isPlaying: false })
-
       const nextQueue = {
         ...queue,
         cursor: isLast ? 0 : queue.cursor + 1,
@@ -305,34 +572,32 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
         queue: nextQueue,
         currentTrack: nextTrack,
         isPlaying: true,
+        // Skipped: audio + listen tracker need the epoch bump.
+        // Completed same-id is restarted in useAudioEngine (avoid double listen).
         ...(reason === 'skipped' && sameTrack
-          ? { listenAttemptEpoch: get().listenAttemptEpoch + 1 }
+          ? { listenAttemptEpoch: listenAttemptEpoch + 1 }
           : {}),
       })
     },
 
     playPrevious: () => {
-      const { queue } = get()
+      const { queue, listenAttemptEpoch } = get()
       const { repeat } = useRepeatStore.getState()
       if (queue.tracks.length === 0 || queue.cursor < 0) return
       if (queue.cursor === 0 && repeat === 'none') return
-
       const nextQueue = {
         ...queue,
         cursor: queue.cursor === 0 ? queue.tracks.length - 1 : queue.cursor - 1,
       }
       const nextTrack = getCurrentTrack(nextQueue)
       const prevId = get().currentTrack?.id
-      const sameTrack = nextTrack != null && nextTrack.id === prevId
 
       setPendingListenEndReason('skipped')
       set({
         queue: nextQueue,
         currentTrack: nextTrack,
         isPlaying: true,
-        ...(sameTrack
-          ? { listenAttemptEpoch: get().listenAttemptEpoch + 1 }
-          : {}),
+        ...sameTrackEpochPatch(listenAttemptEpoch, prevId, nextTrack),
       })
     },
   }

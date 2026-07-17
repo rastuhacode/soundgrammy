@@ -39,13 +39,15 @@ import {
   PlaylistTrackRow,
   PlaylistTrackRowView,
 } from './PlaylistTrackRow'
-import { compareTracks, reorderTrackIds, type CustomPlaylistRef } from './track-actions'
+import { compareTracks, reorderByIndex, type CustomPlaylistRef } from './track-actions'
 
 export interface PlaylistTracksTableProps {
   tracks: Track[]
+  sourceIndices: number[]
   currentPlaylist: ResolvedSelectedPlaylist
   customPlaylists: CustomPlaylistRef[]
-  currentTrackId: number | null
+  /** Membership index of the now-playing row; null when nothing should highlight. */
+  playingSourceIndex: number | null
   isPlaying: boolean
   isTrackLiked: (trackId: number) => boolean
   selectionMode: boolean
@@ -54,12 +56,17 @@ export interface PlaylistTracksTableProps {
   sorting: SortingState
   onSortingChange: OnChangeFn<SortingState>
   canReorder: boolean
-  onReorderTracks: (trackIds: number[]) => void
-  onEnterSelection: (trackId: number) => void
+  onReorderTracks: (
+    trackIds: number[],
+    move: { fromIndex: number, toIndex: number },
+  ) => void
+  onEnterSelection: (sourceIndex: number) => void
   onTrackPlay: (track: Track, startIndex: number) => void
   onToggleLike: (trackId: number) => void
   onAddToPlaylist: (playlistId: number, trackId: number) => void
-  onDeleteFromPlaylist: (playlistId: number, trackId: number) => void
+  onDeleteFromPlaylist: (playlistId: number, position: number) => void
+  onPlayNext: (track: Track) => void
+  onAddToEnd: (track: Track) => void
   onDownload: (track: Track) => void
   onShowInfo: (track: Track) => void
 }
@@ -72,9 +79,10 @@ function SortIcon({ sorted }: { sorted: false | 'asc' | 'desc' }) {
 
 export function PlaylistTracksTable({
   tracks,
+  sourceIndices,
   currentPlaylist,
   customPlaylists,
-  currentTrackId,
+  playingSourceIndex,
   isPlaying,
   isTrackLiked,
   selectionMode,
@@ -89,11 +97,13 @@ export function PlaylistTracksTable({
   onToggleLike,
   onAddToPlaylist,
   onDeleteFromPlaylist,
+  onPlayNext,
+  onAddToEnd,
   onDownload,
   onShowInfo,
 }: PlaylistTracksTableProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
-  const [activeTrackId, setActiveTrackId] = useState<number | null>(null)
+  const [activeSourceIndex, setActiveSourceIndex] = useState<number | null>(null)
 
   const columns = useMemo<ColumnDef<Track>[]>(() => {
     const defs: ColumnDef<Track>[] = []
@@ -162,7 +172,7 @@ export function PlaylistTracksTable({
       sorting,
       rowSelection,
     },
-    getRowId: row => String(row.id),
+    getRowId: (_row, index) => String(sourceIndices[index] ?? index),
     enableRowSelection: selectionMode,
     onSortingChange,
     onRowSelectionChange,
@@ -171,7 +181,10 @@ export function PlaylistTracksTable({
   })
 
   const rows = table.getRowModel().rows
-  const sortableIds = useMemo(() => tracks.map(track => track.id), [tracks])
+  const sortableIds = useMemo(
+    () => sourceIndices.map(index => String(index)),
+    [sourceIndices],
+  )
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -194,31 +207,39 @@ export function PlaylistTracksTable({
     ? TRACK_GRID_COLS_SELECT
     : TRACK_GRID_COLS
 
-  const activeTrack = activeTrackId === null
+  const activeTrack = activeSourceIndex === null
     ? null
-    : tracks.find(track => track.id === activeTrackId) ?? null
+    : tracks[sourceIndices.indexOf(activeSourceIndex)] ?? null
 
   const handleDragStart = (event: DragStartEvent) => {
-    setActiveTrackId(Number(event.active.id))
+    setActiveSourceIndex(Number(event.active.id))
   }
 
   const handleDragCancel = () => {
-    setActiveTrackId(null)
+    setActiveSourceIndex(null)
   }
 
   const handleDragEnd = (event: DragEndEvent) => {
-    setActiveTrackId(null)
+    setActiveSourceIndex(null)
     if (!canReorder) return
     const { active, over } = event
     if (!over || active.id === over.id) return
 
-    const next = reorderTrackIds(
-      sortableIds,
-      Number(active.id),
-      Number(over.id),
-    )
-    if (next === sortableIds) return
-    onReorderTracks(next)
+    const fromIndex = sourceIndices.indexOf(Number(active.id))
+    const toIndex = sourceIndices.indexOf(Number(over.id))
+    if (fromIndex < 0 || toIndex < 0) return
+
+    const trackIds = tracks.map(track => track.id)
+    const next = reorderByIndex(trackIds, fromIndex, toIndex)
+    if (
+      fromIndex === toIndex
+      || next.length !== trackIds.length
+    ) {
+      return
+    }
+    // Always notify — duplicate ids can leave the id list unchanged while the
+    // playing membership index must still move with the drag.
+    onReorderTracks(next, { fromIndex, toIndex })
   }
 
   return (
@@ -316,12 +337,14 @@ export function PlaylistTracksTable({
                 if (!row) return null
 
                 const track = row.original
+                const sourceIndex = Number(row.id)
                 const isSelected = row.getIsSelected()
 
                 return (
                   <PlaylistTrackContextMenu
                     key={row.id}
                     track={track}
+                    sourceIndex={sourceIndex}
                     isLiked={isTrackLiked(track.id)}
                     currentPlaylist={currentPlaylist}
                     customPlaylists={customPlaylists}
@@ -329,13 +352,16 @@ export function PlaylistTracksTable({
                     onToggleLike={onToggleLike}
                     onAddToPlaylist={onAddToPlaylist}
                     onDeleteFromPlaylist={onDeleteFromPlaylist}
+                    onPlayNext={onPlayNext}
+                    onAddToEnd={onAddToEnd}
                     onDownload={onDownload}
                     onShowInfo={onShowInfo}
                   >
                     <PlaylistTrackRow
                       virtualStart={virtualRow.start}
                       track={track}
-                      isActive={currentTrackId === track.id}
+                      sortableId={row.id}
+                      isActive={playingSourceIndex === sourceIndex}
                       isPlaying={isPlaying}
                       isSelected={isSelected}
                       selectionMode={selectionMode}
@@ -345,13 +371,13 @@ export function PlaylistTracksTable({
                           row.toggleSelected(!isSelected)
                           return
                         }
-                        onTrackPlay(track, virtualRow.index)
+                        onTrackPlay(track, sourceIndex)
                       }}
                       onToggleSelected={(selected) => {
                         row.toggleSelected(selected)
                       }}
                       onPlayFromThumb={() => {
-                        onTrackPlay(track, virtualRow.index)
+                        onTrackPlay(track, sourceIndex)
                       }}
                     />
                   </PlaylistTrackContextMenu>
@@ -365,7 +391,7 @@ export function PlaylistTracksTable({
               ? (
                   <PlaylistTrackRowView
                     track={activeTrack}
-                    isActive={currentTrackId === activeTrack.id}
+                    isActive={playingSourceIndex === activeSourceIndex}
                     isPlaying={isPlaying}
                     isSelected={false}
                     selectionMode={false}
