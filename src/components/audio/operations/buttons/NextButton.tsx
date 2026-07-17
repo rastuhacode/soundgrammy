@@ -17,7 +17,7 @@ export function NextButton() {
           '[&>svg]:fill-current [&>svg]:size-5',
         )
       }
-      onClick={playNext}
+      onClick={() => playNext()}
     >
       <SkipForward />
     </button>

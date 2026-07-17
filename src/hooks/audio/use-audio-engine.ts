@@ -5,6 +5,7 @@ import { useRepeatStore } from '@/stores/repeat-store'
 import { useAudioSeek } from './use-audio-seek'
 import { useAudioSource } from './use-audio-source'
 import { useAudioVolume } from './use-audio-volume'
+import { useListenTracker } from './use-listen-tracker'
 
 export function useAudioEngine() {
   const track = usePlayerStore(state => state.currentTrack)
@@ -110,6 +111,12 @@ export function useAudioEngine() {
     playAudio,
   })
 
+  const { notifyCompleted } = useListenTracker({
+    trackId: track?.id ?? null,
+    durationSeconds: track?.duration,
+    isPlaying,
+  })
+
   const handleSeekRef = useRef(handleSeek)
 
   useEffect(() => {
@@ -178,6 +185,8 @@ export function useAudioEngine() {
   }
 
   function handleTrackEnded() {
+    if (loadedTrackIdRef.current !== track?.id) return
+
     const audio = audioRef.current
     const metaDuration = track?.duration ?? 0
     // Mis-sniffed containers (e.g. WebM served as .mp3) can report a tiny
@@ -193,6 +202,7 @@ export function useAudioEngine() {
       return
     }
     if (repeat === 'one') {
+      notifyCompleted(true)
       if (!audio) return
       handleSeek(0)
       finishPendingSeek(audio)
@@ -205,7 +215,20 @@ export function useAudioEngine() {
       }
       return
     }
-    playNext()
+
+    // Same-track continue (e.g. single-track repeat-all): trackId will not
+    // change, so restart the attempt here. Last-track + repeat-none stops —
+    // a later play resumes via the isPlaying effect in useListenTracker.
+    const queue = usePlayerStore.getState().queue
+    const isLast = queue.cursor === queue.tracks.length - 1
+    const nextCursor = isLast ? 0 : queue.cursor + 1
+    const nextTrackId = isLast && repeat === 'none'
+      ? null
+      : queue.tracks[nextCursor]?.id ?? null
+    const restartSameTrack = nextTrackId != null && nextTrackId === track?.id
+
+    notifyCompleted(restartSameTrack)
+    playNext({ reason: 'completed' })
   }
 
   return {

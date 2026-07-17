@@ -39,5 +39,6 @@ cd src-tauri && cargo check
 ## Docs
 
 - [docs/architecture.md](docs/architecture.md) — data flow, sync, media
-- [docs/MSE-integration.md](docs/MSE-integration.md) — streamed playback via MediaSource
+- [docs/streaming.md](docs/streaming.md) — streamed playback via MediaSource
+- [docs/listen-statistics.md](docs/listen-statistics.md) — listen events, aggregates, likeness
 - [docs/security.md](docs/security.md) — credentials, session, high-risk areas

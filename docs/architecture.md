@@ -27,6 +27,7 @@ flowchart LR
 | Custom playlists | App | SQLite |
 | Liked playlist | App | SQLite |
 | Playback queue / UI state | App | Zustand (ephemeral) |
+| Listen statistics | App (listen behaviour) | SQLite events + aggregates ([listen-statistics.md](./listen-statistics.md)) |
 
 ## Media
 
@@ -54,6 +55,7 @@ Listeners live in `src/lib/api.ts`.
 | Telegram sync | `telegram/saved_music.rs` |
 | Auth flows | `telegram/auth.rs` + login UI |
 | Player UI / queue | `stores/player-store.ts`, `components/audio/` |
+| Listen statistics | `listen_stats.rs`, `db.rs`, `hooks/audio/use-listen-tracker.ts` |
 | Playlist tracklist (table, sort, selection, context menu) | `components/playlist/` (`PlaylistView`, `PlaylistTracksTable`, `track-actions`) |
 
 ## Playlist boundaries

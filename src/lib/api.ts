@@ -6,10 +6,13 @@ import type {
   AuthUser,
   CustomPlaylistSummary,
   LikedPlaylist,
+  ListenEndReason,
+  ListenEndResult,
   PlaylistsBundle,
   QrOutcome,
   SyncResult,
   Track,
+  TrackListenStats,
   TrackMetadata,
 } from '@/types'
 
@@ -113,6 +116,26 @@ export const api = {
   reorderPlaylistTracks: (playlistId: number, trackIds: number[]) =>
     invoke<string>('reorder_playlist_tracks', { playlistId, trackIds }),
   toggleLike: (trackId: number) => invoke<LikedPlaylist>('toggle_like', { trackId }),
+
+  // ---- listen statistics ----------------------------------------------
+  recordListenStart: (trackId: number) =>
+    invoke<void>('record_listen_start', { trackId }),
+  recordListenEnd: (input: {
+    trackId: number
+    listenedMs: number
+    durationMs?: number | null
+    endReason: ListenEndReason
+  }) =>
+    invoke<ListenEndResult>('record_listen_end', {
+      trackId: input.trackId,
+      listenedMs: input.listenedMs,
+      durationMs: input.durationMs ?? null,
+      endReason: input.endReason,
+    }),
+  getTrackListenStats: (trackId: number) =>
+    invoke<TrackListenStats | null>('get_track_listen_stats', { trackId }),
+  listListenStats: () => invoke<TrackListenStats[]>('list_listen_stats'),
+  rebuildListenStats: () => invoke<void>('rebuild_listen_stats'),
 }
 
 /** Turns an absolute cache path into an `asset:` URL for `<audio>`/`<img>`. */

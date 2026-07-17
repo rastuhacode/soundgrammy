@@ -5,6 +5,7 @@ mod commands;
 mod config;
 mod db;
 mod error;
+mod listen_stats;
 mod session;
 mod state;
 mod streaming;
@@ -82,6 +83,11 @@ pub fn run() {
             commands::remove_track_from_playlist,
             commands::reorder_playlist_tracks,
             commands::toggle_like,
+            commands::record_listen_start,
+            commands::record_listen_end,
+            commands::get_track_listen_stats,
+            commands::list_listen_stats,
+            commands::rebuild_listen_stats,
         ])
         .run(tauri::generate_context!())
         .expect("error while running SoundGrammy");

@@ -4,8 +4,12 @@ use serde::Serialize;
 use tauri::{AppHandle, State};
 
 use crate::cache;
-use crate::db::{CustomPlaylistSummary, LikedPlaylist, PlaylistsBundle, Profile, Track};
+use crate::db::{
+    CustomPlaylistSummary, LikedPlaylist, ListenEndResult, PlaylistsBundle, Profile, Track,
+    TrackListenStats,
+};
 use crate::error::{AppError, AppResult};
+use crate::listen_stats::EndReason;
 use crate::state::AppState;
 use crate::streaming;
 use crate::telegram::auth::{self, AuthOutcome, AuthUser, QrOutcome};
@@ -480,4 +484,44 @@ pub async fn toggle_like(
 ) -> AppResult<LikedPlaylist> {
     let uid = require_uid(&state)?;
     state.db.toggle_like(track_id, uid)
+}
+
+// ---- listen statistics ---------------------------------------------------
+
+#[tauri::command]
+pub async fn record_listen_start(state: State<'_, AppState>, track_id: i64) -> AppResult<()> {
+    state.db.record_attempt_start(track_id)
+}
+
+#[tauri::command]
+pub async fn record_listen_end(
+    state: State<'_, AppState>,
+    track_id: i64,
+    listened_ms: i64,
+    duration_ms: Option<i64>,
+    end_reason: String,
+) -> AppResult<ListenEndResult> {
+    let reason = EndReason::parse(&end_reason)
+        .ok_or_else(|| AppError::msg(format!("invalid end_reason: {end_reason}")))?;
+    state
+        .db
+        .record_attempt_end(track_id, listened_ms, duration_ms, reason)
+}
+
+#[tauri::command]
+pub async fn get_track_listen_stats(
+    state: State<'_, AppState>,
+    track_id: i64,
+) -> AppResult<Option<TrackListenStats>> {
+    state.db.track_listen_stats(track_id)
+}
+
+#[tauri::command]
+pub async fn list_listen_stats(state: State<'_, AppState>) -> AppResult<Vec<TrackListenStats>> {
+    state.db.all_listen_stats()
+}
+
+#[tauri::command]
+pub async fn rebuild_listen_stats(state: State<'_, AppState>) -> AppResult<()> {
+    state.db.rebuild_listen_stats()
 }

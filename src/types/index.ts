@@ -106,3 +106,29 @@ export interface TrackMetadata {
     attributes: SerializedAttribute[]
   }
 }
+
+export type ListenEndReason
+  = | 'completed'
+    | 'skipped'
+    | 'replaced'
+    | 'stopped'
+    | 'interrupted'
+
+export interface TrackListenStats {
+  track_id: number
+  starts: number
+  qualified_plays: number
+  completes: number
+  early_skips: number
+  total_listened_ms: number
+  first_played_at_ms: number | null
+  last_played_at_ms: number | null
+  likeness: number
+}
+
+export interface ListenEndResult {
+  qualified: boolean
+  early_skip: boolean
+  listened_eff_ms: number
+  stats: TrackListenStats
+}

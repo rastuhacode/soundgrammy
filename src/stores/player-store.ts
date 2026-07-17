@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import type { Track } from '@/lib/db'
+import { setPendingListenEndReason } from '@/lib/listen-tracker'
 import { useRepeatStore } from '@/stores/repeat-store'
 import { useShuffleStore } from '@/stores/shuffle-store'
 import type { RepeatState } from '@/lib/repeat'
@@ -38,6 +39,8 @@ interface PlayerState {
   queue: Queue
   currentTrack: Track | null
   isPlaying: boolean
+  /** Bumped when next/prev keeps the same track id (duplicate rows / single-track). */
+  listenAttemptEpoch: number
 
   generateQueue: (options: GenerateQueueOptions) => Queue
   setQueue: (queue: Queue) => void
@@ -58,7 +61,7 @@ interface PlayerState {
   toggleRepeat: () => void
   hydratePreferences: () => void
   refreshQueueTracks: (libraryTracks: Track[]) => void
-  playNext: () => void
+  playNext: (options?: { reason?: 'skipped' | 'completed' }) => void
   playPrevious: () => void
 }
 
@@ -107,6 +110,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     queue: emptyQueue,
     currentTrack: null,
     isPlaying: false,
+    listenAttemptEpoch: 0,
 
     generateQueue: ({
       playlist,
@@ -152,16 +156,23 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
       set({ queue: nextQueue, currentTrack: getCurrentTrack(nextQueue) })
     },
 
-    clearQueue: () => set({
-      queue: emptyQueue,
-      currentTrack: null,
-      isPlaying: false,
-    }),
+    clearQueue: () => {
+      setPendingListenEndReason('stopped')
+      set({
+        queue: emptyQueue,
+        currentTrack: null,
+        isPlaying: false,
+      })
+    },
 
     playQueue: (queue, cursor = queue.cursor) => {
       const nextCursor = normalizeCursor(queue.tracks, cursor)
       const nextQueue = { ...queue, cursor: nextCursor }
       const currentTrack = getCurrentTrack(nextQueue)
+      const prevId = get().currentTrack?.id
+      if (currentTrack && currentTrack.id !== prevId) {
+        setPendingListenEndReason('replaced')
+      }
       set({
         queue: nextQueue,
         currentTrack,
@@ -180,6 +191,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
         set({ isPlaying: !isPlaying })
       }
       else {
+        setPendingListenEndReason('replaced')
         const queuedIndex = queue.tracks.findIndex(item => item.id === track.id)
         const nextQueue = queuedIndex === -1
           ? { source: null, tracks: [track], cursor: 0 }
@@ -268,7 +280,8 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
       set({ queue: nextQueue, currentTrack: getCurrentTrack(nextQueue) })
     },
 
-    playNext: () => {
+    playNext: (options) => {
+      const reason = options?.reason ?? 'skipped'
       const { queue } = get()
       const { repeat } = useRepeatStore.getState()
       if (queue.tracks.length === 0 || queue.cursor < 0) return
@@ -280,10 +293,21 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
         ...queue,
         cursor: isLast ? 0 : queue.cursor + 1,
       }
+      const nextTrack = getCurrentTrack(nextQueue)
+      const prevId = get().currentTrack?.id
+      const sameTrack = nextTrack != null && nextTrack.id === prevId
+
+      if (reason === 'skipped') {
+        setPendingListenEndReason('skipped')
+      }
+
       set({
         queue: nextQueue,
-        currentTrack: getCurrentTrack(nextQueue),
+        currentTrack: nextTrack,
         isPlaying: true,
+        ...(reason === 'skipped' && sameTrack
+          ? { listenAttemptEpoch: get().listenAttemptEpoch + 1 }
+          : {}),
       })
     },
 
@@ -297,10 +321,18 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
         ...queue,
         cursor: queue.cursor === 0 ? queue.tracks.length - 1 : queue.cursor - 1,
       }
+      const nextTrack = getCurrentTrack(nextQueue)
+      const prevId = get().currentTrack?.id
+      const sameTrack = nextTrack != null && nextTrack.id === prevId
+
+      setPendingListenEndReason('skipped')
       set({
         queue: nextQueue,
-        currentTrack: getCurrentTrack(nextQueue),
+        currentTrack: nextTrack,
         isPlaying: true,
+        ...(sameTrack
+          ? { listenAttemptEpoch: get().listenAttemptEpoch + 1 }
+          : {}),
       })
     },
   }
