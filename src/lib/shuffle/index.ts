@@ -51,7 +51,7 @@ export function shufflePlaylistEntries(
 ): PlaylistQueueEntry[] {
   if (entries.length <= 1) return entries
 
-  let shuffled = algorithm(entries)
+  const shuffled = algorithm(entries)
   if (pinSourceIndex === undefined) return shuffled
 
   const pinIndex = shuffled.findIndex(entry => entry.sourceIndex === pinSourceIndex)

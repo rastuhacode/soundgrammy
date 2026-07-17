@@ -49,10 +49,7 @@ export function PlaylistBulkActions({
   onAddToEnd,
 }: PlaylistBulkActionsProps) {
   const actions = getBulkActions(currentPlaylist)
-  const availablePlaylists = getAvailableCustomPlaylists(
-    customPlaylists,
-    selectedTrackIds,
-  )
+  const availablePlaylists = getAvailableCustomPlaylists(customPlaylists)
   const unlikedIds = selectedTrackIds.filter(id => !likedTrackIds.has(id))
   const likedIds = selectedTrackIds.filter(id => likedTrackIds.has(id))
   const count = selectedTrackIds.length

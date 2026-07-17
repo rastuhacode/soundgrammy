@@ -63,9 +63,7 @@ export function PlaylistTrackContextMenu({
   onShowInfo,
 }: PlaylistTrackContextMenuProps) {
   const actions = getTrackContextActions(currentPlaylist)
-  const availablePlaylists = getAvailableCustomPlaylists(customPlaylists, [
-    track.id,
-  ])
+  const availablePlaylists = getAvailableCustomPlaylists(customPlaylists)
 
   return (
     <ContextMenu>

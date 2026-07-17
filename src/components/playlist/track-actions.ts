@@ -63,7 +63,6 @@ export function canRemoveFromPlaylist(
  */
 export function getAvailableCustomPlaylists(
   custom: CustomPlaylistRef[],
-  _trackIds: number[],
 ): CustomPlaylistRef[] {
   return custom
 }
@@ -100,8 +99,7 @@ export function getBulkActions(
   }
 }
 
-/** Build a playable playlist snapshot from an explicit track order (tests / helpers).
- * Playback UI uses the full selected playlist — search/sort are display-only. */
+/** Build a playable playlist snapshot from an explicit track order. */
 export function toPlayablePlaylist(
   playlist: ResolvedSelectedPlaylist,
   orderedTracks: Track[],
@@ -123,12 +121,25 @@ export function toPlayablePlaylist(
   }
 }
 
+/** Membership-aware sort so duplicate track ids keep a stable slot order. */
+export function sortIndexedPlaylistTracks(
+  tracks: Track[],
+  sort: TrackSortState | null,
+): { track: Track, sourceIndex: number }[] {
+  const indexed = tracks.map((track, sourceIndex) => ({ track, sourceIndex }))
+  if (!sort) return indexed
+  return [...indexed].sort((a, b) => {
+    const cmp = compareTracks(a.track, b.track, sort)
+    return cmp !== 0 ? cmp : a.sourceIndex - b.sourceIndex
+  })
+}
+
 export function sortTracks(
   tracks: Track[],
   sort: TrackSortState | null,
 ): Track[] {
   if (!sort) return tracks
-  return [...tracks].sort((a, b) => compareTracks(a, b, sort))
+  return sortIndexedPlaylistTracks(tracks, sort).map(({ track }) => track)
 }
 
 export function sortingStateToTrackSort(

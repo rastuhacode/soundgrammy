@@ -239,7 +239,7 @@ export function removeFromQueue(
     }
   }
 
-  let tracks = [...queue.tracks]
+  const tracks = [...queue.tracks]
   let cursor = queue.cursor
   let removedNowPlaying = false
 

@@ -116,6 +116,7 @@ export function QueuePopoverPanel({ onClose, hasTracks }: QueuePopoverPanelProps
     [queue.tracks.length, queue.cursor, historyOpen, upNextOpen],
   )
 
+  // eslint-disable-next-line react-hooks/incompatible-library -- TanStack Virtual
   const virtualizer = useVirtualizer({
     count: listItems.length,
     getScrollElement: () => scrollRef.current,

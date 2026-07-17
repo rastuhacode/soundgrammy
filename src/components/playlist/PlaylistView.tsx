@@ -27,6 +27,8 @@ import { PlaylistTracksTable } from './PlaylistTracksTable'
 import { TrackInfoDialog } from './TrackInfoDialog'
 import {
   enterSelectionWithTrack,
+  sortIndexedPlaylistTracks,
+  sortingStateToTrackSort,
 } from './track-actions'
 import { Button } from '@/components/ui/button'
 import { useFilter } from '@/hooks/utils/use-filter'
@@ -180,9 +182,25 @@ function PlaylistViewContent() {
       && sorting.length === 0
       && !selectionMode
 
+  const playableEntries = useMemo(
+    () => sortIndexedPlaylistTracks(
+      playlistTracks,
+      sortingStateToTrackSort(sorting),
+    ),
+    [playlistTracks, sorting],
+  )
+
   const handleTrackSelect = (track: Track, sourceIndex: number) => {
-    // Search/sort are display-only — queue from the full playlist at this membership index.
-    playPlaylist(selectedPlaylist, { start: track, startIndex: sourceIndex })
+    // Search filters the table only — queue is still the full playlist.
+    // Column sort does apply to playback order; start at this membership slot.
+    const startIndex = playableEntries.findIndex(
+      entry => entry.sourceIndex === sourceIndex,
+    )
+    playPlaylist(selectedPlaylist, {
+      start: track,
+      startIndex: startIndex >= 0 ? startIndex : 0,
+      orderedEntries: playableEntries,
+    })
   }
 
   const handleReorderTracks = async (
@@ -442,7 +460,7 @@ function PlaylistViewContent() {
     appendToQueue([track])
   }
 
-  const handleBulkPlayNext = (_trackIds: number[]) => {
+  const handleBulkPlayNext = () => {
     enqueueNext(
       selectedSourceIndices
         .map(index => playlistTracks[index])
@@ -450,7 +468,7 @@ function PlaylistViewContent() {
     )
   }
 
-  const handleBulkAddToEnd = (_trackIds: number[]) => {
+  const handleBulkAddToEnd = () => {
     appendToQueue(
       selectedSourceIndices
         .map(index => playlistTracks[index])
@@ -477,11 +495,17 @@ function PlaylistViewContent() {
   }
 
   function handlePlaylistPlay() {
-    playPlaylist(selectedPlaylist, { startIndex: 0 })
+    playPlaylist(selectedPlaylist, {
+      startIndex: 0,
+      orderedEntries: playableEntries,
+    })
   }
 
   function handlePlaylistShuffle() {
-    playPlaylist(selectedPlaylist, { shuffle: 'on' })
+    playPlaylist(selectedPlaylist, {
+      shuffle: 'on',
+      orderedEntries: playableEntries,
+    })
   }
 
   const handleShowInfo = (track: Track) => {

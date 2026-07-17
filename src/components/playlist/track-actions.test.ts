@@ -11,6 +11,7 @@ import {
   reorderByIndex,
   reorderTrackIds,
   selectionModeAfterPlaylistChange,
+  sortIndexedPlaylistTracks,
   sortTracks,
   toPlayablePlaylist,
 } from './track-actions'
@@ -98,7 +99,7 @@ describe('getAvailableCustomPlaylists', () => {
   ]
 
   it('returns all custom playlists even when they already contain the track', () => {
-    expect(getAvailableCustomPlaylists(playlists, [10]).map(p => p.id)).toEqual([
+    expect(getAvailableCustomPlaylists(playlists).map(p => p.id)).toEqual([
       1,
       2,
       3,
@@ -106,7 +107,7 @@ describe('getAvailableCustomPlaylists', () => {
   })
 
   it('returns all playlists for a multi-track selection', () => {
-    expect(getAvailableCustomPlaylists(playlists, [10, 20]).map(p => p.id)).toEqual([
+    expect(getAvailableCustomPlaylists(playlists).map(p => p.id)).toEqual([
       1,
       2,
       3,
@@ -114,7 +115,7 @@ describe('getAvailableCustomPlaylists', () => {
   })
 
   it('returns all playlists when selection is empty', () => {
-    expect(getAvailableCustomPlaylists(playlists, []).map(p => p.id)).toEqual([
+    expect(getAvailableCustomPlaylists(playlists).map(p => p.id)).toEqual([
       1,
       2,
       3,
@@ -172,10 +173,40 @@ describe('toPlayablePlaylist', () => {
   })
 })
 
+describe('sortIndexedPlaylistTracks', () => {
+  it('sorts by title while preserving membership indexes', () => {
+    const tracks = [
+      track(1, { title: 'C' }),
+      track(2, { title: 'A' }),
+      track(1, { title: 'C' }), // duplicate id, later membership
+    ]
+    const ordered = sortIndexedPlaylistTracks(tracks, { id: 'title', desc: false })
+    expect(ordered.map(entry => entry.track.title)).toEqual(['A', 'C', 'C'])
+    expect(ordered.map(entry => entry.sourceIndex)).toEqual([1, 0, 2])
+  })
+
+  it('returns identity order when sort is null', () => {
+    const tracks = [track(1), track(2)]
+    expect(sortIndexedPlaylistTracks(tracks, null)).toEqual([
+      { track: tracks[0], sourceIndex: 0 },
+      { track: tracks[1], sourceIndex: 1 },
+    ])
+  })
+})
+
 describe('sortTracks', () => {
   it('returns the same reference when sort is null', () => {
     const tracks = [track(1), track(2)]
     expect(sortTracks(tracks, null)).toBe(tracks)
+  })
+
+  it('orders by title ascending', () => {
+    const tracks = [
+      track(1, { title: 'B' }),
+      track(2, { title: 'A' }),
+    ]
+    expect(sortTracks(tracks, { id: 'title', desc: false }).map(t => t.id))
+      .toEqual([2, 1])
   })
 })
 

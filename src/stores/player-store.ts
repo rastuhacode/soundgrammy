@@ -19,6 +19,7 @@ import type { RepeatState } from '@/lib/repeat'
 import {
   buildPlaylistEntries,
   shufflePlaylistEntries,
+  type PlaylistQueueEntry,
   type ShuffleAlgorithm,
   type ShuffleState,
 } from '@/lib/shuffle'
@@ -46,8 +47,14 @@ interface GenerateQueueOptions {
   playlist: ResolvedSelectedPlaylist
   shuffle?: ShuffleState
   start?: Track
+  /** Index into `orderedEntries` (or playlist.tracks when omitted). */
   startIndex?: number
   shuffleAlgorithm?: ShuffleAlgorithm
+  /**
+   * Playback order with original membership indexes (e.g. UI column sort).
+   * When omitted, membership order is used.
+   */
+  orderedEntries?: PlaylistQueueEntry[]
 }
 
 interface PlayPlaylistOptions {
@@ -55,6 +62,7 @@ interface PlayPlaylistOptions {
   startIndex?: number
   shuffle?: ShuffleState
   shuffleAlgorithm?: ShuffleAlgorithm
+  orderedEntries?: PlaylistQueueEntry[]
 }
 
 interface PlayerState {
@@ -182,28 +190,31 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
       start,
       startIndex,
       shuffleAlgorithm,
+      orderedEntries,
     }) => {
       const shuffleStore = useShuffleStore.getState()
       const shuffleState = shuffle ?? shuffleStore.shuffle
+      const baseEntries = orderedEntries
+        ?? buildPlaylistEntries(playlist.tracks)
       const startTrack = start ?? (
-        startIndex !== undefined ? playlist.tracks[startIndex] : undefined
-      )
-      const pinSourceIndex = startIndex ?? (
-        startTrack
-          ? playlist.tracks.findIndex(track => track.id === startTrack.id)
+        startIndex !== undefined
+          ? baseEntries[startIndex]?.track
           : undefined
       )
-      const pinIndex = pinSourceIndex !== undefined && pinSourceIndex >= 0
-        ? pinSourceIndex
-        : undefined
+      const pinMembershipIndex = startIndex !== undefined
+        ? baseEntries[startIndex]?.sourceIndex
+        : startTrack
+          ? baseEntries.find(entry => entry.track.id === startTrack.id)
+            ?.sourceIndex
+          : undefined
 
       const entries = shuffleState === 'on'
         ? shufflePlaylistEntries(
-            buildPlaylistEntries(playlist.tracks),
+            baseEntries,
             shuffleAlgorithm ?? shuffleStore.algorithm,
-            pinIndex,
+            pinMembershipIndex,
           )
-        : buildPlaylistEntries(playlist.tracks)
+        : baseEntries
 
       const tracks = entries.map(entry => entry.track)
       const sourceIndices = entries.map(entry => entry.sourceIndex)
@@ -519,7 +530,7 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
           ? nextSourceIndices
           : null
 
-      let nextCursor = queue.cursor
+      let nextCursor: number
       if (playingSourceIndex != null && sourceIndices) {
         const mapped = sourceIndices.indexOf(playingSourceIndex)
         nextCursor = mapped === -1 ? queue.cursor : mapped
