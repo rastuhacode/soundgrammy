@@ -16,7 +16,7 @@ import {
 import { CSS } from '@dnd-kit/utilities'
 import { useLocalStorage } from '@mantine/hooks'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { ChevronRight, ListX, MoreHorizontal, Trash2, X } from 'lucide-react'
+import { ChevronRight, ListPlus, ListX, MoreHorizontal, Trash2, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { z } from 'zod'
 import type { Track } from '@/lib/db'
@@ -30,6 +30,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { TrackThumbnail } from '@/components/playlist/PlaylistTrackThumbnail'
@@ -198,9 +199,14 @@ export function QueuePopoverPanel({ onClose, hasTracks }: QueuePopoverPanelProps
               )}
             />
             <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuItem onClick={() => setSaveOpen(true)}>
+                <ListPlus className="size-4" />
+                Save as playlist
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
               <DropdownMenuItem
                 disabled={queue.cursor >= queue.tracks.length - 1}
-                onClick={() => clearUpNext()}
+                onClick={clearUpNext}
               >
                 <ListX className="size-4" />
                 Clear up next
@@ -212,10 +218,7 @@ export function QueuePopoverPanel({ onClose, hasTracks }: QueuePopoverPanelProps
                 }}
               >
                 <Trash2 className="size-4" />
-                Clear entire queue
-              </DropdownMenuItem>
-              <DropdownMenuItem onClick={() => setSaveOpen(true)}>
-                Save as playlist
+                Clear
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
