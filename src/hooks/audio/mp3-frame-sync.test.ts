@@ -1,8 +1,10 @@
 import { describe, expect, it } from 'vitest'
 import {
   findMp3FrameOffset,
+  id3v2TagByteLength,
   parseMp3FrameAt,
   resolveFrameSyncOffset,
+  resolveMpegPayloadStart,
 } from './mp3-frame-sync'
 
 /** MPEG1 Layer III, 128 kbps, 44100 Hz, no padding — frame size 417. */
@@ -18,6 +20,49 @@ function twoFramesWithPrefix(prefixLen: number): Uint8Array {
   data.set(header, prefixLen + frameSize)
   return data
 }
+
+describe('id3v2TagByteLength', () => {
+  it('returns null when the header is missing or truncated', () => {
+    expect(id3v2TagByteLength(new Uint8Array(9))).toBeNull()
+    expect(id3v2TagByteLength(new Uint8Array([0xFF, 0xFB, 0x90, 0x00]))).toBeNull()
+  })
+
+  it('decodes synchsafe size including the 10-byte header', () => {
+    // size body = 0x00 0x00 0x02 0x01 → 257 bytes; total skip = 267
+    const header = new Uint8Array([
+      0x49, 0x44, 0x33, 0x03, 0x00, 0x00, 0x00, 0x00, 0x02, 0x01,
+    ])
+    expect(id3v2TagByteLength(header)).toBe(10 + 257)
+  })
+
+  it('includes the footer when the footer flag is set', () => {
+    const header = new Uint8Array([
+      0x49, 0x44, 0x33, 0x04, 0x00, 0x10, 0x00, 0x00, 0x00, 0x10,
+    ])
+    expect(id3v2TagByteLength(header)).toBe(10 + 16 + 10)
+  })
+
+  it('handles multi-megabyte album-art tags (broken-track repro)', () => {
+    // synchsafe 0x01 0x08 0x61 0x4e → 2_240_718 body bytes (track 153)
+    const header = new Uint8Array([
+      0x49, 0x44, 0x33, 0x04, 0x00, 0x00, 0x01, 0x08, 0x61, 0x4e,
+    ])
+    expect(id3v2TagByteLength(header)).toBe(10 + 2_240_718)
+  })
+})
+
+describe('resolveMpegPayloadStart', () => {
+  it('skips an ID3v2 tag when present', () => {
+    const probe = new Uint8Array(64)
+    probe.set([0x49, 0x44, 0x33, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x20], 0)
+    expect(resolveMpegPayloadStart(probe, 10_000)).toBe(10 + 0x20)
+  })
+
+  it('falls back to frame sync when there is no ID3 tag', () => {
+    const data = twoFramesWithPrefix(12)
+    expect(resolveMpegPayloadStart(data, data.length)).toBe(12)
+  })
+})
 
 describe('parseMp3FrameAt', () => {
   it('parses a standard MPEG1 Layer III header', () => {

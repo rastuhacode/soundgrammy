@@ -1,5 +1,46 @@
 /** MPEG-1/2 Layer I–III frame sync helpers for discontinuous MSE appends. */
 
+/**
+ * Total bytes occupied by an ID3v2 header+tag at the start of `header`
+ * (10-byte header + synchsafe size + optional footer), or `null` if absent.
+ *
+ * Large embedded album art (multi‑MB APIC frames) must be skipped before
+ * feeding `audio/mpeg` to MSE — WebKit will not build buffered ranges from
+ * tag bytes and eventually closes the MediaSource.
+ */
+export function id3v2TagByteLength(header: Uint8Array): number | null {
+  if (header.length < 10) return null
+  if (header[0] !== 0x49 || header[1] !== 0x44 || header[2] !== 0x33) {
+    return null
+  }
+  const flags = header[5]!
+  const size
+    = ((header[6]! & 0x7f) << 21)
+      | ((header[7]! & 0x7f) << 14)
+      | ((header[8]! & 0x7f) << 7)
+      | (header[9]! & 0x7f)
+  const footer = (flags & 0x10) !== 0 ? 10 : 0
+  const total = 10 + size + footer
+  if (!(total >= 10) || !Number.isFinite(total)) return null
+  return total
+}
+
+/**
+ * Byte offset where MPEG frames begin. Prefers a parsed ID3v2 size; falls
+ * back to scanning for a validated frame sync inside `probe`.
+ */
+export function resolveMpegPayloadStart(
+  probe: Uint8Array,
+  fileTotal: number,
+): number {
+  const tagLen = id3v2TagByteLength(probe)
+  if (tagLen !== null && tagLen < fileTotal) {
+    return tagLen
+  }
+  const sync = findMp3FrameOffset(probe, 0)
+  return sync >= 0 ? sync : 0
+}
+
 const BITRATES_V1_L3 = [
   0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0,
 ]

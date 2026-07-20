@@ -6,7 +6,7 @@ import {
   shouldRebuildFromPrefix,
   type ByteRange,
 } from './mse-append-queue'
-import { resolveFrameSyncOffset } from './mp3-frame-sync'
+import { resolveFrameSyncOffset, resolveMpegPayloadStart } from './mp3-frame-sync'
 
 /** Matches Rust streaming::CHUNK_SIZE — keep append IPC payloads bounded. */
 export const MSE_APPEND_CHUNK = 128 * 1024
@@ -226,6 +226,9 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
   let pumpQueued = false
   let seekGeneration = 0
   let discontinuityPending = false
+  // Skip ID3v2 (often multi‑MB album art) before the first MPEG frame.
+  let mpegPayloadStart = 0
+  let mpegStartResolved = !isMpegMseMime(mimeType)
   // Library metadata can be 0; adopt element duration once it is known.
   let resolvedDuration = duration > 0 ? duration : 0
 
@@ -243,6 +246,33 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
       }
     }
     return resolvedDuration
+  }
+
+  const ensureMpegPayloadStart = async (): Promise<boolean> => {
+    if (mpegStartResolved || disposed || !(total > 10)) {
+      mpegStartResolved = true
+      return true
+    }
+    try {
+      const headerEnd = Math.min(total - 1, 9)
+      await api.ensureStreamRange(trackId, 0, headerEnd)
+      if (disposed) return false
+      const header = await api.readStreamRange(trackId, 0, headerEnd)
+      if (disposed) return false
+      const start = resolveMpegPayloadStart(header, total)
+      mpegPayloadStart = Math.max(0, Math.min(total - 1, start))
+      mpegStartResolved = true
+      if (nextAppendOffset < mpegPayloadStart) {
+        nextAppendOffset = mpegPayloadStart
+        emitAppended()
+      }
+      return true
+    }
+    catch {
+      mpegStartResolved = true
+      fail()
+      return false
+    }
   }
 
   const emitAppended = () => {
@@ -523,13 +553,13 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
     prefixEndLimit: number,
     generation: number,
   ) => {
-    nextAppendOffset = 0
+    nextAppendOffset = mpegPayloadStart
     ended = false
     try {
       if (!buffer.updating) buffer.timestampOffset = 0
     }
     catch {
-      // segments mode may reject offset changes; continue and append from 0
+      // segments mode may reject offset changes; continue and append from start
     }
     emitAppended()
 
@@ -664,6 +694,19 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
     }
     if (sourceBuffer.updating || mediaSource.readyState !== 'open') return
 
+    if (!mpegStartResolved) {
+      appendInFlight = true
+      try {
+        const ok = await ensureMpegPayloadStart()
+        if (!ok || disposed || discontinuityPending) return
+      }
+      finally {
+        appendInFlight = false
+      }
+      if (!disposed && !discontinuityPending) schedulePump()
+      return
+    }
+
     const ledgerPrefix = leadingPrefixEnd(latestRanges)
     // Grow forward from the current append cursor (prefix or seek island).
     const rangeContainingCursor = latestRanges.find(
@@ -761,6 +804,10 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
         await new Promise(resolve => setTimeout(resolve, 16))
       }
       if (disposed || generation !== seekGeneration) return
+      if (isMpegMseMime(mimeType) && !mpegStartResolved) {
+        const ok = await ensureMpegPayloadStart()
+        if (!ok || disposed || generation !== seekGeneration) return
+      }
       if (mediaSource.readyState !== 'open') {
         if (!isMpegMseMime(mimeType)) {
           await reattachAndRebuild(clampedTime, generation)
@@ -768,9 +815,10 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
         return
       }
 
+      const audioBytes = Math.max(1, total - mpegPayloadStart)
       const targetByte = Math.min(
         total - 1,
-        Math.floor((clampedTime / seekDuration) * total),
+        mpegPayloadStart + Math.floor((clampedTime / seekDuration) * audioBytes),
       )
 
       const buffer = sourceBuffer
