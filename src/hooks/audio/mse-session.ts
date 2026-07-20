@@ -6,7 +6,7 @@ import {
   shouldRebuildFromPrefix,
   type ByteRange,
 } from './mse-append-queue'
-import { resolveFrameSyncOffset, resolveMpegPayloadStart } from './mp3-frame-sync'
+import { resolveFrameSyncOffset, resolveMpegPayloadStart, parseMp3FrameAt, completeMpegFrameByteLength } from './mp3-frame-sync'
 
 /** Matches Rust streaming::CHUNK_SIZE — keep append IPC payloads bounded. */
 export const MSE_APPEND_CHUNK = 128 * 1024
@@ -259,12 +259,44 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
       if (disposed) return false
       const header = await api.readStreamRange(trackId, 0, headerEnd)
       if (disposed) return false
-      const start = resolveMpegPayloadStart(header, total)
+      const id3Start = resolveMpegPayloadStart(header, total)
+      let start = Math.max(0, Math.min(total - 1, id3Start))
+
+      // Probe around the ID3-derived offset: overshooting skips the intro
+      // (sequence mode still stamps the first decoded frame as t=0).
+      const probeBack = Math.min(start, 4 * 1024)
+      const probeAhead = Math.min(total - 1, start + 8 * 1024)
+      const probeFrom = start - probeBack
+      await api.ensureStreamRange(trackId, probeFrom, probeAhead)
+      if (disposed) return false
+      const probe = await api.readStreamRange(trackId, probeFrom, probeAhead)
+      if (disposed) return false
+
+      const relAtId3 = start - probeFrom
+      const frameAtId3 = parseMp3FrameAt(probe, relAtId3)
+
+      // Match AVFoundation: start after Xing/Info so the first coded frame is
+      // real audio (first audio frame typically has main_data_begin=0).
+      if (frameAtId3) {
+        const markerOff = relAtId3 + 36
+        const marker = String.fromCharCode(
+          probe[markerOff] ?? 0,
+          probe[markerOff + 1] ?? 0,
+          probe[markerOff + 2] ?? 0,
+          probe[markerOff + 3] ?? 0,
+        )
+        if (marker === 'Xing' || marker === 'Info') {
+          start = start + frameAtId3.size
+        }
+      }
+
       mpegPayloadStart = Math.max(0, Math.min(total - 1, start))
       mpegStartResolved = true
       if (nextAppendOffset < mpegPayloadStart) {
+        // Advance the append cursor past the ID3 tag, but do not report
+        // appendedBytes yet — that would paint fake buffer chrome before any
+        // MPEG frames are decoded.
         nextAppendOffset = mpegPayloadStart
-        emitAppended()
       }
       return true
     }
@@ -423,15 +455,28 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
     ) {
       return false
     }
+
+    let appendBytes = bytes
+    let nextOffset = end + 1
+    // Keep MPEG appends frame-aligned except on the final EOF window.
+    if (isMpegMseMime(mimeType) && end < total - 1) {
+      const keep = completeMpegFrameByteLength(bytes)
+      if (keep <= 0) return false
+      if (keep < bytes.byteLength) {
+        appendBytes = bytes.subarray(0, keep)
+        nextOffset = start + keep
+      }
+    }
+
     try {
-      buffer.appendBuffer(new Uint8Array(bytes))
+      buffer.appendBuffer(new Uint8Array(appendBytes))
     }
     catch {
       return false
     }
     await waitForSourceBufferIdle(buffer)
     if (disposed || generation !== seekGeneration) return false
-    nextAppendOffset = end + 1
+    nextAppendOffset = nextOffset
     emitAppended()
     return true
   }
@@ -750,7 +795,22 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
         return
       }
       if (sourceBuffer.updating) return
-      sourceBuffer.appendBuffer(new Uint8Array(bytes))
+
+      let appendBytes = bytes
+      let nextOffset = window.end + 1
+      if (isMpegMseMime(mimeType) && window.end < total - 1) {
+        const keep = completeMpegFrameByteLength(bytes)
+        if (keep <= 0) {
+          fail()
+          return
+        }
+        if (keep < bytes.byteLength) {
+          appendBytes = bytes.subarray(0, keep)
+          nextOffset = window.start + keep
+        }
+      }
+
+      sourceBuffer.appendBuffer(new Uint8Array(appendBytes))
       // Wait for updateend before advancing the cursor — otherwise a failed
       // append leaves nextAppendOffset past bytes that never decoded.
       await waitForSourceBufferIdle(sourceBuffer)
@@ -762,7 +822,7 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
       ) {
         return
       }
-      nextAppendOffset = window.end + 1
+      nextAppendOffset = nextOffset
       emitAppended()
     }
     catch {

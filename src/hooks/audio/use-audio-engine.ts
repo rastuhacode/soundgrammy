@@ -7,6 +7,16 @@ import { useAudioSource } from './use-audio-source'
 import { useAudioVolume } from './use-audio-volume'
 import { useListenTracker } from './use-listen-tracker'
 
+/**
+ * WKWebView MSE advances `currentTime` as soon as buffered data exists, while
+ * the audio output path for that MediaSource is still cold (~0.3–0.5s). The
+ * clock races ahead of audible samples and the opening transient is skipped.
+ * Cached `asset:` playback does not do this (AVFoundation keeps clock/output
+ * aligned). Each new MediaSource is cold again, so we cannot warm once per
+ * session. Mute + pin at 0 for this wall duration, then unmute in place.
+ */
+const MSE_COLD_START_PRIME_MS = 400
+
 export function useAudioEngine() {
   const track = usePlayerStore(state => state.currentTrack)
   const isPlaying = usePlayerStore(state => state.isPlaying)
@@ -26,6 +36,8 @@ export function useAudioEngine() {
   const resumeAfterSeekRef = useRef(false)
   const isSeekingRef = useRef(false)
   const listenAttemptEpochRef = useRef(listenAttemptEpoch)
+  /** MSE cold-start pin-prime: idle → priming → done (per MediaSource attach). */
+  const msePrimeRef = useRef<'idle' | 'priming' | 'done'>('idle')
 
   const {
     volume,
@@ -64,6 +76,7 @@ export function useAudioEngine() {
     mseSnapToBufferedTime,
     mseLandToBufferedTime,
     isMseActive,
+    streamingMse,
     showInitialLoading,
     setShowInitialLoading,
   } = useAudioSource({
@@ -100,6 +113,7 @@ export function useAudioEngine() {
     mseSnapToBufferedTime,
     mseLandToBufferedTime,
     isMseActive,
+    streamingMse,
     duration,
     currentTime,
     setCurrentTime,
@@ -128,6 +142,74 @@ export function useAudioEngine() {
   useEffect(() => {
     isPlayingRef.current = isPlaying
   }, [isPlaying])
+
+  useEffect(() => {
+    const audio = audioRef.current
+    if (!audio) return
+    msePrimeRef.current = 'idle'
+
+    const finishMsePrime = (generation: number, restoreMuted: boolean) => {
+      if (msePrimeRef.current !== 'priming') return
+      if (loadGenerationRef.current !== generation) {
+        audio.muted = restoreMuted
+        msePrimeRef.current = 'idle'
+        return
+      }
+      try {
+        audio.currentTime = 0
+      }
+      catch { /* ignore */ }
+      audio.muted = restoreMuted
+      msePrimeRef.current = 'done'
+      setCurrentTime(0)
+    }
+
+    const onPlaying = () => {
+      if (
+        !audio.src.startsWith('blob:')
+        || msePrimeRef.current !== 'idle'
+        || audio.currentTime > 0.05
+      ) {
+        return
+      }
+      msePrimeRef.current = 'priming'
+      const generation = loadGenerationRef.current
+      const restoreMuted = audio.muted
+      const primeStartedAt = Date.now()
+      audio.muted = true
+
+      const onPrimeTimeUpdate = () => {
+        if (msePrimeRef.current !== 'priming') {
+          audio.removeEventListener('timeupdate', onPrimeTimeUpdate)
+          return
+        }
+        if (!isPlayingRef.current) {
+          audio.removeEventListener('timeupdate', onPrimeTimeUpdate)
+          audio.muted = restoreMuted
+          msePrimeRef.current = 'idle'
+          return
+        }
+        // Keep the playhead at 0 so the cold window does not consume the intro.
+        if (audio.currentTime > 0.02) {
+          try {
+            audio.currentTime = 0
+          }
+          catch { /* ignore */ }
+        }
+        if (Date.now() - primeStartedAt >= MSE_COLD_START_PRIME_MS) {
+          audio.removeEventListener('timeupdate', onPrimeTimeUpdate)
+          finishMsePrime(generation, restoreMuted)
+        }
+      }
+      audio.addEventListener('timeupdate', onPrimeTimeUpdate)
+    }
+
+    audio.addEventListener('playing', onPlaying)
+    return () => {
+      audio.removeEventListener('playing', onPlaying)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [track?.id])
 
   useEffect(() => {
     currentTimeRef.current = currentTime
@@ -189,6 +271,8 @@ export function useAudioEngine() {
 
   const onTimeUpdate = (event: React.SyntheticEvent<HTMLAudioElement>) => {
     if (isSeekingRef.current || pendingSeekRef.current !== null) return
+    // Hold the UI at 0 while MSE pin-primes so the bar does not race ahead.
+    if (msePrimeRef.current === 'priming') return
     setCurrentTime(event.currentTarget.currentTime)
   }
 

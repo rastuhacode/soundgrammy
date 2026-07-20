@@ -132,6 +132,25 @@ export function parseMp3FrameAt(
 }
 
 /**
+ * Length of a leading run of complete MPEG frames in `data`.
+ * Trailing mid-frame bytes are excluded so MSE appends stay frame-aligned
+ * (WebKit's audio/mpeg demuxer can garble the start of a segment that ends
+ * mid-frame).
+ */
+export function completeMpegFrameByteLength(data: Uint8Array): number {
+  let offset = 0
+  let lastComplete = 0
+  while (offset + 4 <= data.length) {
+    const frame = parseMp3FrameAt(data, offset)
+    if (!frame || frame.offset !== offset) break
+    if (offset + frame.size > data.length) break
+    offset += frame.size
+    lastComplete = offset
+  }
+  return lastComplete
+}
+
+/**
  * Find the first validated MPEG frame at or after `fromIndex`.
  * Prefers a candidate whose following frame also parses when enough bytes exist.
  */

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  completeMpegFrameByteLength,
   findMp3FrameOffset,
   id3v2TagByteLength,
   parseMp3FrameAt,
@@ -91,6 +92,23 @@ describe('parseMp3FrameAt', () => {
     // Same as frameHeader but padding bit set → size 418.
     const padded = new Uint8Array([0xFF, 0xFB, 0x92, 0x00])
     expect(parseMp3FrameAt(padded, 0)).toMatchObject({ size: 418 })
+  })
+})
+
+describe('completeMpegFrameByteLength', () => {
+  it('keeps only whole frames and drops a trailing partial frame', () => {
+    const header = frameHeader()
+    const frameSize = 417
+    const data = new Uint8Array(frameSize * 2 + 50)
+    data.set(header, 0)
+    data.set(header, frameSize)
+    data.set(header, frameSize * 2) // incomplete: only 50 bytes of third frame
+    expect(completeMpegFrameByteLength(data)).toBe(frameSize * 2)
+  })
+
+  it('returns 0 when the buffer does not start on a frame', () => {
+    const data = twoFramesWithPrefix(12)
+    expect(completeMpegFrameByteLength(data)).toBe(0)
   })
 })
 

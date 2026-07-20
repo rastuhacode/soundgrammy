@@ -27,3 +27,4 @@ Primary frontend modules:
 ## Limits
 
 - Discontinuous mid-file *island* seeks target `audio/mpeg` (frame sync). WebM/MP4 seek ahead by rebuilding from the leading prefix.
+- WKWebView MSE cold start: the media clock can advance ~0.3–0.5s before audible output on each new `MediaSource`. `use-audio-engine` mutes and pins `currentTime` at 0 for 400ms, then unmutes (see `MSE_COLD_START_PRIME_MS`). Cached `asset:` playback is unaffected.

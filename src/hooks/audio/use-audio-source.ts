@@ -53,6 +53,8 @@ export function useAudioSource(options: UseAudioSourceOptions) {
   const [appendedBytes, setAppendedBytes] = useState(0)
   const [bufferRevision, setBufferRevision] = useState(0)
   const [showInitialLoading, setShowInitialLoading] = useState(false)
+  /** True once we know this track uses MSE — drives honest buffer chrome. */
+  const [streamingMse, setStreamingMse] = useState(false)
   const mseSessionRef = useRef<MseSession | null>(null)
 
   // Resolve a complete local file or attach an MSE-backed stream.
@@ -65,6 +67,8 @@ export function useAudioSource(options: UseAudioSourceOptions) {
 
     loadedTrackIdRef.current = null
     mseSessionRef.current = null
+    // Reset MSE chrome flag synchronously on track change / remount.
+    setStreamingMse(false)
 
     queueMicrotask(() => {
       if (loadGenerationRef.current !== generation) return
@@ -73,6 +77,10 @@ export function useAudioSource(options: UseAudioSourceOptions) {
       setDownloadProgress(null)
       setAppendedBytes(0)
       setBufferRevision(0)
+      // Do not reset streamingMse here — initializeSource sets it true
+      // synchronously before its first await; this microtask runs after that
+      // and was clearing the flag so the first download:progress painted
+      // download-mapped buffer chrome again.
       setShowInitialLoading(Boolean(audio && track))
       resetSeekRefs()
     })
@@ -103,6 +111,7 @@ export function useAudioSource(options: UseAudioSourceOptions) {
     }
 
     const attachCached = (path: string, total: number) => {
+      setStreamingMse(false)
       setDownloadProgress({
         trackId: track.id,
         received: total,
@@ -118,6 +127,10 @@ export function useAudioSource(options: UseAudioSourceOptions) {
 
     const initializeSource = async () => {
       try {
+        // Optimistic: treat as MSE until getTrackSource proves cached.
+        // Otherwise download:progress during the await paints fake chrome.
+        setStreamingMse(true)
+
         const stop = await onDownloadProgress((progress) => {
           if (
             disposed
@@ -220,6 +233,7 @@ export function useAudioSource(options: UseAudioSourceOptions) {
       mseSession?.dispose()
       mseSession = null
       mseSessionRef.current = null
+      setStreamingMse(false)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [track?.id])
@@ -252,6 +266,7 @@ export function useAudioSource(options: UseAudioSourceOptions) {
     mseSnapToBufferedTime,
     mseLandToBufferedTime,
     isMseActive,
+    streamingMse,
     showInitialLoading,
     setShowInitialLoading,
   }

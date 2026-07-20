@@ -35,6 +35,11 @@ export interface UseAudioSeekOptions {
   mseLandToBufferedTime?: (time: number) => number | null
   /** True while an MSE session owns the element (even after download completes). */
   isMseActive: () => boolean
+  /**
+   * React state: true once getTrackSource returns stream. Prefer this over
+   * isMseActive() for buffer chrome — the ref lags the first download:progress.
+   */
+  streamingMse?: boolean
   duration: number
   currentTime: number
   setCurrentTime: Dispatch<SetStateAction<number>>
@@ -77,6 +82,7 @@ export function useAudioSeek(options: UseAudioSeekOptions) {
     mseSnapToBufferedTime,
     mseLandToBufferedTime,
     isMseActive,
+    streamingMse = false,
     duration,
     currentTime,
     setCurrentTime,
@@ -150,14 +156,31 @@ export function useAudioSeek(options: UseAudioSeekOptions) {
   }, [appendedBytes, downloadProgress, duration, mediaRanges])
 
   const bufferedRanges = useMemo(
-    () => computeBufferedRanges({
-      mediaRanges,
-      playableEnd,
-      duration,
-      currentTime,
-      cachedRanges,
-    }),
-    [cachedRanges, currentTime, duration, mediaRanges, playableEnd],
+    () => {
+      // MSE: only paint honest SourceBuffer ranges. Download-mapped
+      // cachedRanges / byte-proportional playableEnd overstate coverage
+      // (especially past ID3), then shrink when mediaRanges appear — the
+      // "buffer clears then restarts" flash on every uncached stream.
+      // Use streamingMse (state) not isMseActive() (ref) — progress can arrive
+      // before the session ref is set.
+      if (streamingMse || isMseActive()) {
+        return computeBufferedRanges({
+          mediaRanges,
+          playableEnd: 0,
+          duration,
+          currentTime,
+          cachedRanges: [],
+        })
+      }
+      return computeBufferedRanges({
+        mediaRanges,
+        playableEnd,
+        duration,
+        currentTime,
+        cachedRanges,
+      })
+    },
+    [cachedRanges, currentTime, duration, isMseActive, mediaRanges, playableEnd, streamingMse],
   )
 
   const finishPendingSeek = (audio: HTMLAudioElement) => {
