@@ -29,13 +29,15 @@ function TooltipContent({
   sideOffset = 4,
   align = 'center',
   alignOffset = 0,
+  // Fixed avoids portaled absolute tooltips expanding body scroll near window edges.
+  positionMethod = 'fixed',
   anchor,
   children,
   ...props
 }: TooltipPrimitive.Popup.Props
   & Pick<
     TooltipPrimitive.Positioner.Props,
-    'align' | 'alignOffset' | 'anchor' | 'side' | 'sideOffset'
+    'align' | 'alignOffset' | 'anchor' | 'positionMethod' | 'side' | 'sideOffset'
   >) {
   return (
     <TooltipPrimitive.Portal>
@@ -43,6 +45,7 @@ function TooltipContent({
         align={align}
         alignOffset={alignOffset}
         anchor={anchor}
+        positionMethod={positionMethod}
         side={side}
         sideOffset={sideOffset}
         className="isolate z-50"
