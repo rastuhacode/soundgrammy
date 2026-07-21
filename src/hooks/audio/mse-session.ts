@@ -775,6 +775,7 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
     }
 
     appendInFlight = true
+    let reschedule = true
     try {
       // One retry: download finalize may rename `.part` → destination between
       // path snapshot and open; a hard fail here pauses via onError.
@@ -801,7 +802,9 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
       if (isMpegMseMime(mimeType) && window.end < total - 1) {
         const keep = completeMpegFrameByteLength(bytes)
         if (keep <= 0) {
+          // No complete frame at the cursor — retrying would microtask-spin.
           fail()
+          reschedule = false
           return
         }
         if (keep < bytes.byteLength) {
@@ -827,10 +830,11 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
     }
     catch {
       fail()
+      reschedule = false
     }
     finally {
       appendInFlight = false
-      if (!disposed && !discontinuityPending) schedulePump()
+      if (reschedule && !disposed && !discontinuityPending) schedulePump()
     }
   }
 

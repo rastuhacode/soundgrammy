@@ -208,7 +208,6 @@ export function useAudioEngine() {
     return () => {
       audio.removeEventListener('playing', onPlaying)
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [track?.id])
 
   useEffect(() => {

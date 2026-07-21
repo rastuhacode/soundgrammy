@@ -238,11 +238,11 @@ describe('attachMseSession', () => {
     expect(active.getAppendedOffset()).toBeGreaterThanOrEqual(MSE_APPEND_CHUNK)
     expect(appended.at(-1)).toBe(active.getAppendedOffset())
     expect(readStreamRange).toHaveBeenCalled()
-    expect(readStreamRange.mock.calls[0]).toEqual([
-      TRACK_ID,
-      0,
-      MSE_APPEND_CHUNK - 1,
-    ])
+    // MPEG cold start resolves ID3 / Xing before the first append window.
+    expect(readStreamRange.mock.calls[0]).toEqual([TRACK_ID, 0, 9])
+    expect(readStreamRange.mock.calls.some(
+      call => call[1] === 0 && call[2] === MSE_APPEND_CHUNK - 1,
+    )).toBe(true)
   })
 
   it('uses segments mode for non-mpeg mime types', async () => {
@@ -311,14 +311,18 @@ describe('attachMseSession', () => {
 
   it('retries a transient readStreamRange failure without calling onError', async () => {
     const onError = vi.fn()
-    let attempts = 0
+    let appendAttempts = 0
     readStreamRange.mockImplementation(
       async (_trackId: number, start: number, end: number) => {
-        attempts += 1
-        if (attempts === 1) {
-          throw new Error('ENOENT: partial renamed during finalize')
-        }
         const length = Math.max(0, end - start + 1)
+        // Payload-start probes are small; the append pump retries only the
+        // leading window after MPEG start is resolved.
+        if (length >= MSE_APPEND_CHUNK) {
+          appendAttempts += 1
+          if (appendAttempts === 1) {
+            throw new Error('ENOENT: partial renamed during finalize')
+          }
+        }
         return fillMpegFrames(length)
       },
     )
@@ -328,7 +332,7 @@ describe('attachMseSession', () => {
 
     expect(onError).not.toHaveBeenCalled()
     expect(active.getAppendedOffset()).toBeGreaterThan(0)
-    expect(attempts).toBeGreaterThanOrEqual(2)
+    expect(appendAttempts).toBeGreaterThanOrEqual(2)
   })
 
   it('does not call onError when endOfStream throws InvalidStateError', async () => {
@@ -610,6 +614,8 @@ describe('attachMseSession', () => {
 
   it('seekToTime is a no-op while duration is unknown', async () => {
     const { session: active, mediaSource } = await attach({ duration: 0 })
+    // Cold-start MPEG probes may ensure the ID3/header window; seek itself must not.
+    ensureStreamRange.mockClear()
     await active.seekToTime(30)
     expect(mediaSource.sourceBuffers[0]!.removeCalls).toHaveLength(0)
     expect(ensureStreamRange).not.toHaveBeenCalled()
@@ -617,18 +623,12 @@ describe('attachMseSession', () => {
 
   it('fails the session when island frame sync cannot be resolved', async () => {
     const onError = vi.fn()
-    readStreamRange.mockImplementation(
-      async (_trackId: number, start: number, end: number) => {
-        // Junk only — no MPEG sync words.
-        return new Uint8Array(Math.max(0, end - start + 1))
-      },
-    )
-
+    // Pump with real frames first; MPEG appends require frame-aligned bytes.
     const { session: active, mediaSource } = await attach({ onError })
     await pumpPrefix(active, 8 * 1024)
     mediaSource.sourceBuffers[0]!.buffered.setSingle(0, 1)
 
-    // Force junk on seek probe as well.
+    // Island seek probe / append sees only junk — no MPEG sync words.
     readStreamRange.mockImplementation(
       async (_trackId: number, start: number, end: number) => {
         return new Uint8Array(Math.max(0, end - start + 1))

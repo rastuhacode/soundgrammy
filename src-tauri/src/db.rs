@@ -1181,58 +1181,41 @@ fn map_track(row: &rusqlite::Row<'_>) -> rusqlite::Result<Track> {
 
 #[cfg(test)]
 mod tests {
-    use std::path::{Path, PathBuf};
-    use std::time::{SystemTime, UNIX_EPOCH};
-
     use super::*;
 
-    fn temp_db_path() -> PathBuf {
-        let unique = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("system clock should be after unix epoch")
-            .as_nanos();
-
-        std::env::temp_dir().join(format!(
-            "soundgrammy-db-test-{}-{unique}.sqlite",
-            std::process::id()
-        ))
-    }
-
-    fn remove_sqlite_files(path: &Path) {
-        let base = path.to_string_lossy();
-        let _ = std::fs::remove_file(path);
-        let _ = std::fs::remove_file(format!("{base}-wal"));
-        let _ = std::fs::remove_file(format!("{base}-shm"));
+    /// Isolated DB per test. File-backed temp paths keyed only by pid+nanos
+    /// collided under the parallel test harness (`database is locked`).
+    fn test_db() -> AppResult<Db> {
+        let conn = Connection::open_in_memory()?;
+        conn.pragma_update(None, "foreign_keys", "ON")?;
+        Db::apply_schema(&conn)?;
+        Ok(Db {
+            conn: Mutex::new(conn),
+        })
     }
 
     #[test]
     fn clearing_active_profile_keeps_user_scoped_playlists() -> AppResult<()> {
-        let path = temp_db_path();
+        let db = test_db()?;
+        let user_a = 1001;
+        let user_c = 2002;
 
-        {
-            let db = Db::open(&path)?;
-            let user_a = 1001;
-            let user_c = 2002;
+        db.save_profile(user_a, "User A", None, Some("user_a"), None)?;
+        let playlist = db.create_playlist(user_a, "Playlist B", None)?;
+        db.clear_active_profile(user_a)?;
+        assert!(db.load_profile()?.is_none());
 
-            db.save_profile(user_a, "User A", None, Some("user_a"), None)?;
-            let playlist = db.create_playlist(user_a, "Playlist B", None)?;
-            db.clear_active_profile(user_a)?;
-            assert!(db.load_profile()?.is_none());
+        db.save_profile(user_c, "User C", None, Some("user_c"), None)?;
+        let user_c_playlists = db.playlists_bundle(user_c)?;
+        assert!(user_c_playlists.custom.is_empty());
 
-            db.save_profile(user_c, "User C", None, Some("user_c"), None)?;
-            let user_c_playlists = db.playlists_bundle(user_c)?;
-            assert!(user_c_playlists.custom.is_empty());
+        db.clear_active_profile(user_c)?;
+        db.save_profile(user_a, "User A", None, Some("user_a"), None)?;
+        let user_a_playlists = db.playlists_bundle(user_a)?;
 
-            db.clear_active_profile(user_c)?;
-            db.save_profile(user_a, "User A", None, Some("user_a"), None)?;
-            let user_a_playlists = db.playlists_bundle(user_a)?;
-
-            assert_eq!(user_a_playlists.custom.len(), 1);
-            assert_eq!(user_a_playlists.custom[0].id, playlist.id);
-            assert_eq!(user_a_playlists.custom[0].name, "Playlist B");
-        }
-
-        remove_sqlite_files(&path);
+        assert_eq!(user_a_playlists.custom.len(), 1);
+        assert_eq!(user_a_playlists.custom[0].id, playlist.id);
+        assert_eq!(user_a_playlists.custom[0].name, "Playlist B");
         Ok(())
     }
 
@@ -1240,48 +1223,44 @@ mod tests {
     fn listen_attempt_updates_aggregates_and_rebuild_matches() -> AppResult<()> {
         use crate::listen_stats::EndReason;
 
-        let path = temp_db_path();
-        {
-            let db = Db::open(&path)?;
-            let track_id = 42;
+        let db = test_db()?;
+        let track_id = 42;
 
-            db.record_attempt_start(track_id)?;
-            let end = db.record_attempt_end(
-                track_id,
-                120_000,
-                Some(180_000),
-                EndReason::Completed,
-            )?;
-            assert!(end.qualified);
-            assert!(!end.early_skip);
-            assert_eq!(end.stats.starts, 1);
-            assert_eq!(end.stats.completes, 1);
-            assert_eq!(end.stats.qualified_plays, 1);
-            assert!(end.stats.likeness > 0.0);
+        db.record_attempt_start(track_id)?;
+        let end = db.record_attempt_end(
+            track_id,
+            120_000,
+            Some(180_000),
+            EndReason::Completed,
+        )?;
+        assert!(end.qualified);
+        assert!(!end.early_skip);
+        assert_eq!(end.stats.starts, 1);
+        assert_eq!(end.stats.completes, 1);
+        assert_eq!(end.stats.qualified_plays, 1);
+        assert!(end.stats.likeness > 0.0);
 
-            db.record_attempt_start(track_id)?;
-            let skip = db.record_attempt_end(
-                track_id,
-                5_000,
-                Some(180_000),
-                EndReason::Skipped,
-            )?;
-            assert!(!skip.qualified);
-            assert!(skip.early_skip);
-            assert_eq!(skip.stats.starts, 2);
-            assert_eq!(skip.stats.early_skips, 1);
+        db.record_attempt_start(track_id)?;
+        let skip = db.record_attempt_end(
+            track_id,
+            5_000,
+            Some(180_000),
+            EndReason::Skipped,
+        )?;
+        assert!(!skip.qualified);
+        assert!(skip.early_skip);
+        assert_eq!(skip.stats.starts, 2);
+        assert_eq!(skip.stats.early_skips, 1);
 
-            let before = db.track_listen_stats(track_id)?.expect("stats row");
-            db.rebuild_listen_stats()?;
-            let after = db.track_listen_stats(track_id)?.expect("stats after rebuild");
+        let before = db.track_listen_stats(track_id)?.expect("stats row");
+        db.rebuild_listen_stats()?;
+        let after = db.track_listen_stats(track_id)?.expect("stats after rebuild");
 
-            assert_eq!(before.starts, after.starts);
-            assert_eq!(before.qualified_plays, after.qualified_plays);
-            assert_eq!(before.completes, after.completes);
-            assert_eq!(before.early_skips, after.early_skips);
-            assert_eq!(before.total_listened_ms, after.total_listened_ms);
-        }
-        remove_sqlite_files(&path);
+        assert_eq!(before.starts, after.starts);
+        assert_eq!(before.qualified_plays, after.qualified_plays);
+        assert_eq!(before.completes, after.completes);
+        assert_eq!(before.early_skips, after.early_skips);
+        assert_eq!(before.total_listened_ms, after.total_listened_ms);
         Ok(())
     }
 
@@ -1289,16 +1268,12 @@ mod tests {
     fn listen_events_survive_without_track_row() -> AppResult<()> {
         use crate::listen_stats::EndReason;
 
-        let path = temp_db_path();
-        {
-            let db = Db::open(&path)?;
-            // Orphan track id — no FK to tracks.
-            db.record_attempt_start(999)?;
-            let end = db.record_attempt_end(999, 40_000, Some(60_000), EndReason::Stopped)?;
-            assert!(end.qualified);
-            assert!(db.track_listen_stats(999)?.is_some());
-        }
-        remove_sqlite_files(&path);
+        let db = test_db()?;
+        // Orphan track id — no FK to tracks.
+        db.record_attempt_start(999)?;
+        let end = db.record_attempt_end(999, 40_000, Some(60_000), EndReason::Stopped)?;
+        assert!(end.qualified);
+        assert!(db.track_listen_stats(999)?.is_some());
         Ok(())
     }
 
@@ -1325,29 +1300,24 @@ mod tests {
 
     #[test]
     fn reorder_playlist_tracks_persists_duplicate_order() -> AppResult<()> {
-        let path = temp_db_path();
-        {
-            let db = Db::open(&path)?;
-            let user = 42;
-            db.save_profile(user, "User", None, None, None)?;
-            let a = upsert_test_track(&db, user, "dup-a", 0)?;
-            let b = upsert_test_track(&db, user, "dup-b", 1)?;
-            let playlist = db.create_playlist(user, "Dupes", None)?;
-            db.add_tracks_to_playlist(playlist.id, &[a, b, a], user)?;
+        let db = test_db()?;
+        let user = 42;
+        db.save_profile(user, "User", None, None, None)?;
+        let a = upsert_test_track(&db, user, "dup-a", 0)?;
+        let b = upsert_test_track(&db, user, "dup-b", 1)?;
+        let playlist = db.create_playlist(user, "Dupes", None)?;
+        db.add_tracks_to_playlist(playlist.id, &[a, b, a], user)?;
 
-            let before = db.playlists_bundle(user)?;
-            assert_eq!(before.custom[0].track_ids, vec![a, b, a]);
+        let before = db.playlists_bundle(user)?;
+        assert_eq!(before.custom[0].track_ids, vec![a, b, a]);
 
-            db.reorder_playlist_tracks(playlist.id, &[b, a, a], user)?;
-            let after = db.playlists_bundle(user)?;
-            assert_eq!(after.custom[0].track_ids, vec![b, a, a]);
+        db.reorder_playlist_tracks(playlist.id, &[b, a, a], user)?;
+        let after = db.playlists_bundle(user)?;
+        assert_eq!(after.custom[0].track_ids, vec![b, a, a]);
 
-            db.reorder_playlist_tracks(playlist.id, &[a, a, b], user)?;
-            let again = db.playlists_bundle(user)?;
-            assert_eq!(again.custom[0].track_ids, vec![a, a, b]);
-        }
-
-        remove_sqlite_files(&path);
+        db.reorder_playlist_tracks(playlist.id, &[a, a, b], user)?;
+        let again = db.playlists_bundle(user)?;
+        assert_eq!(again.custom[0].track_ids, vec![a, a, b]);
         Ok(())
     }
 }
