@@ -10,6 +10,7 @@ import {
   trackDurationMs,
   type ListenAttemptClock,
 } from '@/lib/listen-tracker'
+import { useListenStatsStore } from '@/stores/listen-stats-store'
 import { usePlayerStore } from '@/stores/player-store'
 import type { ListenEndReason } from '@/types'
 
@@ -52,6 +53,8 @@ export function useListenTracker(options: {
       listenedMs,
       durationMs,
       endReason,
+    }).then((result) => {
+      useListenStatsStore.getState().upsert(result.stats)
     }).catch(() => {
       // Best-effort; do not interrupt playback.
     })

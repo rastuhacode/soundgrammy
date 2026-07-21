@@ -1,6 +1,8 @@
 import {
   ALL_TRACKS_PLAYLIST_ID,
   LIKED_PLAYLIST_ID,
+  POPULAR_PLAYLIST_ID,
+  RECENT_PLAYLIST_ID,
   type PlaylistId,
 } from '@/stores/playlists-store'
 
@@ -20,8 +22,23 @@ function isPlaylistSortMode(value: string): value is PlaylistSortMode {
   return value === 'recency' || value === 'custom' || value === 'alphabetical'
 }
 
+function isCommonPlaylistIdString(
+  value: string,
+): value is
+| typeof ALL_TRACKS_PLAYLIST_ID
+| typeof LIKED_PLAYLIST_ID
+| typeof POPULAR_PLAYLIST_ID
+| typeof RECENT_PLAYLIST_ID {
+  return (
+    value === ALL_TRACKS_PLAYLIST_ID
+    || value === LIKED_PLAYLIST_ID
+    || value === POPULAR_PLAYLIST_ID
+    || value === RECENT_PLAYLIST_ID
+  )
+}
+
 function parsePlaylistId(value: unknown): PlaylistId | null {
-  if (value === ALL_TRACKS_PLAYLIST_ID || value === LIKED_PLAYLIST_ID) {
+  if (typeof value === 'string' && isCommonPlaylistIdString(value)) {
     return value
   }
   if (typeof value === 'number' && Number.isInteger(value) && value > 0) {
@@ -81,10 +98,16 @@ export function writeCustomOrder(order: PlaylistId[]) {
 }
 
 export function defaultCustomOrder(customIds: number[]): PlaylistId[] {
-  return [ALL_TRACKS_PLAYLIST_ID, LIKED_PLAYLIST_ID, ...customIds]
+  return [
+    ALL_TRACKS_PLAYLIST_ID,
+    LIKED_PLAYLIST_ID,
+    POPULAR_PLAYLIST_ID,
+    RECENT_PLAYLIST_ID,
+    ...customIds,
+  ]
 }
 
-/** Keep known IDs in saved order, drop missing, append new custom IDs at end. */
+/** Keep known IDs in saved order, drop missing, append new system + custom IDs. */
 export function reconcileCustomOrder(
   saved: PlaylistId[] | null,
   customIds: number[],
@@ -92,6 +115,8 @@ export function reconcileCustomOrder(
   const known = new Set<PlaylistId>([
     ALL_TRACKS_PLAYLIST_ID,
     LIKED_PLAYLIST_ID,
+    POPULAR_PLAYLIST_ID,
+    RECENT_PLAYLIST_ID,
     ...customIds,
   ])
 
@@ -101,8 +126,31 @@ export function reconcileCustomOrder(
 
   const kept = saved.filter(id => known.has(id))
   const keptSet = new Set(kept)
+  const missingSystem = (
+    [
+      ALL_TRACKS_PLAYLIST_ID,
+      LIKED_PLAYLIST_ID,
+      POPULAR_PLAYLIST_ID,
+      RECENT_PLAYLIST_ID,
+    ] as const
+  ).filter(id => !keptSet.has(id))
   const missingCustoms = customIds.filter(id => !keptSet.has(id))
-  return [...kept, ...missingCustoms]
+  // Insert missing system playlists after Liked (or at start if All/Liked absent),
+  // before custom playlists that were already in the list.
+  if (missingSystem.length === 0) {
+    return [...kept, ...missingCustoms]
+  }
+
+  const likedIndex = kept.indexOf(LIKED_PLAYLIST_ID)
+  const allIndex = kept.indexOf(ALL_TRACKS_PLAYLIST_ID)
+  const insertAt = likedIndex >= 0
+    ? likedIndex + 1
+    : allIndex >= 0
+      ? allIndex + 1
+      : 0
+  const next = [...kept]
+  next.splice(insertAt, 0, ...missingSystem)
+  return [...next, ...missingCustoms]
 }
 
 export interface SortablePlaylistItem {

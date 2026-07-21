@@ -1,14 +1,18 @@
-import { Heart, ListMusic, Music } from 'lucide-react'
+import { Clock, Heart, ListMusic, Music, TrendingUp } from 'lucide-react'
 import { usePlaylistThumbnail } from '@/hooks/use-playlist-thumbnail'
 import {
   ALL_TRACKS_PLAYLIST_ID,
   LIKED_PLAYLIST_ID,
+  POPULAR_PLAYLIST_ID,
+  RECENT_PLAYLIST_ID,
 } from '@/stores/playlists-store'
 import { cn } from '@/lib/utils'
 
 type SidebarPlaylistThumbnailVariant
   = | typeof ALL_TRACKS_PLAYLIST_ID
     | typeof LIKED_PLAYLIST_ID
+    | typeof POPULAR_PLAYLIST_ID
+    | typeof RECENT_PLAYLIST_ID
     | 'custom'
 
 interface SidebarPlaylistThumbnailProps {
@@ -31,6 +35,16 @@ const variantStyles: Record<
     className:
       'bg-gradient-to-br from-fuchsia-500 via-purple-600 to-indigo-700 text-white',
     icon: <Heart className="size-4 fill-current" strokeWidth={0} />,
+  },
+  [POPULAR_PLAYLIST_ID]: {
+    className:
+      'bg-gradient-to-br from-amber-500 via-orange-600 to-rose-700 text-white',
+    icon: <TrendingUp className="size-4" strokeWidth={2.25} />,
+  },
+  [RECENT_PLAYLIST_ID]: {
+    className:
+      'bg-gradient-to-br from-emerald-500 via-teal-600 to-cyan-700 text-white',
+    icon: <Clock className="size-4" strokeWidth={2.25} />,
   },
   custom: {
     className:

@@ -6,6 +6,8 @@ import {
   getLikedTrackIdSet,
   isTrackLiked,
   LIKED_PLAYLIST_ID,
+  POPULAR_PLAYLIST_ID,
+  RECENT_PLAYLIST_ID,
   resolveSelectedPlaylistTracks,
   usePlaylistsStore,
 } from '@/stores/playlists-store'
@@ -13,6 +15,7 @@ import type {
   CustomPlaylistId,
   ResolvedSelectedPlaylist,
 } from '@/stores/playlists-store'
+import { useListenStatsStore } from '@/stores/listen-stats-store'
 import { Music, Play, Search, Shuffle, Undo2, X } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { useMemo, useState } from 'react'
@@ -59,6 +62,13 @@ function getEmptyStateCopy(
     }
   }
 
+  if (playlistId === POPULAR_PLAYLIST_ID || playlistId === RECENT_PLAYLIST_ID) {
+    return {
+      title: 'No listening history yet',
+      description: 'Play some tracks and they will show up here.',
+    }
+  }
+
   if (isCustom) {
     return {
       title: 'This playlist is empty',
@@ -92,6 +102,7 @@ function PlaylistViewContent() {
   const { contains } = useFilter()
 
   const libraryTracks = useLibraryStore(state => state.library)
+  const statsByTrackId = useListenStatsStore(state => state.statsByTrackId)
   const currentTrackId = usePlayerStore(
     state => state.currentTrack?.id ?? null,
   )
@@ -107,8 +118,13 @@ function PlaylistViewContent() {
   const setData = usePlaylistsStore(state => state.setData)
 
   const selectedPlaylist = useMemo(
-    () => resolveSelectedPlaylistTracks(libraryTracks, data, selectedPlaylistId),
-    [libraryTracks, data, selectedPlaylistId],
+    () => resolveSelectedPlaylistTracks(
+      libraryTracks,
+      data,
+      selectedPlaylistId,
+      statsByTrackId,
+    ),
+    [libraryTracks, data, selectedPlaylistId, statsByTrackId],
   )
   const {
     tracks: playlistTracks,
@@ -178,6 +194,8 @@ function PlaylistViewContent() {
 
   const canReorder
     = selectedPlaylistId !== ALL_TRACKS_PLAYLIST_ID
+      && selectedPlaylistId !== POPULAR_PLAYLIST_ID
+      && selectedPlaylistId !== RECENT_PLAYLIST_ID
       && search.length === 0
       && sorting.length === 0
       && !selectionMode

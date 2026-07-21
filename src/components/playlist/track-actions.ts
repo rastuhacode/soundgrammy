@@ -50,7 +50,7 @@ export interface BulkActions {
   download: true
 }
 
-/** All tracks and Liked are non-custom; only custom playlists allow remove-from-playlist. */
+/** Non-custom playlists never allow remove-from-playlist. */
 export function canRemoveFromPlaylist(
   playlist: Pick<ResolvedSelectedPlaylist, 'isCustom'>,
 ): boolean {

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import type { Track, TrackMetadata } from '@/types'
+import type { Track, TrackListenStats, TrackMetadata } from '@/types'
 import { useCachedThumbnail } from '@/hooks/use-cached-thumbnail'
 import { api } from '@/lib/api'
 import {
@@ -32,6 +32,28 @@ function formatFileSize(bytes: number | string | null): string {
   return `${(value / (1024 * 1024)).toFixed(1)} MB`
 }
 
+function formatListenedMs(ms: number): string {
+  if (!Number.isFinite(ms) || ms <= 0) return '0s'
+  const totalSeconds = Math.floor(ms / 1000)
+  const hours = Math.floor(totalSeconds / 3600)
+  const minutes = Math.floor((totalSeconds % 3600) / 60)
+  const seconds = totalSeconds % 60
+  if (hours > 0) {
+    return `${hours}h ${minutes}m ${seconds}s`
+  }
+  if (minutes > 0) {
+    return `${minutes}m ${seconds}s`
+  }
+  return `${seconds}s`
+}
+
+function formatPlayedAt(ms: number | null): string {
+  if (ms == null) return '—'
+  const date = new Date(ms)
+  if (Number.isNaN(date.getTime())) return '—'
+  return date.toLocaleString()
+}
+
 function formatAttributeValue(value: unknown): string {
   if (value === null || value === undefined) return '—'
   if (typeof value === 'boolean') return value ? 'true' : 'false'
@@ -62,6 +84,7 @@ export function TrackInfoDialog({
   onOpenChange,
 }: TrackInfoDialogProps) {
   const [metadata, setMetadata] = useState<TrackMetadata | null>(null)
+  const [listenStats, setListenStats] = useState<TrackListenStats | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -69,6 +92,7 @@ export function TrackInfoDialog({
     /* eslint-disable react-hooks/set-state-in-effect -- This effect owns the async metadata load lifecycle for the open track. */
     if (!open || !track) {
       setMetadata(null)
+      setListenStats(null)
       setError(null)
       return
     }
@@ -76,10 +100,16 @@ export function TrackInfoDialog({
     let cancelled = false
     setLoading(true)
     setError(null)
-    api
-      .trackMetadata(track.id)
-      .then((result) => {
-        if (!cancelled) setMetadata(result)
+
+    Promise.all([
+      api.trackMetadata(track.id),
+      api.getTrackListenStats(track.id),
+    ])
+      .then(([meta, stats]) => {
+        if (!cancelled) {
+          setMetadata(meta)
+          setListenStats(stats)
+        }
       })
       .catch((err) => {
         if (!cancelled) {
@@ -156,6 +186,56 @@ export function TrackInfoDialog({
               )}
 
               {error && <p className="text-sm text-destructive">{error}</p>}
+
+              {!loading && !error && (
+                <section className="space-y-2">
+                  <h3 className="text-sm font-medium text-foreground">
+                    Listening
+                  </h3>
+                  {listenStats
+                    ? (
+                        <dl className="space-y-2 rounded-lg border border-border bg-card/50 p-3">
+                          <MetadataRow
+                            label="Likeness"
+                            value={listenStats.likeness.toFixed(2)}
+                          />
+                          <MetadataRow
+                            label="Qualified"
+                            value={listenStats.qualified_plays}
+                          />
+                          <MetadataRow
+                            label="Completes"
+                            value={listenStats.completes}
+                          />
+                          <MetadataRow
+                            label="Early skips"
+                            value={listenStats.early_skips}
+                          />
+                          <MetadataRow
+                            label="Starts"
+                            value={listenStats.starts}
+                          />
+                          <MetadataRow
+                            label="Listened"
+                            value={formatListenedMs(listenStats.total_listened_ms)}
+                          />
+                          <MetadataRow
+                            label="First played"
+                            value={formatPlayedAt(listenStats.first_played_at_ms)}
+                          />
+                          <MetadataRow
+                            label="Last played"
+                            value={formatPlayedAt(listenStats.last_played_at_ms)}
+                          />
+                        </dl>
+                      )
+                    : (
+                        <p className="rounded-lg border border-border bg-card/50 p-3 text-sm text-muted-foreground">
+                          No listening history for this track yet.
+                        </p>
+                      )}
+                </section>
+              )}
 
               {metadata && (
                 <>

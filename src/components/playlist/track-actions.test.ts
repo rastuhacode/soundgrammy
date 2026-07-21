@@ -89,6 +89,18 @@ describe('getBulkActions', () => {
     expect(actions.addToLiked).toBe(false)
     expect(actions.removeFromLiked).toBe(true)
   })
+
+  it('hides removeFromPlaylist for popular and recent', () => {
+    expect(
+      getBulkActions({ id: 'popular', isCustom: false }).removeFromPlaylist,
+    ).toBe(false)
+    expect(
+      getBulkActions({ id: 'recent', isCustom: false }).removeFromPlaylist,
+    ).toBe(false)
+    expect(
+      getBulkActions({ id: 'popular', isCustom: false }).addToLiked,
+    ).toBe(true)
+  })
 })
 
 describe('getAvailableCustomPlaylists', () => {

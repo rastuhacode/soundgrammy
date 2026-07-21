@@ -1,15 +1,21 @@
 # Listen statistics
 
-Append-only listen history + per-track aggregates + likeness score. No UI.
+Append-only listen history + per-track aggregates + likeness score.
 
 ## Split
 
 | Layer | Owns |
 |-------|------|
 | FE `use-listen-tracker` | Attempt lifecycle, wall-clock playing time, end reason |
+| FE `listen-stats-store` | Hydrated aggregates for smart playlists + live upserts after ends |
 | BE `listen_stats` + `db` | Events, aggregates, likeness, rebuild |
 
 IPC: `record_listen_start` / `record_listen_end` / `get_track_listen_stats` / `list_listen_stats` / `rebuild_listen_stats` via [`src/lib/api.ts`](../src/lib/api.ts).
+
+## UI consumers
+
+- **Most popular** / **Recent** — virtual playlists (`id: popular` / `recent`) of library tracks that have listen history, ordered by likeness / `last_played_at_ms`. Immutable membership; not drag-reorderable.
+- **Track info** — Listening section via `get_track_listen_stats` (likeness, plays, skips, listened time, first/last played).
 
 ## Counting (v1)
 

@@ -12,6 +12,7 @@ import {
   ALL_TRACKS_PLAYLIST_ID,
   usePlaylistsStore,
 } from '@/stores/playlists-store'
+import { useListenStatsStore } from '@/stores/listen-stats-store'
 import { useSessionStore } from '@/stores/session-store'
 import { useFullscreenStore } from '@/stores/fullscreen-store'
 
@@ -19,13 +20,15 @@ type AppStatus = 'loading' | 'login' | 'ready'
 
 /** Refreshes the library + playlists from the backend into the stores. */
 async function loadLibrary(firstLoad: boolean) {
-  const [library, playlists] = await Promise.all([
+  const [library, playlists, listenStats] = await Promise.all([
     api.listTracks(),
     api.listPlaylists(),
+    api.listListenStats(),
   ])
 
   useLibraryStore.getState().setLibrary(library)
   usePlayerStore.getState().refreshQueueTracks(library)
+  useListenStatsStore.getState().hydrate(listenStats)
 
   // Keep the current track reference fresh (mirrors PlayerTracksHydrator).
   const { currentTrack } = usePlayerStore.getState()

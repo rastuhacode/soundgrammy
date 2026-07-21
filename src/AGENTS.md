@@ -22,6 +22,7 @@ Zustand stores under `stores/`:
 | `session-store` | Logged-in user display fields |
 | `library-store` | Track list |
 | `playlists-store` | Liked + custom playlists, selection |
+| `listen-stats-store` | Per-track listen aggregates (smart playlists) |
 | `player-store` | Queue, current track, playback flags |
 | `shuffle-store` / `repeat-store` | Playback modes |
 | `fullscreen-store` | Fullscreen player UI |

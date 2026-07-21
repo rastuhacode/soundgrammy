@@ -1,12 +1,19 @@
 import { create } from 'zustand'
 import type { PlaylistsBundle, Track } from '@/lib/db'
+import type { TrackListenStats } from '@/types'
+import { resolveSmartPlaylistTracks } from '@/stores/listen-stats-store'
 
 export const ALL_TRACKS_PLAYLIST_ID = 'all' as const
 export const LIKED_PLAYLIST_ID = 'liked' as const
+export const POPULAR_PLAYLIST_ID = 'popular' as const
+export const RECENT_PLAYLIST_ID = 'recent' as const
 
 export type CustomPlaylistId = number
 export type CommonPlaylistId
-  = typeof ALL_TRACKS_PLAYLIST_ID | typeof LIKED_PLAYLIST_ID
+  = | typeof ALL_TRACKS_PLAYLIST_ID
+    | typeof LIKED_PLAYLIST_ID
+    | typeof POPULAR_PLAYLIST_ID
+    | typeof RECENT_PLAYLIST_ID
 export type PlaylistId = CustomPlaylistId | CommonPlaylistId
 
 const SELECTED_PLAYLIST_STORAGE_KEY = 'soundgrammy:selectedPlaylistId'
@@ -44,6 +51,15 @@ export type ResolvedSelectedPlaylist
   = | ResolvedCustomSelectedPlaylist
     | ResolvedCommonSelectedPlaylist
 
+function isCommonPlaylistId(value: string): value is CommonPlaylistId {
+  return (
+    value === ALL_TRACKS_PLAYLIST_ID
+    || value === LIKED_PLAYLIST_ID
+    || value === POPULAR_PLAYLIST_ID
+    || value === RECENT_PLAYLIST_ID
+  )
+}
+
 function readPersistedSelectedPlaylistId(): PlaylistId | number {
   if (typeof window === 'undefined') {
     return ALL_TRACKS_PLAYLIST_ID
@@ -54,8 +70,8 @@ function readPersistedSelectedPlaylistId(): PlaylistId | number {
     return ALL_TRACKS_PLAYLIST_ID
   }
 
-  if (stored === LIKED_PLAYLIST_ID) {
-    return LIKED_PLAYLIST_ID
+  if (isCommonPlaylistId(stored)) {
+    return stored
   }
 
   const parsed = Number(stored)
@@ -75,7 +91,12 @@ function normalizePlaylistId(
   data: PlaylistsData,
   playlistId: PlaylistId | number,
 ): PlaylistId {
-  if (playlistId === ALL_TRACKS_PLAYLIST_ID || playlistId === LIKED_PLAYLIST_ID) {
+  if (
+    playlistId === ALL_TRACKS_PLAYLIST_ID
+    || playlistId === LIKED_PLAYLIST_ID
+    || playlistId === POPULAR_PLAYLIST_ID
+    || playlistId === RECENT_PLAYLIST_ID
+  ) {
     return playlistId
   }
 
@@ -86,13 +107,30 @@ function normalizePlaylistId(
   return playlistId
 }
 
+function isSmartPlaylistId(
+  playlistId: PlaylistId,
+): playlistId is typeof POPULAR_PLAYLIST_ID | typeof RECENT_PLAYLIST_ID {
+  return (
+    playlistId === POPULAR_PLAYLIST_ID || playlistId === RECENT_PLAYLIST_ID
+  )
+}
+
 function resolvePlaylistTrackIds(
   data: PlaylistsData | null,
   playlistId: PlaylistId,
   libraryTracks: Track[] = [],
+  statsByTrackId: ReadonlyMap<number, TrackListenStats> = new Map(),
 ): number[] {
   if (playlistId === ALL_TRACKS_PLAYLIST_ID) {
     return libraryTracks.map(track => track.id)
+  }
+
+  if (isSmartPlaylistId(playlistId)) {
+    return resolveSmartPlaylistTracks(
+      libraryTracks,
+      statsByTrackId,
+      playlistId === POPULAR_PLAYLIST_ID ? 'likeness' : 'last_played',
+    ).map(track => track.id)
   }
 
   if (playlistId === LIKED_PLAYLIST_ID) {
@@ -107,12 +145,26 @@ export function resolvePlaylistTracks(
   libraryTracks: Track[],
   data: PlaylistsData | null,
   playlistId: PlaylistId,
+  statsByTrackId: ReadonlyMap<number, TrackListenStats> = new Map(),
 ): Track[] {
   if (playlistId === ALL_TRACKS_PLAYLIST_ID) {
     return libraryTracks
   }
 
-  const trackIds = resolvePlaylistTrackIds(data, playlistId, libraryTracks)
+  if (isSmartPlaylistId(playlistId)) {
+    return resolveSmartPlaylistTracks(
+      libraryTracks,
+      statsByTrackId,
+      playlistId === POPULAR_PLAYLIST_ID ? 'likeness' : 'last_played',
+    )
+  }
+
+  const trackIds = resolvePlaylistTrackIds(
+    data,
+    playlistId,
+    libraryTracks,
+    statsByTrackId,
+  )
   if (trackIds.length === 0) {
     return []
   }
@@ -127,8 +179,14 @@ export function resolveSelectedPlaylist(
   libraryTracks: Track[],
   data: PlaylistsData | null,
   playlistId: PlaylistId,
+  statsByTrackId: ReadonlyMap<number, TrackListenStats> = new Map(),
 ): SelectedPlaylist {
-  const trackIds = resolvePlaylistTrackIds(data, playlistId, libraryTracks)
+  const trackIds = resolvePlaylistTrackIds(
+    data,
+    playlistId,
+    libraryTracks,
+    statsByTrackId,
+  )
 
   if (playlistId === ALL_TRACKS_PLAYLIST_ID) {
     return {
@@ -148,6 +206,24 @@ export function resolveSelectedPlaylist(
     }
   }
 
+  if (playlistId === POPULAR_PLAYLIST_ID) {
+    return {
+      id: POPULAR_PLAYLIST_ID,
+      name: 'Most popular',
+      trackIds,
+      isCustom: false,
+    }
+  }
+
+  if (playlistId === RECENT_PLAYLIST_ID) {
+    return {
+      id: RECENT_PLAYLIST_ID,
+      name: 'Recent',
+      trackIds,
+      isCustom: false,
+    }
+  }
+
   const custom = data?.custom.find(playlist => playlist.id === playlistId)
   return {
     id: playlistId,
@@ -161,9 +237,20 @@ export function resolveSelectedPlaylistTracks(
   libraryTracks: Track[],
   data: PlaylistsData | null,
   playlistId: PlaylistId,
+  statsByTrackId: ReadonlyMap<number, TrackListenStats> = new Map(),
 ): ResolvedSelectedPlaylist {
-  const playlist = resolveSelectedPlaylist(libraryTracks, data, playlistId)
-  const tracks = resolvePlaylistTracks(libraryTracks, data, playlistId)
+  const playlist = resolveSelectedPlaylist(
+    libraryTracks,
+    data,
+    playlistId,
+    statsByTrackId,
+  )
+  const tracks = resolvePlaylistTracks(
+    libraryTracks,
+    data,
+    playlistId,
+    statsByTrackId,
+  )
 
   if (playlist.isCustom) {
     return { ...playlist, tracks }
@@ -179,6 +266,8 @@ function isValidPlaylistId(
   if (
     playlistId === ALL_TRACKS_PLAYLIST_ID
     || playlistId === LIKED_PLAYLIST_ID
+    || playlistId === POPULAR_PLAYLIST_ID
+    || playlistId === RECENT_PLAYLIST_ID
   ) {
     return true
   }

@@ -42,10 +42,17 @@ import type { CustomPlaylistSummary } from '@/lib/db'
 import {
   ALL_TRACKS_PLAYLIST_ID,
   LIKED_PLAYLIST_ID,
+  POPULAR_PLAYLIST_ID,
+  RECENT_PLAYLIST_ID,
   type PlaylistId,
   usePlaylistsStore,
 } from '@/stores/playlists-store'
 import { useLibraryStore } from '@/stores/library-store'
+import {
+  smartPlaylistTrackCount,
+  smartPlaylistUpdatedAt,
+  useListenStatsStore,
+} from '@/stores/listen-stats-store'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { useFilter } from '@/hooks/utils/use-filter'
@@ -68,6 +75,8 @@ import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupInput } from '
 type ThumbnailVariant
   = | typeof ALL_TRACKS_PLAYLIST_ID
     | typeof LIKED_PLAYLIST_ID
+    | typeof POPULAR_PLAYLIST_ID
+    | typeof RECENT_PLAYLIST_ID
     | 'custom'
 
 interface PlaylistListItem {
@@ -228,6 +237,7 @@ const SORT_MODES: PlaylistSortMode[] = ['recency', 'custom', 'alphabetical']
 export function SidebarPlaylists() {
   const library = useLibraryStore(state => state.library)
   const libraryTrackCount = library.length
+  const statsByTrackId = useListenStatsStore(state => state.statsByTrackId)
   const playlistsData = usePlaylistsStore(state => state.data)
   const selectedPlaylistId = usePlaylistsStore(
     state => state.selectedPlaylistId,
@@ -261,6 +271,9 @@ export function SidebarPlaylists() {
     writeCustomOrder(customOrder)
   }, [customOrder])
 
+  const smartCount = smartPlaylistTrackCount(library, statsByTrackId)
+  const smartUpdatedAt = smartPlaylistUpdatedAt(library, statsByTrackId)
+
   const playlistItems: PlaylistListItem[] = [
     {
       id: ALL_TRACKS_PLAYLIST_ID,
@@ -278,17 +291,33 @@ export function SidebarPlaylists() {
             updatedAt: playlistsData.liked.updatedAt,
             thumbnailVariant: LIKED_PLAYLIST_ID,
           } satisfies PlaylistListItem,
-          ...playlistsData.custom.map(playlist => ({
-            id: playlist.id,
-            name: playlist.name,
-            count: playlist.trackIds.length,
-            updatedAt: playlist.updatedAt,
-            thumbnailVariant: 'custom' as const,
-            playlistId: playlist.id,
-            hasThumbnail: playlist.hasThumbnail,
-            playlist,
-          })),
         ]
+      : []),
+    {
+      id: POPULAR_PLAYLIST_ID,
+      name: 'Most popular',
+      count: smartCount,
+      updatedAt: smartUpdatedAt,
+      thumbnailVariant: POPULAR_PLAYLIST_ID,
+    },
+    {
+      id: RECENT_PLAYLIST_ID,
+      name: 'Recent',
+      count: smartCount,
+      updatedAt: smartUpdatedAt,
+      thumbnailVariant: RECENT_PLAYLIST_ID,
+    },
+    ...(playlistsData
+      ? playlistsData.custom.map(playlist => ({
+          id: playlist.id,
+          name: playlist.name,
+          count: playlist.trackIds.length,
+          updatedAt: playlist.updatedAt,
+          thumbnailVariant: 'custom' as const,
+          playlistId: playlist.id,
+          hasThumbnail: playlist.hasThumbnail,
+          playlist,
+        }))
       : []),
   ]
 
