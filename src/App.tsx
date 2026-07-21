@@ -149,7 +149,7 @@ export default function App() {
   return (
     <div className="hifi-bg flex h-screen w-screen flex-col overflow-hidden">
       <div className="flex min-h-0 grow">
-        <aside className="w-80 md:w-fit shrink-0 border-r border-border bg-sidebar/60 backdrop-blur-sm">
+        <aside className="w-80 shrink-0 border-r border-border bg-sidebar/60 backdrop-blur-sm">
           <PlayerSidebar onLogout={handleLogout} />
         </aside>
         <main className="flex min-h-0 grow flex-col">

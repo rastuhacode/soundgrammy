@@ -106,7 +106,7 @@ export function PlaylistToolbar({
           <InputGroupInput
             value={search}
             onChange={e => onSearchChange(e.target.value)}
-            placeholder="Search"
+            placeholder="Search tracks"
           />
           <InputGroupAddon>
             <Search className="size-4" />

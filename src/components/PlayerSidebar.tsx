@@ -47,27 +47,28 @@ export function PlayerSidebar(props: { onLogout: () => void }) {
             Library
           </h2>
         </div>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          onClick={() => setDialogState({ mode: 'create' })}
-          aria-label="Create playlist"
-          className="text-muted-foreground hover:text-foreground"
-        >
-          <Plus />
-        </Button>
+        <div className="flex items-center gap-0.5">
+          <SidebarPlaylistsToolbar
+            search={search}
+            onSearchChange={setSearch}
+            sortMode={sortMode}
+            onSortModeChange={handleSortModeChange}
+            sortReversed={sortReversed}
+            onSortReversedChange={handleSortReversedChange}
+            hiddenEntries={hiddenEntries}
+            onUnhide={handleUnhide}
+          />
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={() => setDialogState({ mode: 'create' })}
+            aria-label="Create playlist"
+            className="text-muted-foreground hover:text-foreground"
+          >
+            <Plus />
+          </Button>
+        </div>
       </div>
-
-      <SidebarPlaylistsToolbar
-        search={search}
-        onSearchChange={setSearch}
-        sortMode={sortMode}
-        onSortModeChange={handleSortModeChange}
-        sortReversed={sortReversed}
-        onSortReversedChange={handleSortReversedChange}
-        hiddenEntries={hiddenEntries}
-        onUnhide={handleUnhide}
-      />
 
       <DndContext
         sensors={sensors}

@@ -1,23 +1,19 @@
-import { ArrowUpDown, List, Search, X } from 'lucide-react'
+import { ArrowUpDown, Check, List, Search, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import {
-  DropdownMenu,
-  DropdownMenuCheckboxItem,
-  DropdownMenuContent,
-  DropdownMenuGroup,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuRadioGroup,
-  DropdownMenuRadioItem,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from '@/components/ui/dropdown-menu'
+import { Checkbox } from '@/components/ui/checkbox'
 import {
   InputGroup,
   InputGroupAddon,
   InputGroupButton,
   InputGroupInput,
 } from '@/components/ui/input-group'
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from '@/components/ui/popover'
+import { Separator } from '@/components/ui/separator'
+import { cn } from '@/lib/utils'
 import {
   PLAYLIST_SORT_MODE_LABELS,
   type PlaylistSortMode,
@@ -47,14 +43,34 @@ export function SidebarPlaylistsToolbar({
   hiddenEntries,
   onUnhide,
 }: SidebarPlaylistsToolbarProps) {
+  const hasActiveFilters = search.length > 0
+    || sortMode !== 'recency'
+    || sortReversed
+
   return (
-    <div className="flex items-center gap-1 px-4 justify-between">
-      <div className="w-1/2">
+    <Popover>
+      <PopoverTrigger
+        render={(
+          <Button
+            aria-label="Search, filter, and sort playlists"
+            variant="ghost"
+            size="icon-sm"
+            className={cn(
+              'text-muted-foreground hover:text-foreground',
+              hasActiveFilters && 'text-foreground',
+            )}
+          >
+            <List />
+          </Button>
+        )}
+      />
+      <PopoverContent className="w-56 gap-1.5 p-2">
         <InputGroup>
           <InputGroupInput
             value={search}
             onChange={e => onSearchChange(e.target.value)}
-            placeholder="Search"
+            placeholder="Search playlists"
+            autoFocus
           />
           <InputGroupAddon>
             <Search className="size-4" />
@@ -65,66 +81,73 @@ export function SidebarPlaylistsToolbar({
             </InputGroupButton>
           )}
         </InputGroup>
-      </div>
 
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          render={(
-            <Button
-              aria-label="Sort and filter playlists"
-              variant="ghost"
-              className="shrink-0 text-muted-foreground"
+        <Separator />
+
+        <div role="radiogroup" aria-label="Sort playlists" className="flex flex-col gap-0.5">
+          {SORT_MODES.map(mode => (
+            <button
+              key={mode}
+              type="button"
+              role="radio"
+              aria-checked={sortMode === mode}
+              onClick={() => onSortModeChange(mode)}
+              className={cn(
+                'relative flex w-full cursor-default items-center gap-1.5 rounded-md py-1 pr-8 pl-1.5 text-left text-sm outline-hidden select-none hover:bg-accent hover:text-accent-foreground',
+                sortMode === mode && 'bg-accent text-accent-foreground',
+              )}
             >
-              {PLAYLIST_SORT_MODE_LABELS[sortMode]}
-              <List className="size-4" />
-            </Button>
+              {PLAYLIST_SORT_MODE_LABELS[mode]}
+              {sortMode === mode && (
+                <Check className="pointer-events-none absolute right-2 size-4" />
+              )}
+            </button>
+          ))}
+        </div>
+
+        <Separator />
+
+        <label
+          className={cn(
+            'flex cursor-pointer items-center gap-2 rounded-md px-1.5 py-1 text-sm select-none hover:bg-accent hover:text-accent-foreground',
+            sortMode === 'custom' && 'pointer-events-none opacity-50',
           )}
-        />
-        <DropdownMenuContent align="end" className="w-52">
-          <DropdownMenuRadioGroup
-            value={sortMode}
-            onValueChange={value => onSortModeChange(value as PlaylistSortMode)}
-          >
-            {SORT_MODES.map(mode => (
-              <DropdownMenuRadioItem key={mode} value={mode}>
-                {PLAYLIST_SORT_MODE_LABELS[mode]}
-              </DropdownMenuRadioItem>
-            ))}
-          </DropdownMenuRadioGroup>
-          <DropdownMenuSeparator />
-          <DropdownMenuCheckboxItem
+        >
+          <Checkbox
             checked={sortReversed && sortMode !== 'custom'}
             disabled={sortMode === 'custom'}
             onCheckedChange={(checked) => {
               if (sortMode === 'custom') return
-              onSortReversedChange(checked)
+              onSortReversedChange(checked === true)
             }}
-          >
-            <ArrowUpDown className="size-4" />
-            Reverse
-          </DropdownMenuCheckboxItem>
-          {hiddenEntries.length > 0
-            ? (
-                <>
-                  <DropdownMenuSeparator />
-                  <DropdownMenuGroup>
-                    <DropdownMenuLabel>Hidden Playlists</DropdownMenuLabel>
-                    {hiddenEntries.map(entry => (
-                      <DropdownMenuItem
-                        key={entry.id}
-                        onClick={() => onUnhide(entry.id)}
-                        className="justify-between gap-2 group/hidden-playlist"
-                      >
-                        {entry.name}
-                        <X className="size-4 opacity-0 transition-opacity group-hover/hidden-playlist:opacity-100" />
-                      </DropdownMenuItem>
-                    ))}
-                  </DropdownMenuGroup>
-                </>
-              )
-            : null}
-        </DropdownMenuContent>
-      </DropdownMenu>
-    </div>
+          />
+          Reverse
+        </label>
+
+        {hiddenEntries.length > 0
+          ? (
+              <>
+                <Separator />
+                <div className="flex flex-col gap-0.5">
+                  <span className="px-1.5 py-1 text-xs font-medium text-muted-foreground">
+                    Hidden Playlists
+                  </span>
+                  {hiddenEntries.map(entry => (
+                    <button
+                      key={entry.id}
+                      type="button"
+                      onClick={() => onUnhide(entry.id)}
+                      className="group/hidden-playlist flex w-full items-center justify-between gap-2 rounded-md px-1.5 py-1 text-left text-sm outline-hidden select-none hover:bg-accent hover:text-accent-foreground"
+                    >
+                      {entry.name}
+                      <X className="size-4 opacity-0 transition-opacity group-hover/hidden-playlist:opacity-100" />
+                    </button>
+                  ))}
+                </div>
+              </>
+            )
+          : null}
+      </PopoverContent>
+    </Popover>
   )
 }
