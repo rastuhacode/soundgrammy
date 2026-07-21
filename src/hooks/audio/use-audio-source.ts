@@ -13,7 +13,19 @@ import {
   onDownloadProgress,
   type DownloadProgress,
 } from '@/lib/api'
+import {
+  estimateMpegDurationSeconds,
+  resolveMpegPayloadStart,
+} from './mp3-frame-sync'
 import { attachMseSession, resolveMseMimeType, type MseSession } from './mse-session'
+
+/** Bytes of MPEG payload to probe for Xing/VBRI / CBR duration. */
+const MPEG_DURATION_PROBE_BYTES = 8 * 1024
+
+function isMpegMime(mimeType: string): boolean {
+  const base = mimeType.split(';')[0]?.trim().toLowerCase() || ''
+  return base === 'audio/mpeg' || base === 'audio/mp3'
+}
 
 export interface UseAudioSourceOptions {
   audioRef: RefObject<HTMLAudioElement | null>
@@ -125,6 +137,17 @@ export function useAudioSource(options: UseAudioSourceOptions) {
       finishAttach()
     }
 
+    /** Full-file download when MSE cannot play (or duration is unknown). */
+    const attachAfterFullDownload = async (totalHint: number) => {
+      // Paint download-mapped buffer chrome — leave MSE mode so progress is visible.
+      setStreamingMse(false)
+      setShowInitialLoading(true)
+      const path = await api.downloadTrack(track.id)
+      if (disposed || loadGenerationRef.current !== generation) return
+      const total = track.file_size ?? totalHint
+      attachCached(path, total)
+    }
+
     const initializeSource = async () => {
       try {
         // Optimistic: treat as MSE until getTrackSource proves cached.
@@ -175,11 +198,66 @@ export function useAudioSource(options: UseAudioSourceOptions) {
         const mimeType = resolveMseMimeType(source.mimeType || 'audio/mpeg')
         if (!mimeType) {
           // Do not fall back to progressive stream: — wait for a full cache file.
-          const path = await api.downloadTrack(track.id)
-          if (disposed || loadGenerationRef.current !== generation) return
-          const total = track.file_size ?? source.total
-          attachCached(path, total)
+          await attachAfterFullDownload(source.total)
           return
+        }
+
+        // Telegram duration can be 0/missing. MSE audio/mpeg often reports
+        // Infinity until EOS, so the progress bar never gets a real length.
+        let duration = track.duration ?? 0
+        if (!(duration > 0)) {
+          let estimated: number | null = null
+          if (isMpegMime(mimeType) && source.total > 10) {
+            try {
+              const headerEnd = Math.min(source.total - 1, 9)
+              await api.ensureStreamRange(source.trackId, 0, headerEnd)
+              if (disposed || loadGenerationRef.current !== generation) return
+              const header = await api.readStreamRange(
+                source.trackId,
+                0,
+                headerEnd,
+              )
+              if (disposed || loadGenerationRef.current !== generation) return
+
+              const payloadStart = resolveMpegPayloadStart(header, source.total)
+              const probeEnd = Math.min(
+                source.total - 1,
+                payloadStart + MPEG_DURATION_PROBE_BYTES - 1,
+              )
+              if (probeEnd >= payloadStart) {
+                await api.ensureStreamRange(
+                  source.trackId,
+                  payloadStart,
+                  probeEnd,
+                )
+                if (disposed || loadGenerationRef.current !== generation) return
+                const payloadProbe = await api.readStreamRange(
+                  source.trackId,
+                  payloadStart,
+                  probeEnd,
+                )
+                if (disposed || loadGenerationRef.current !== generation) return
+                estimated = estimateMpegDurationSeconds({
+                  fileTotal: source.total,
+                  payloadStart,
+                  payloadProbe,
+                })
+              }
+            }
+            catch {
+              estimated = null
+            }
+          }
+
+          if (estimated != null && estimated > 0) {
+            duration = estimated
+            setDuration(estimated)
+          }
+          else {
+            // Last resort: full download so AVFoundation can report duration.
+            await attachAfterFullDownload(source.total)
+            return
+          }
         }
 
         mseSession = attachMseSession({
@@ -187,7 +265,7 @@ export function useAudioSource(options: UseAudioSourceOptions) {
           trackId: source.trackId,
           mimeType,
           total: source.total,
-          duration: track.duration ?? 0,
+          duration,
           onAppendedOffset: (offset) => {
             if (
               !disposed

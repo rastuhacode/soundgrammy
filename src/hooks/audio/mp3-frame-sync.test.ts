@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   completeMpegFrameByteLength,
+  estimateMpegDurationSeconds,
   findMp3FrameOffset,
   id3v2TagByteLength,
   parseMp3FrameAt,
@@ -8,9 +9,11 @@ import {
   resolveMpegPayloadStart,
 } from './mp3-frame-sync'
 
-/** MPEG1 Layer III, 128 kbps, 44100 Hz, no padding — frame size 417. */
-function frameHeader(): Uint8Array {
-  return new Uint8Array([0xFF, 0xFB, 0x90, 0x00])
+/** MPEG1 Layer III, 128 kbps, 44100 Hz, stereo, no padding — frame size 417. */
+function frameHeader(bitrateIndex = 0x9): Uint8Array {
+  // 0xFF 0xFB: MPEG1 Layer III, no CRC
+  // bitrate in high nibble of byte 2; sample rate 44100 (bits 3-2 = 00); no pad
+  return new Uint8Array([0xFF, 0xFB, (bitrateIndex << 4) & 0xF0, 0x00])
 }
 
 function twoFramesWithPrefix(prefixLen: number): Uint8Array {
@@ -19,6 +22,17 @@ function twoFramesWithPrefix(prefixLen: number): Uint8Array {
   const data = new Uint8Array(prefixLen + frameSize * 2)
   data.set(header, prefixLen)
   data.set(header, prefixLen + frameSize)
+  return data
+}
+
+/** Pack N identical CBR frames into a buffer. */
+function cbrFrames(count: number, bitrateIndex = 0x9): Uint8Array {
+  const header = frameHeader(bitrateIndex)
+  const frame = parseMp3FrameAt(header, 0)!
+  const data = new Uint8Array(frame.size * count)
+  for (let i = 0; i < count; i++) {
+    data.set(header, i * frame.size)
+  }
   return data
 }
 
@@ -74,6 +88,9 @@ describe('parseMp3FrameAt', () => {
       size: 417,
       sampleRate: 44100,
       bitrate: 128,
+      versionBits: 3,
+      layerBits: 1,
+      channelMode: 0,
     })
   })
 
@@ -92,6 +109,69 @@ describe('parseMp3FrameAt', () => {
     // Same as frameHeader but padding bit set → size 418.
     const padded = new Uint8Array([0xFF, 0xFB, 0x92, 0x00])
     expect(parseMp3FrameAt(padded, 0)).toMatchObject({ size: 418 })
+  })
+})
+
+describe('estimateMpegDurationSeconds', () => {
+  it('estimates CBR duration from size and constant bitrate', () => {
+    const probe = cbrFrames(12)
+    const frame = parseMp3FrameAt(probe, 0)!
+    const audioBytes = frame.size * 1000
+    const fileTotal = 100 + audioBytes
+    const seconds = estimateMpegDurationSeconds({
+      fileTotal,
+      payloadStart: 100,
+      payloadProbe: probe,
+    })
+    expect(seconds).toBeCloseTo((audioBytes * 8) / (128 * 1000), 6)
+  })
+
+  it('uses Xing frame count when present', () => {
+    // MPEG1 Layer III stereo → Xing at offset 36.
+    const frameSize = 417
+    const probe = new Uint8Array(frameSize)
+    probe.set(frameHeader(), 0)
+    probe.set([0x58, 0x69, 0x6e, 0x67], 36) // Xing
+    // flags: frames present
+    probe[40] = 0
+    probe[41] = 0
+    probe[42] = 0
+    probe[43] = 0x01
+    // 1000 frames
+    probe[44] = 0
+    probe[45] = 0
+    probe[46] = 0x03
+    probe[47] = 0xe8
+    const seconds = estimateMpegDurationSeconds({
+      fileTotal: 500_000,
+      payloadStart: 0,
+      payloadProbe: probe,
+    })
+    // 1000 * 1152 / 44100
+    expect(seconds).toBeCloseTo((1000 * 1152) / 44100, 6)
+  })
+
+  it('returns null when consecutive frames disagree on bitrate (VBR)', () => {
+    const low = frameHeader(0x9) // 128
+    const high = frameHeader(0xe) // 320 — size 1044 at 44100
+    const lowFrame = parseMp3FrameAt(low, 0)!
+    const highFrame = parseMp3FrameAt(high, 0)!
+    const probe = new Uint8Array(lowFrame.size + highFrame.size)
+    probe.set(low, 0)
+    probe.set(high, lowFrame.size)
+    expect(estimateMpegDurationSeconds({
+      fileTotal: probe.length * 100,
+      payloadStart: 0,
+      payloadProbe: probe,
+    })).toBeNull()
+  })
+
+  it('returns null when the probe does not start on a frame', () => {
+    expect(estimateMpegDurationSeconds({
+      fileTotal: 10_000,
+      payloadStart: 0,
+      payloadProbe: twoFramesWithPrefix(12),
+    })).toBeNull()
   })
 })
 

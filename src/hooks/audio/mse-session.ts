@@ -6,7 +6,13 @@ import {
   shouldRebuildFromPrefix,
   type ByteRange,
 } from './mse-append-queue'
-import { resolveFrameSyncOffset, resolveMpegPayloadStart, parseMp3FrameAt, completeMpegFrameByteLength } from './mp3-frame-sync'
+import {
+  completeMpegFrameByteLength,
+  findMp3FrameOffset,
+  parseMp3FrameAt,
+  resolveFrameSyncOffset,
+  resolveMpegPayloadStart,
+} from './mp3-frame-sync'
 
 /** Matches Rust streaming::CHUNK_SIZE — keep append IPC payloads bounded. */
 export const MSE_APPEND_CHUNK = 128 * 1024
@@ -652,30 +658,31 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
     setAudioTimeInBuffer(buffer, clampedTime)
   }
 
+  /**
+   * Discontinuous mid-file island. Returns false when the island cannot be
+   * built — callers should fall back to sequential prefix rebuild.
+   */
   const appendIsland = async (
     buffer: SourceBuffer,
     clampedTime: number,
     targetByte: number,
     generation: number,
-  ) => {
+  ): Promise<boolean> => {
     const probeStart = Math.max(0, targetByte - SEEK_PROBE_BACK)
     const probeEnd = Math.min(total - 1, targetByte + MSE_APPEND_CHUNK - 1)
 
     await api.ensureStreamRange(trackId, probeStart, probeEnd)
-    if (disposed || generation !== seekGeneration) return
+    if (disposed || generation !== seekGeneration) return false
 
     const probe = await api.readStreamRange(trackId, probeStart, probeEnd)
-    if (disposed || generation !== seekGeneration) return
+    if (disposed || generation !== seekGeneration) return false
 
     const syncAbs = resolveFrameSyncOffset({
       probe,
       probeStart,
       targetByte,
     })
-    if (syncAbs === null) {
-      fail()
-      return
-    }
+    if (syncAbs === null) return false
 
     const appendStart = syncAbs
     const appendEnd = Math.min(total - 1, appendStart + MSE_APPEND_CHUNK - 1)
@@ -689,21 +696,32 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
     }
     else {
       await api.ensureStreamRange(trackId, appendStart, appendEnd)
-      if (disposed || generation !== seekGeneration) return
+      if (disposed || generation !== seekGeneration) return false
       appendBytes = await api.readStreamRange(trackId, appendStart, appendEnd)
     }
-    if (disposed || generation !== seekGeneration) return
-    if (appendBytes.byteLength === 0) {
-      fail()
-      return
+    if (disposed || generation !== seekGeneration) return false
+    if (appendBytes.byteLength === 0) return false
+
+    // Keep the island frame-aligned so the follow-on pump does not start
+    // mid-frame (completeMpegFrameByteLength → 0 → session fail / pause loop).
+    let nextOffset = appendStart + appendBytes.byteLength
+    if (isMpegMseMime(mimeType) && appendEnd < total - 1) {
+      const keep = completeMpegFrameByteLength(appendBytes)
+      if (keep <= 0) return false
+      if (keep < appendBytes.byteLength) {
+        appendBytes = appendBytes.subarray(0, keep)
+        nextOffset = appendStart + keep
+      }
     }
 
     await waitForSourceBufferIdle(buffer)
     if (disposed || generation !== seekGeneration || mediaSource.readyState !== 'open') {
-      return
+      return false
     }
 
-    const timeAtSync = (appendStart / total) * resolveDuration()
+    const audioBytes = Math.max(1, total - mpegPayloadStart)
+    const timeAtSync
+      = ((appendStart - mpegPayloadStart) / audioBytes) * resolveDuration()
     try {
       if (!buffer.updating) buffer.timestampOffset = timeAtSync
     }
@@ -715,16 +733,16 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
       buffer.appendBuffer(new Uint8Array(appendBytes))
     }
     catch {
-      fail()
-      return
+      return false
     }
     await waitForSourceBufferIdle(buffer)
-    if (disposed || generation !== seekGeneration) return
+    if (disposed || generation !== seekGeneration) return false
 
-    nextAppendOffset = appendStart + appendBytes.byteLength
+    nextAppendOffset = nextOffset
     ended = false
     emitAppended()
     setAudioTimeInBuffer(buffer, clampedTime)
+    return true
   }
 
   const pump = async () => {
@@ -802,8 +820,14 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
       if (isMpegMseMime(mimeType) && window.end < total - 1) {
         const keep = completeMpegFrameByteLength(bytes)
         if (keep <= 0) {
-          // No complete frame at the cursor — retrying would microtask-spin.
-          fail()
+          // Cursor landed mid-frame (common after a poorly trimmed island).
+          // Skip forward to the next sync instead of killing the session.
+          const sync = findMp3FrameOffset(bytes, 1)
+          if (sync > 0) {
+            nextAppendOffset = window.start + sync
+            emitAppended()
+            return
+          }
           reschedule = false
           return
         }
@@ -914,7 +938,27 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
         fail()
         return
       }
-      await appendIsland(buffer, clampedTime, targetByte, generation)
+      const islandOk = await appendIsland(buffer, clampedTime, targetByte, generation)
+      if (!islandOk) {
+        if (
+          !disposed
+          && generation === seekGeneration
+          && mediaSource.readyState === 'open'
+          && sourceBuffer
+        ) {
+          // Island failed (no frame sync / append error) — wait on sequential
+          // prefix growth until the seek target is covered.
+          await rebuildFromPrefix(sourceBuffer, clampedTime, generation)
+        }
+        if (
+          !disposed
+          && generation === seekGeneration
+          && sourceBuffer
+          && snapTimeIntoBuffer(sourceBuffer, clampedTime) === null
+        ) {
+          fail()
+        }
+      }
     }
     catch {
       if (generation === seekGeneration) fail()
