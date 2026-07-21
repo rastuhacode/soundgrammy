@@ -117,7 +117,7 @@
     @apply border-border outline-ring/50;
   }
   body {
-    @apply bg-background text-foreground;
+    @apply bg-background text-foreground min-h-0 min-w-0;
     font-feature-settings: "ss01", "cv01";
     margin: 0;
     -webkit-user-select: none;

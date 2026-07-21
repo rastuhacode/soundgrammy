@@ -89,6 +89,13 @@ async fn finalize(state: &AppState) -> AppResult<AuthUser> {
 // ---- phone ---------------------------------------------------------------
 
 pub async fn phone_send_code(state: &AppState, phone: &str) -> AppResult<()> {
+    // Drop leftover QR / prior phone / 2FA tokens so sendCode isn't fighting
+    // an interrupted auth attempt (common after leaving QR or the code step).
+    {
+        let mut pending = state.pending.lock().await;
+        *pending = Default::default();
+    }
+
     let token = state
         .client
         .request_login_code(phone, &state.config.api_hash)
