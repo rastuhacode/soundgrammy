@@ -8,7 +8,7 @@ import {
 } from '@/stores/playlists-store'
 import { cn } from '@/lib/utils'
 
-type SidebarPlaylistThumbnailVariant
+export type SidebarPlaylistThumbnailVariant
   = | typeof ALL_TRACKS_PLAYLIST_ID
     | typeof LIKED_PLAYLIST_ID
     | typeof POPULAR_PLAYLIST_ID

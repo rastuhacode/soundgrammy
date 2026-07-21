@@ -14,7 +14,7 @@ IPC: `record_listen_start` / `record_listen_end` / `get_track_listen_stats` / `l
 
 ## UI consumers
 
-- **Most popular** / **Recent** — virtual playlists (`id: popular` / `recent`) of library tracks that have listen history, ordered by likeness / `last_played_at_ms`. Immutable membership; not drag-reorderable.
+- **Popular** / **Recent** — virtual playlists (`id: popular` / `recent`) of library tracks that have listen history, ordered by likeness / `last_played_at_ms`. Immutable membership; not drag-reorderable.
 - **Track info** — Listening section via `get_track_listen_stats` (likeness, plays, skips, listened time, first/last played).
 
 ## Counting (v1)

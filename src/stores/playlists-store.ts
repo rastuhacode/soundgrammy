@@ -209,7 +209,7 @@ export function resolveSelectedPlaylist(
   if (playlistId === POPULAR_PLAYLIST_ID) {
     return {
       id: POPULAR_PLAYLIST_ID,
-      name: 'Most popular',
+      name: 'Popular',
       trackIds,
       isCustom: false,
     }
