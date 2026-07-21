@@ -3,11 +3,11 @@ import type { ListenEndReason } from '@/types'
 /** Pending abandonment reason set by player-store before changing tracks. */
 let pendingEndReason: ListenEndReason | null = null
 
-export function setPendingListenEndReason(reason: ListenEndReason): void {
+export function setPendingListenEndReason(reason: ListenEndReason) {
   pendingEndReason = reason
 }
 
-export function clearPendingListenEndReason(): void {
+export function clearPendingListenEndReason() {
   pendingEndReason = null
 }
 

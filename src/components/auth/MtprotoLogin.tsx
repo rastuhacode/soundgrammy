@@ -23,7 +23,7 @@ export function MtprotoLogin({
           qrLoading={login.qrLoading}
           busy={login.busy}
           error={login.error}
-          onRefresh={() => void login.startQrLogin()}
+          onRefresh={login.startQrLogin}
           onUsePhone={login.switchToPhone}
         />
       )
@@ -38,7 +38,7 @@ export function MtprotoLogin({
           submitLabel="Continue"
           showBackToQr
           onPasswordChange={login.setPassword}
-          onSubmit={password => void login.handlePassword(password)}
+          onSubmit={password => login.handlePassword(password)}
           onBackToQr={login.goToQr}
           onUsePhone={login.switchToPhone}
         />
@@ -51,7 +51,7 @@ export function MtprotoLogin({
           busy={login.busy}
           error={login.error}
           onPhoneNumberChange={login.setPhoneNumber}
-          onSubmit={phone => void login.handleSendCode(phone)}
+          onSubmit={phone => login.handleSendCode(phone)}
           onBackToQr={login.goToQr}
         />
       )
@@ -63,7 +63,7 @@ export function MtprotoLogin({
           busy={login.busy}
           error={login.error}
           onCodeChange={login.setCode}
-          onSubmit={code => void login.handleSignIn(code)}
+          onSubmit={code => login.handleSignIn(code)}
           onBackToPhone={login.goToPhone}
         />
       )
@@ -78,7 +78,7 @@ export function MtprotoLogin({
           submitLabel="Sign in"
           showBackToQr={false}
           onPasswordChange={login.setPassword}
-          onSubmit={password => void login.handlePassword(password)}
+          onSubmit={password => login.handlePassword(password)}
           onUsePhone={login.goToPhone}
         />
       )

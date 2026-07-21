@@ -169,9 +169,7 @@ export function useMtprotoLogin(onAuthenticated: (user: AuthUser) => void) {
       }
     }
 
-    const interval = setInterval(() => {
-      void tick()
-    }, POLL_INTERVAL_MS)
+    const interval = setInterval(tick, POLL_INTERVAL_MS)
 
     return () => {
       cancelled = true
@@ -196,7 +194,7 @@ export function useMtprotoLogin(onAuthenticated: (user: AuthUser) => void) {
   const goToQr = useCallback(() => {
     setPassword('')
     setCode('')
-    void startQrLogin()
+    startQrLogin()
   }, [startQrLogin])
 
   const setPhoneNumberValue = useCallback((value: string) => {

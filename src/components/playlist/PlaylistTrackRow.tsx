@@ -116,7 +116,7 @@ export function PlaylistTrackRowView({
             {showEqualizer
               ? (
                   <span className="equalizer flex h-4 items-end gap-1">
-                    <span className="w-[3px] rounded-[1px] bg-foreground" />
+                    <span className="w-0.75 rounded-[1px] bg-foreground" />
                     <span />
                     <span />
                   </span>

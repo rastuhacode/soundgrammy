@@ -48,7 +48,7 @@ export function useListenTracker(options: {
     durationSec: number | null | undefined,
   ) => {
     const durationMs = trackDurationMs(durationSec)
-    void api.recordListenEnd({
+    api.recordListenEnd({
       trackId: id,
       listenedMs,
       durationMs,
@@ -85,7 +85,7 @@ export function useListenTracker(options: {
     if (isPlayingRef.current) {
       clockRef.current = clockOnPlay(clockRef.current, performance.now())
     }
-    void api.recordListenStart(id).catch(() => {
+    api.recordListenStart(id).catch(() => {
       // Best-effort; do not interrupt playback.
     })
   }

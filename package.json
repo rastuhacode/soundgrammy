@@ -29,6 +29,7 @@
     "@tanstack/react-virtual": "^3.14.6",
     "@tauri-apps/api": "^2.11.1",
     "@tauri-apps/plugin-opener": "^2.5.4",
+    "canvas-confetti": "^1.9.4",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "input-otp": "^1.4.2",
@@ -43,6 +44,7 @@
     "zustand": "^5.0.14"
   },
   "devDependencies": {
+    "@types/canvas-confetti": "^1.9.0",
     "@eslint/js": "^10.0.1",
     "@stylistic/eslint-plugin": "^5.10.0",
     "@tailwindcss/vite": "^4.3.3",

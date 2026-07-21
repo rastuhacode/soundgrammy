@@ -44,7 +44,7 @@ function stubMediaSource(options?: {
   duration?: number
   sourceBufferInit?: FakeMediaSource['sourceBufferInit']
   instances?: FakeMediaSource[]
-}): void {
+}) {
   const total = options?.total ?? TOTAL
   const duration = options?.duration ?? DURATION
   const instances = options?.instances
