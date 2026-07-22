@@ -31,10 +31,12 @@ flowchart LR
 
 ## Media
 
-- **Cached**: absolute path → `fileSrc()` (`asset:` URL) for `<audio>` / images.
-- **Uncached (streamed)**: `get_track_source` returns `stream`; the UI attaches `<audio>` to a `MediaSource` object URL and appends bytes via `read_stream_range` as the download ledger grows (`src/hooks/audio/mse-session.ts`). Full track duration is set on the `MediaSource` from metadata. Buffer UI uses `download:progress` ranges, not WebKit’s optimistic `HTMLMediaElement.buffered`.
+- **App cache**: audio under the app cache dir (`audio/{file_unique_id}.{ext}`). Used for in-app playback. Subject to Settings size limit / TTL / clear. Thumbnail border (greyish → primary) reflects cache status.
+- **Download (export)**: copies a track into the system Downloads folder (`SoundGrammy/…`). Not removed by clear cache or eviction. Bulk export uses a dated subfolder.
+- **Cached playback path**: absolute path → `fileSrc()` (`asset:` URL) for `<audio>` / images.
+- **Uncached (streamed)**: `get_track_source` returns `stream`; the UI attaches `<audio>` to a MediaSource object URL and appends bytes via `read_stream_range` as the download ledger grows (`src/hooks/audio/mse-session.ts`). Full track duration is set on the `MediaSource` from metadata. Buffer UI uses `download:progress` ranges, not WebKit's optimistic `HTMLMediaElement.buffered`.
+- Completing a stream finalize marks the track cached (Telegram-like). Explicit **Cache** also fills app cache without writing to Downloads.
 - The `stream:` protocol in `streaming.rs` remains as the byte backend / range fetcher; playback must not assign `stream:` directly as `audio.src` (that progressive path lies about buffer and clock under WebKit).
-- Downloads / prefetch write into the app cache dir; progress via `download:progress`.
 - See [MSE-integration.md](./MSE-integration.md) for the why and transport notes.
 
 ## Events
@@ -43,6 +45,7 @@ flowchart LR
 |-------|---------|
 | `sync:start` / `sync:progress` / `sync:done` | Saved-music sync lifecycle |
 | `download:progress` | Per-track download bytes / ranges |
+| `cache:changed` | Track(s) entered/left app cache, or full clear |
 
 Listeners live in `src/lib/api.ts`.
 

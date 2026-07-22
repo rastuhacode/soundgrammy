@@ -1,4 +1,4 @@
-import { Play, Search, Shuffle, Undo2, X } from 'lucide-react'
+import { HardDriveDownload, Play, Search, Shuffle, Undo2, X } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { Separator } from '@/components/ui/separator'
 import { Button } from '@/components/ui/button'
@@ -21,8 +21,10 @@ export interface PlaylistToolbarProps {
   currentPlaylist: ResolvedSelectedPlaylist
   customPlaylists: CustomPlaylistRef[]
   likedTrackIds: Set<number>
+  playlistCached: boolean
   onPlay: () => void
   onShuffle: () => void
+  onCachePlaylist: () => void
   onExitSelection: () => void
   onAddToLiked: (trackIds: number[]) => void
   onRemoveFromLiked: (trackIds: number[]) => void
@@ -30,6 +32,7 @@ export interface PlaylistToolbarProps {
   onRemoveFromPlaylist: (playlistId: number, positions: number[]) => void
   onPlayNext: () => void
   onAddToEnd: () => void
+  onCache: (trackIds: number[]) => void
   onDownload: (trackIds: number[]) => void
 }
 
@@ -42,8 +45,10 @@ export function PlaylistToolbar({
   currentPlaylist,
   customPlaylists,
   likedTrackIds,
+  playlistCached,
   onPlay,
   onShuffle,
+  onCachePlaylist,
   onExitSelection,
   onAddToLiked,
   onRemoveFromLiked,
@@ -51,6 +56,7 @@ export function PlaylistToolbar({
   onRemoveFromPlaylist,
   onPlayNext,
   onAddToEnd,
+  onCache,
   onDownload,
 }: PlaylistToolbarProps) {
   return (
@@ -62,6 +68,15 @@ export function PlaylistToolbar({
         <Button variant="secondary" onClick={onShuffle}>
           <Shuffle className="size-4" />
           Shuffle
+        </Button>
+        <Button
+          variant="secondary"
+          onClick={onCachePlaylist}
+          disabled={playlistCached}
+          title={playlistCached ? 'All tracks cached' : 'Cache all tracks in this playlist'}
+        >
+          <HardDriveDownload className="size-4" />
+          Cache playlist
         </Button>
 
         <AnimatePresence initial={false}>
@@ -89,6 +104,7 @@ export function PlaylistToolbar({
                   onRemoveFromPlaylist={onRemoveFromPlaylist}
                   onPlayNext={onPlayNext}
                   onAddToEnd={onAddToEnd}
+                  onCache={onCache}
                   onDownload={onDownload}
                 />
               )}

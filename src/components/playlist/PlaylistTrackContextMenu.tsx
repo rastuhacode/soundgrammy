@@ -1,6 +1,8 @@
 import {
   CheckSquare,
   Download,
+  HardDriveDownload,
+  HardDriveUpload,
   Heart,
   Info,
   ListEnd,
@@ -42,7 +44,9 @@ export interface PlaylistTrackContextMenuProps {
   onDeleteFromPlaylist: (playlistId: number, position: number) => void
   onPlayNext: (track: Track) => void
   onAddToEnd: (track: Track) => void
+  onCache: (track: Track) => void
   onDownload: (track: Track) => void
+  onRemoveFromCache: (track: Track) => void
   onShowInfo: (track: Track) => void
 }
 
@@ -59,7 +63,9 @@ export function PlaylistTrackContextMenu({
   onDeleteFromPlaylist,
   onPlayNext,
   onAddToEnd,
+  onCache,
   onDownload,
+  onRemoveFromCache,
   onShowInfo,
 }: PlaylistTrackContextMenuProps) {
   const actions = getTrackContextActions(currentPlaylist)
@@ -70,7 +76,7 @@ export function PlaylistTrackContextMenu({
       <ContextMenuTrigger className="contents">
         {children}
       </ContextMenuTrigger>
-      <ContextMenuContent className="w-48">
+      <ContextMenuContent className="w-52">
         <ContextMenuGroup>
           <ContextMenuLabel>Selection</ContextMenuLabel>
           <ContextMenuItem onClick={() => onSelect(sourceIndex)}>
@@ -154,10 +160,22 @@ export function PlaylistTrackContextMenu({
 
         <ContextMenuGroup>
           <ContextMenuLabel>Track</ContextMenuLabel>
+          {actions.cache && (
+            <ContextMenuItem onClick={() => onCache(track)}>
+              <HardDriveDownload className="size-4" />
+              Cache
+            </ContextMenuItem>
+          )}
           {actions.download && (
             <ContextMenuItem onClick={() => onDownload(track)}>
               <Download className="size-4" />
               Download
+            </ContextMenuItem>
+          )}
+          {actions.removeFromCache && (
+            <ContextMenuItem onClick={() => onRemoveFromCache(track)}>
+              <HardDriveUpload className="size-4" />
+              Remove from cache
             </ContextMenuItem>
           )}
           {actions.showInfo && (

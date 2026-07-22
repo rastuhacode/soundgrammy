@@ -1,4 +1,4 @@
-import { Heart, ListEnd, ListPlus, ListStart, ListX } from 'lucide-react'
+import { Download, HardDriveDownload, Heart, ListEnd, ListPlus, ListStart, ListX } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -32,6 +32,7 @@ export interface PlaylistBulkActionsProps {
   onRemoveFromPlaylist: (playlistId: number, positions: number[]) => void
   onPlayNext: (trackIds: number[]) => void
   onAddToEnd: (trackIds: number[]) => void
+  onCache: (trackIds: number[]) => void
   onDownload: (trackIds: number[]) => void
 }
 
@@ -47,6 +48,8 @@ export function PlaylistBulkActions({
   onRemoveFromPlaylist,
   onPlayNext,
   onAddToEnd,
+  onCache,
+  onDownload,
 }: PlaylistBulkActionsProps) {
   const actions = getBulkActions(currentPlaylist)
   const availablePlaylists = getAvailableCustomPlaylists(customPlaylists)
@@ -66,7 +69,7 @@ export function PlaylistBulkActions({
           </Button>
         )}
       />
-      <DropdownMenuContent className="w-48" align="start">
+      <DropdownMenuContent className="w-52" align="start">
         <DropdownMenuGroup>
           <DropdownMenuLabel>Queue</DropdownMenuLabel>
           {actions.playNext && (
@@ -145,6 +148,22 @@ export function PlaylistBulkActions({
             >
               <ListX className="size-4" />
               Remove from playlist
+            </DropdownMenuItem>
+          )}
+        </DropdownMenuGroup>
+
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>Library</DropdownMenuLabel>
+          {actions.cache && (
+            <DropdownMenuItem onClick={() => onCache(selectedTrackIds)}>
+              <HardDriveDownload className="size-4" />
+              Cache
+            </DropdownMenuItem>
+          )}
+          {actions.download && (
+            <DropdownMenuItem onClick={() => onDownload(selectedTrackIds)}>
+              <Download className="size-4" />
+              Download
             </DropdownMenuItem>
           )}
         </DropdownMenuGroup>

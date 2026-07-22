@@ -15,6 +15,10 @@ import {
 import { useListenStatsStore } from '@/stores/listen-stats-store'
 import { useSessionStore } from '@/stores/session-store'
 import { useFullscreenStore } from '@/stores/fullscreen-store'
+import {
+  startCacheStatusListener,
+  useCacheStore,
+} from '@/stores/cache-store'
 
 type AppStatus = 'loading' | 'login' | 'ready'
 
@@ -29,6 +33,7 @@ async function loadLibrary(firstLoad: boolean) {
   useLibraryStore.getState().setLibrary(library)
   usePlayerStore.getState().refreshQueueTracks(library)
   useListenStatsStore.getState().hydrate(listenStats)
+  await useCacheStore.getState().hydrate()
 
   // Keep the current track reference fresh (mirrors PlayerTracksHydrator).
   const { currentTrack } = usePlayerStore.getState()
@@ -105,6 +110,15 @@ export default function App() {
     }
   }, [status])
 
+  // Keep thumbnail cache borders in sync with backend cache:changed events.
+  useEffect(() => {
+    if (status !== 'ready') return
+    const promise = startCacheStatusListener()
+    return () => {
+      promise.then(unlisten => unlisten())
+    }
+  }, [status])
+
   const handleAuthenticated = useCallback(
     async (user: AuthUser) => {
       setSession(authUserToSession(user))
@@ -125,6 +139,7 @@ export default function App() {
     useFullscreenStore.getState().exitFullscreen()
     clearSession()
     useLibraryStore.getState().setLibrary([])
+    useCacheStore.getState().clearAll()
     usePlayerStore.getState().clearQueue()
     usePlaylistsStore.setState({
       data: null,

@@ -67,7 +67,9 @@ export interface PlaylistTracksTableProps {
   onDeleteFromPlaylist: (playlistId: number, position: number) => void
   onPlayNext: (track: Track) => void
   onAddToEnd: (track: Track) => void
+  onCache: (track: Track) => void
   onDownload: (track: Track) => void
+  onRemoveFromCache: (track: Track) => void
   onShowInfo: (track: Track) => void
 }
 
@@ -99,7 +101,9 @@ export function PlaylistTracksTable({
   onDeleteFromPlaylist,
   onPlayNext,
   onAddToEnd,
+  onCache,
   onDownload,
+  onRemoveFromCache,
   onShowInfo,
 }: PlaylistTracksTableProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
@@ -354,7 +358,9 @@ export function PlaylistTracksTable({
                     onDeleteFromPlaylist={onDeleteFromPlaylist}
                     onPlayNext={onPlayNext}
                     onAddToEnd={onAddToEnd}
+                    onCache={onCache}
                     onDownload={onDownload}
+                    onRemoveFromCache={onRemoveFromCache}
                     onShowInfo={onShowInfo}
                   >
                     <PlaylistTrackRow

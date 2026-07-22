@@ -132,3 +132,20 @@ export interface ListenEndResult {
   listened_eff_ms: number
   stats: TrackListenStats
 }
+
+export interface CacheSettings {
+  limitBytes: number
+  ttlSecs: number
+}
+
+export interface CacheUsage {
+  usedBytes: number
+  limitBytes: number
+  fileCount: number
+}
+
+export interface CacheChanged {
+  trackIds: number[]
+  cached: boolean
+  cleared: boolean
+}

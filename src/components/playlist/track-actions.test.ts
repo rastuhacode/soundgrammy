@@ -50,7 +50,9 @@ describe('getTrackContextActions', () => {
     expect(actions.toggleLike).toBe(true)
     expect(actions.addToPlaylist).toBe(true)
     expect(actions.removeFromPlaylist).toBe(false)
+    expect(actions.cache).toBe(true)
     expect(actions.download).toBe(true)
+    expect(actions.removeFromCache).toBe(true)
     expect(actions.showInfo).toBe(true)
   })
 
@@ -81,6 +83,7 @@ describe('getBulkActions', () => {
     expect(actions.addToLiked).toBe(true)
     expect(actions.removeFromLiked).toBe(false)
     expect(actions.addToPlaylist).toBe(true)
+    expect(actions.cache).toBe(true)
     expect(actions.download).toBe(true)
   })
 
@@ -100,6 +103,17 @@ describe('getBulkActions', () => {
     expect(
       getBulkActions({ id: 'popular', isCustom: false }).addToLiked,
     ).toBe(true)
+  })
+
+  it('exposes cache and download for every playlist view', () => {
+    for (const id of ['all', 'liked', 'popular', 'recent', 1] as const) {
+      const actions = getBulkActions({
+        id,
+        isCustom: typeof id === 'number',
+      })
+      expect(actions.cache).toBe(true)
+      expect(actions.download).toBe(true)
+    }
   })
 })
 

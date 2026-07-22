@@ -272,6 +272,94 @@ pub async fn prefetch_track(
     Ok(())
 }
 
+/// Explicit "Cache" action — same as prefetch (app cache only).
+#[tauri::command]
+pub async fn cache_track(
+    state: State<'_, AppState>,
+    app: AppHandle,
+    track_id: i64,
+) -> AppResult<()> {
+    cache::ensure_audio(&state, &app, track_id).await?;
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn cache_tracks(
+    state: State<'_, AppState>,
+    app: AppHandle,
+    track_ids: Vec<i64>,
+) -> AppResult<Vec<i64>> {
+    cache::cache_tracks(&state, &app, &track_ids).await
+}
+
+#[tauri::command]
+pub async fn remove_track_from_cache(
+    state: State<'_, AppState>,
+    app: AppHandle,
+    track_id: i64,
+) -> AppResult<()> {
+    cache::remove_audio(&state, &app, track_id).await
+}
+
+#[tauri::command]
+pub async fn clear_audio_cache(state: State<'_, AppState>, app: AppHandle) -> AppResult<()> {
+    cache::clear_audio_cache(&state, &app).await
+}
+
+#[tauri::command]
+pub async fn get_cache_status(state: State<'_, AppState>) -> AppResult<Vec<i64>> {
+    cache::cached_track_ids(&state)
+}
+
+#[tauri::command]
+pub async fn get_cache_settings(
+    state: State<'_, AppState>,
+) -> AppResult<cache::CacheSettings> {
+    cache::get_cache_settings(&state)
+}
+
+#[tauri::command]
+pub async fn set_cache_settings(
+    state: State<'_, AppState>,
+    app: AppHandle,
+    limit_bytes: Option<i64>,
+    ttl_secs: Option<i64>,
+) -> AppResult<cache::CacheSettings> {
+    let settings = cache::set_cache_settings(&state, limit_bytes, ttl_secs)?;
+    // Apply new TTL / make room under a lower limit.
+    let _ = cache::enforce_ttl(&state, &app).await;
+    let (used, _) = cache::usage_bytes(&state).await?;
+    let limit = settings.limit_bytes.max(0) as u64;
+    if used > limit {
+        let _ = cache::evict_for_room(&state, &app, used - limit).await;
+    }
+    Ok(settings)
+}
+
+#[tauri::command]
+pub async fn get_cache_usage(state: State<'_, AppState>) -> AppResult<cache::CacheUsage> {
+    cache::get_cache_usage(&state).await
+}
+
+/// Copy a track into the system Downloads folder (user-facing Download).
+#[tauri::command]
+pub async fn export_track(
+    state: State<'_, AppState>,
+    app: AppHandle,
+    track_id: i64,
+) -> AppResult<String> {
+    crate::export::export_track(&state, &app, track_id).await
+}
+
+#[tauri::command]
+pub async fn export_tracks(
+    state: State<'_, AppState>,
+    app: AppHandle,
+    track_ids: Vec<i64>,
+) -> AppResult<String> {
+    crate::export::export_tracks(&state, &app, &track_ids).await
+}
+
 #[tauri::command]
 pub async fn get_track_thumbnail(
     state: State<'_, AppState>,

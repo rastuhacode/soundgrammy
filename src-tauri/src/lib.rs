@@ -5,6 +5,7 @@ mod commands;
 mod config;
 mod db;
 mod error;
+mod export;
 mod listen_stats;
 mod session;
 mod state;
@@ -51,6 +52,12 @@ pub fn run() {
                 streaming: Default::default(),
             });
 
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                let state = handle.state::<AppState>();
+                let _ = cache::enforce_ttl(&state, &handle).await;
+            });
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -71,6 +78,16 @@ pub fn run() {
             commands::ensure_stream_range,
             commands::download_track,
             commands::prefetch_track,
+            commands::cache_track,
+            commands::cache_tracks,
+            commands::remove_track_from_cache,
+            commands::clear_audio_cache,
+            commands::get_cache_status,
+            commands::get_cache_settings,
+            commands::set_cache_settings,
+            commands::get_cache_usage,
+            commands::export_track,
+            commands::export_tracks,
             commands::get_track_thumbnail,
             commands::get_user_avatar,
             commands::track_metadata,

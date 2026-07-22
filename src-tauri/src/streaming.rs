@@ -160,6 +160,15 @@ impl TrackStream {
             })
     }
 
+    /// Paths that must not be deleted while this stream is active.
+    pub async fn protected_paths(&self) -> Vec<PathBuf> {
+        let mut paths = vec![self.destination.clone(), self.partial.clone()];
+        if let Some(final_path) = self.final_path.lock().await.clone() {
+            paths.push(final_path);
+        }
+        paths
+    }
+
     /// Download the file header and correct MIME when Telegram's label is wrong.
     /// Must run before the frontend opens an MSE SourceBuffer.
     pub async fn ensure_container_mime(self: &Arc<Self>) -> AppResult<()> {
@@ -415,6 +424,14 @@ impl TrackStream {
             progress_from_state(self.track.id, self.total, &state),
         );
         drop(state);
+        let _ = self.app.emit(
+            "cache:changed",
+            crate::cache::CacheChanged {
+                track_ids: vec![self.track.id],
+                cached: true,
+                cleared: false,
+            },
+        );
         self.completion.notify_waiters();
         Ok(())
     }
@@ -548,6 +565,22 @@ impl StreamingManager {
         let mut streams = self.streams.lock().await;
         streams.retain(|_, stream| stream.strong_count() > 0);
         streams.get(&track_id).and_then(Weak::upgrade)
+    }
+
+    /// Destinations / partials for active streams — never delete these on clear/evict.
+    pub async fn protected_audio_paths(&self) -> Vec<PathBuf> {
+        let mut streams = self.streams.lock().await;
+        streams.retain(|_, stream| stream.strong_count() > 0);
+        let active: Vec<Arc<TrackStream>> = streams
+            .values()
+            .filter_map(Weak::upgrade)
+            .collect();
+        drop(streams);
+        let mut out = Vec::new();
+        for stream in active {
+            out.extend(stream.protected_paths().await);
+        }
+        out
     }
 }
 

@@ -4,6 +4,9 @@ import type {
   AuthOutcome,
   AuthStatus,
   AuthUser,
+  CacheChanged,
+  CacheSettings,
+  CacheUsage,
   CustomPlaylistSummary,
   LikedPlaylist,
   ListenEndReason,
@@ -73,6 +76,28 @@ export const api = {
     invoke<string>('download_track', { trackId }),
   prefetchTrack: (trackId: number) =>
     invoke<void>('prefetch_track', { trackId }),
+  cacheTrack: (trackId: number) =>
+    invoke<void>('cache_track', { trackId }),
+  cacheTracks: (trackIds: number[]) =>
+    invoke<number[]>('cache_tracks', { trackIds }),
+  removeTrackFromCache: (trackId: number) =>
+    invoke<void>('remove_track_from_cache', { trackId }),
+  clearAudioCache: () => invoke<void>('clear_audio_cache'),
+  getCacheStatus: () => invoke<number[]>('get_cache_status'),
+  getCacheSettings: () => invoke<CacheSettings>('get_cache_settings'),
+  setCacheSettings: (input: {
+    limitBytes?: number | null
+    ttlSecs?: number | null
+  }) =>
+    invoke<CacheSettings>('set_cache_settings', {
+      limitBytes: input.limitBytes ?? null,
+      ttlSecs: input.ttlSecs ?? null,
+    }),
+  getCacheUsage: () => invoke<CacheUsage>('get_cache_usage'),
+  exportTrack: (trackId: number) =>
+    invoke<string>('export_track', { trackId }),
+  exportTracks: (trackIds: number[]) =>
+    invoke<string>('export_tracks', { trackIds }),
   getTrackThumbnail: (trackId: number, highQuality = false) =>
     invoke<string | null>('get_track_thumbnail', { trackId, highQuality }),
   getUserAvatar: () => invoke<string | null>('get_user_avatar'),
@@ -182,4 +207,10 @@ export function onDownloadProgress(
   cb: (p: DownloadProgress) => void,
 ): Promise<UnlistenFn> {
   return listen<DownloadProgress>('download:progress', e => cb(e.payload))
+}
+
+export function onCacheChanged(
+  cb: (p: CacheChanged) => void,
+): Promise<UnlistenFn> {
+  return listen<CacheChanged>('cache:changed', e => cb(e.payload))
 }

@@ -24,6 +24,7 @@ Zustand stores under `stores/`:
 | `playlists-store` | Liked + custom playlists, selection |
 | `listen-stats-store` | Per-track listen aggregates (smart playlists) |
 | `player-store` | Queue, current track, playback flags |
+| `cache-store` | Which tracks are fully present in app audio cache |
 | `shuffle-store` / `repeat-store` | Playback modes |
 | `fullscreen-store` | Fullscreen player UI |
 

@@ -24,6 +24,16 @@ import {
   sortIndexedPlaylistTracks,
   sortingStateToTrackSort,
 } from '@/components/playlist/track-actions'
+import { useCacheStore } from '@/stores/cache-store'
+
+function errorMessage(error: unknown): string {
+  if (error && typeof error === 'object' && 'message' in error) {
+    const message = (error as { message?: unknown }).message
+    if (typeof message === 'string' && message.length > 0) return message
+  }
+  if (error instanceof Error && error.message) return error.message
+  return 'Something went wrong'
+}
 
 export function usePlaylistView() {
   const [search, setSearch] = useState('')
@@ -31,6 +41,7 @@ export function usePlaylistView() {
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
   const [sorting, setSorting] = useState<SortingState>([])
   const [infoTrack, setInfoTrack] = useState<Track | null>(null)
+  const [actionError, setActionError] = useState<string | null>(null)
 
   const { contains } = useFilter()
 
@@ -429,21 +440,57 @@ export function usePlaylistView() {
     )
   }
 
+  const handleCache = async (track: Track) => {
+    try {
+      await api.cacheTrack(track.id)
+      useCacheStore.getState().markCached([track.id])
+    }
+    catch (error) {
+      setActionError(errorMessage(error))
+    }
+  }
+
+  const handleBulkCache = async (trackIds: number[]) => {
+    try {
+      const cached = await api.cacheTracks(trackIds)
+      useCacheStore.getState().markCached(cached)
+    }
+    catch (error) {
+      setActionError(errorMessage(error))
+    }
+  }
+
+  const handleCachePlaylist = async () => {
+    const trackIds = playlistTracks.map(track => track.id)
+    await handleBulkCache(trackIds)
+  }
+
   const handleDownload = async (track: Track) => {
     try {
-      const path = await api.downloadTrack(track.id)
+      const path = await api.exportTrack(track.id)
       await revealItemInDir(path)
     }
-    catch {
-      // ignore — file may still be downloading
+    catch (error) {
+      setActionError(errorMessage(error))
     }
   }
 
   const handleBulkDownload = async (trackIds: number[]) => {
-    const byId = new Map(playlistTracks.map(track => [track.id, track]))
-    for (const trackId of trackIds) {
-      const track = byId.get(trackId)
-      if (track) await handleDownload(track)
+    try {
+      await api.exportTracks(trackIds)
+    }
+    catch (error) {
+      setActionError(errorMessage(error))
+    }
+  }
+
+  const handleRemoveFromCache = async (track: Track) => {
+    try {
+      await api.removeTrackFromCache(track.id)
+      useCacheStore.getState().markUncached([track.id])
+    }
+    catch (error) {
+      setActionError(errorMessage(error))
     }
   }
 
@@ -471,7 +518,15 @@ export function usePlaylistView() {
     }
   }
 
+  const handleActionErrorOpenChange = (open: boolean) => {
+    if (!open) setActionError(null)
+  }
+
   const checkTrackLiked = (trackId: number) => isTrackLiked(data, trackId)
+  const cachedIds = useCacheStore(state => state.cachedIds)
+  const playlistCached
+    = playlistTracks.length > 0
+      && playlistTracks.every(track => cachedIds.has(track.id))
 
   return {
     search,
@@ -482,6 +537,7 @@ export function usePlaylistView() {
     sorting,
     setSorting,
     infoTrack,
+    actionError,
     libraryTrackCount: libraryTracks.length,
     playlistTracks,
     isCustom,
@@ -496,6 +552,7 @@ export function usePlaylistView() {
     selectedSourceIndices,
     selectedTrackIds,
     canReorder,
+    playlistCached,
     checkTrackLiked,
     handleTrackSelect,
     handleReorderTracks,
@@ -512,11 +569,16 @@ export function usePlaylistView() {
     handleAddToEnd,
     handleBulkPlayNext,
     handleBulkAddToEnd,
+    handleCache,
+    handleBulkCache,
+    handleCachePlaylist,
     handleDownload,
     handleBulkDownload,
+    handleRemoveFromCache,
     handlePlaylistPlay,
     handlePlaylistShuffle,
     handleShowInfo,
     handleInfoOpenChange,
+    handleActionErrorOpenChange,
   }
 }

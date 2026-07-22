@@ -17,7 +17,9 @@ export type TrackContextActionId
     | 'removeFromPlaylist'
     | 'playNext'
     | 'addToEnd'
+    | 'cache'
     | 'download'
+    | 'removeFromCache'
     | 'showInfo'
 
 export type BulkActionId
@@ -27,6 +29,7 @@ export type BulkActionId
     | 'removeFromPlaylist'
     | 'playNext'
     | 'addToEnd'
+    | 'cache'
     | 'download'
 
 export interface TrackContextActions {
@@ -36,7 +39,9 @@ export interface TrackContextActions {
   removeFromPlaylist: boolean
   playNext: true
   addToEnd: true
+  cache: true
   download: true
+  removeFromCache: true
   showInfo: true
 }
 
@@ -47,6 +52,7 @@ export interface BulkActions {
   removeFromPlaylist: boolean
   playNext: true
   addToEnd: true
+  cache: true
   download: true
 }
 
@@ -77,7 +83,9 @@ export function getTrackContextActions(
     removeFromPlaylist: canRemoveFromPlaylist(playlist),
     playNext: true,
     addToEnd: true,
+    cache: true,
     download: true,
+    removeFromCache: true,
     showInfo: true,
   }
 }
@@ -95,6 +103,7 @@ export function getBulkActions(
     removeFromPlaylist: canRemoveFromPlaylist(playlist),
     playNext: true,
     addToEnd: true,
+    cache: true,
     download: true,
   }
 }

@@ -175,6 +175,11 @@ impl Db {
               last_sync_at TEXT
             );
 
+            CREATE TABLE IF NOT EXISTS app_settings (
+              key TEXT PRIMARY KEY,
+              value TEXT NOT NULL
+            );
+
             CREATE TABLE IF NOT EXISTS listen_events (
               id INTEGER PRIMARY KEY AUTOINCREMENT,
               track_id INTEGER NOT NULL,
@@ -1149,7 +1154,46 @@ impl Db {
             likeness: row.get(8)?,
         })
     }
+
+    // ---- app settings ---------------------------------------------------
+
+    pub fn get_setting(&self, key: &str) -> AppResult<Option<String>> {
+        let conn = self.conn.lock().unwrap();
+        let value = conn
+            .query_row(
+                "SELECT value FROM app_settings WHERE key = ?1",
+                params![key],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(value)
+    }
+
+    pub fn set_setting(&self, key: &str, value: &str) -> AppResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO app_settings (key, value) VALUES (?1, ?2)
+             ON CONFLICT (key) DO UPDATE SET value = excluded.value",
+            params![key, value],
+        )?;
+        Ok(())
+    }
+
+    pub fn get_setting_i64(&self, key: &str, default: i64) -> AppResult<i64> {
+        match self.get_setting(key)? {
+            Some(raw) => Ok(raw.parse::<i64>().unwrap_or(default)),
+            None => Ok(default),
+        }
+    }
 }
+
+/// Default audio cache size limit: 5 GiB.
+pub const DEFAULT_CACHE_LIMIT_BYTES: i64 = 5_368_709_120;
+/// Default cache TTL: 30 days.
+pub const DEFAULT_CACHE_TTL_SECS: i64 = 2_592_000;
+
+pub const SETTING_CACHE_LIMIT_BYTES: &str = "cache_limit_bytes";
+pub const SETTING_CACHE_TTL_SECS: &str = "cache_ttl_secs";
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Profile {
@@ -1318,6 +1362,48 @@ mod tests {
         db.reorder_playlist_tracks(playlist.id, &[a, a, b], user)?;
         let again = db.playlists_bundle(user)?;
         assert_eq!(again.custom[0].track_ids, vec![a, a, b]);
+        Ok(())
+    }
+
+    #[test]
+    fn cache_settings_default_and_round_trip() -> AppResult<()> {
+        let db = test_db()?;
+
+        assert_eq!(
+            db.get_setting_i64(SETTING_CACHE_LIMIT_BYTES, DEFAULT_CACHE_LIMIT_BYTES)?,
+            DEFAULT_CACHE_LIMIT_BYTES
+        );
+        assert_eq!(
+            db.get_setting_i64(SETTING_CACHE_TTL_SECS, DEFAULT_CACHE_TTL_SECS)?,
+            DEFAULT_CACHE_TTL_SECS
+        );
+
+        db.set_setting(SETTING_CACHE_LIMIT_BYTES, "1073741824")?;
+        db.set_setting(SETTING_CACHE_TTL_SECS, "86400")?;
+
+        assert_eq!(
+            db.get_setting_i64(SETTING_CACHE_LIMIT_BYTES, DEFAULT_CACHE_LIMIT_BYTES)?,
+            1_073_741_824
+        );
+        assert_eq!(
+            db.get_setting_i64(SETTING_CACHE_TTL_SECS, DEFAULT_CACHE_TTL_SECS)?,
+            86_400
+        );
+        assert_eq!(
+            db.get_setting(SETTING_CACHE_LIMIT_BYTES)?.as_deref(),
+            Some("1073741824")
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn cache_settings_invalid_int_falls_back_to_default() -> AppResult<()> {
+        let db = test_db()?;
+        db.set_setting(SETTING_CACHE_LIMIT_BYTES, "not-a-number")?;
+        assert_eq!(
+            db.get_setting_i64(SETTING_CACHE_LIMIT_BYTES, DEFAULT_CACHE_LIMIT_BYTES)?,
+            DEFAULT_CACHE_LIMIT_BYTES
+        );
         Ok(())
     }
 }

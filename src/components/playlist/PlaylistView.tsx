@@ -1,5 +1,14 @@
 import { usePlaylistsStore } from '@/stores/playlists-store'
 import { usePlaylistView } from '@/hooks/use-playlist-view'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
 import { PlaylistEmptyState } from './PlaylistEmptyState'
 import { PlaylistToolbar } from './PlaylistToolbar'
 import { PlaylistTracksTable } from './PlaylistTracksTable'
@@ -39,8 +48,10 @@ function PlaylistViewContent() {
           currentPlaylist={view.selectedPlaylist}
           customPlaylists={view.customPlaylists}
           likedTrackIds={view.likedTrackIds}
+          playlistCached={view.playlistCached}
           onPlay={view.handlePlaylistPlay}
           onShuffle={view.handlePlaylistShuffle}
+          onCachePlaylist={view.handleCachePlaylist}
           onExitSelection={view.handleExitSelection}
           onAddToLiked={view.handleBulkAddToLiked}
           onRemoveFromLiked={view.handleBulkRemoveFromLiked}
@@ -48,6 +59,7 @@ function PlaylistViewContent() {
           onRemoveFromPlaylist={view.handleBulkRemoveFromPlaylist}
           onPlayNext={view.handleBulkPlayNext}
           onAddToEnd={view.handleBulkAddToEnd}
+          onCache={view.handleBulkCache}
           onDownload={view.handleBulkDownload}
         />
 
@@ -73,7 +85,9 @@ function PlaylistViewContent() {
           onDeleteFromPlaylist={view.handleDeleteFromPlaylist}
           onPlayNext={view.handlePlayNext}
           onAddToEnd={view.handleAddToEnd}
+          onCache={view.handleCache}
           onDownload={view.handleDownload}
+          onRemoveFromCache={view.handleRemoveFromCache}
           onShowInfo={view.handleShowInfo}
         />
       </div>
@@ -83,6 +97,28 @@ function PlaylistViewContent() {
         open={view.infoTrack !== null}
         onOpenChange={view.handleInfoOpenChange}
       />
+
+      <Dialog
+        open={view.actionError !== null}
+        onOpenChange={view.handleActionErrorOpenChange}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Couldn’t finish</DialogTitle>
+            <DialogDescription className="whitespace-pre-wrap">
+              {view.actionError}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button
+              variant="secondary"
+              onClick={() => view.handleActionErrorOpenChange(false)}
+            >
+              OK
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </>
   )
 }
