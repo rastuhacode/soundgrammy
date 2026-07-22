@@ -10,6 +10,7 @@ flowchart LR
   Cmds --> Tg[ferogram_MTProto]
   Cmds --> Cache[media_cache]
   Tg --> Session[session_enc_keyring]
+  Tg -.->|optional_MTProxy| Proxy[local_tg_ws_proxy]
 ```
 
 ## Bootstrap
@@ -18,6 +19,8 @@ flowchart LR
 2. On authorized: hydrate session store, `list_tracks` + `list_playlists` + `list_listen_stats`.
 3. Background `sync_saved_music`; on `changed`, reload library into stores.
 4. Sync errors leave the cached library as-is.
+
+Optional **MTProto proxy** (tg-ws-proxy compatible: server / port / secret or `tg://proxy?…`) is stored in SQLite `app_settings` and applied when building the ferogram client. Changing proxy settings rebuilds the client in-process. If a configured proxy fails at startup, the app falls back to a direct connection so the login UI can still load and the user can disable the proxy.
 
 ## Data ownership
 

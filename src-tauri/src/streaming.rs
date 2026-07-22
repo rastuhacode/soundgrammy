@@ -329,16 +329,15 @@ impl TrackStream {
             .map_err(|_| AppError::msg("audio downloader stopped"))?;
 
         let document = self.document.lock().await.clone();
-        let first_attempt =
-            download::download_chunk(&self.app.state::<AppState>().client, &document, index).await;
+        let client = self.app.state::<AppState>().client().await?;
+        let first_attempt = download::download_chunk(&client, &document, index).await;
         let bytes = match first_attempt {
             Ok(bytes) => bytes,
             Err(error) if download::is_file_reference_error(&error) => {
                 let _refresh_guard = self.refresh_lock.lock().await;
                 let latest = self.document.lock().await.clone();
-                match download::download_chunk(&self.app.state::<AppState>().client, &latest, index)
-                    .await
-                {
+                let client = self.app.state::<AppState>().client().await?;
+                match download::download_chunk(&client, &latest, index).await {
                     Ok(bytes) => bytes,
                     Err(retry_error) if download::is_file_reference_error(&retry_error) => {
                         let refreshed = {
@@ -346,12 +345,8 @@ impl TrackStream {
                             download::refresh_file_reference(&state, &self.track).await?
                         };
                         *self.document.lock().await = refreshed.clone();
-                        download::download_chunk(
-                            &self.app.state::<AppState>().client,
-                            &refreshed,
-                            index,
-                        )
-                        .await?
+                        let client = self.app.state::<AppState>().client().await?;
+                        download::download_chunk(&client, &refreshed, index).await?
                     }
                     Err(retry_error) => return Err(retry_error.into()),
                 }

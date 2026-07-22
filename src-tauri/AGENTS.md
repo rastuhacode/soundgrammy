@@ -15,8 +15,9 @@ Rust Tauri 2 app: Telegram via ferogram, library in SQLite, media cache + stream
 | `src/streaming.rs` | Range streaming for uncached tracks |
 | `src/cache.rs` | On-disk media/thumbnail paths, size limit, TTL, eviction |
 | `src/export.rs` | Copy tracks into system Downloads |
+| `src/proxy_settings.rs` | MTProto proxy persistence + link parse |
 | `src/listen_stats.rs` | Listen qualification, aggregates, likeness |
-| `src/state.rs` | Shared `AppState` |
+| `src/state.rs` | Shared `AppState` (swappable ferogram client) |
 
 ## Adding a command
 
@@ -27,6 +28,7 @@ Rust Tauri 2 app: Telegram via ferogram, library in SQLite, media cache + stream
 ## Dependencies
 
 - Pin `ferogram = "=0.6.4"` in [Cargo.toml](Cargo.toml). Do not bump casually; 0.x APIs may still shift.
+- `[patch.crates-io] ferogram-mtsender` → `vendor/ferogram-mtsender` decrypts obfuscated MTProxy frames before peel (upstream 0.6.4 bug causes `transport code` with tg-ws-proxy `dd` secrets). Keep the patch when bumping ferogram until upstream fixes it.
 - Do **not** enable ferogram `sqlite-session` (conflicts with our rusqlite usage pattern / dual session stores).
 - Prefer `cargo check` from this directory after Rust changes.
 

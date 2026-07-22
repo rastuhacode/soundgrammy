@@ -8,6 +8,7 @@
 
 use std::path::Path;
 
+use ferogram::cdn_download::{CdnChunkResult, CdnDownloader, CDN_CHUNK_SIZE};
 use ferogram::tl;
 use ferogram::{Client, InvocationError};
 
@@ -73,8 +74,9 @@ pub async fn download_thumbnail(
         return Ok(false);
     };
     let part = with_part_extension(dest);
+    let client = state.client().await?;
 
-    match download_location_bytes(&state.client, doc.dc_id, location.clone()).await {
+    match download_location_bytes(&client, doc.dc_id, location.clone()).await {
         Ok(bytes) => {
             tokio::fs::write(&part, &bytes).await?;
         }
@@ -83,7 +85,8 @@ pub async fn download_thumbnail(
             let Some(location) = refreshed.thumb_input_location_for(high_quality) else {
                 return Ok(false);
             };
-            let bytes = download_location_bytes(&state.client, refreshed.dc_id, location).await?;
+            let client = state.client().await?;
+            let bytes = download_location_bytes(&client, refreshed.dc_id, location).await?;
             tokio::fs::write(&part, &bytes).await?;
         }
         Err(err) => return Err(err.into()),
@@ -100,8 +103,8 @@ pub(crate) async fn refresh_file_reference(
     track: &Track,
 ) -> AppResult<StoredDocument> {
     let doc = stored_document(track)?;
-    let result = state
-        .client
+    let client = state.client().await?;
+    let result = client
         .invoke(&tl::functions::users::GetSavedMusicById {
             id: tl::enums::InputUser::UserSelf,
             documents: vec![doc.input_document()],
@@ -131,13 +134,16 @@ pub(crate) async fn refresh_file_reference(
 }
 
 /// Downloads a location (e.g. profile photos) to `dest`.
+///
+/// `dc_id` must be the file's real DC (e.g. `UserProfilePhoto.dc_id`). Do not
+/// pass `0`: [`Client::invoke_on_dc`] does not map 0 to the home DC.
 pub async fn download_location(
     client: &Client,
+    dc_id: i32,
     location: tl::enums::InputFileLocation,
     dest: &Path,
 ) -> AppResult<()> {
-    // Profile photos live on the home DC; dc_id 0 lets ferogram resolve home.
-    let bytes = download_location_bytes(client, 0, location).await?;
+    let bytes = download_location_bytes(client, dc_id, location).await?;
     let part = with_part_extension(dest);
     tokio::fs::write(&part, &bytes).await?;
     tokio::fs::rename(&part, dest).await?;
@@ -163,7 +169,7 @@ async fn download_location_bytes(
     Ok(bytes)
 }
 
-/// One `upload.getFile` on the pooled DC connection (with FILE_MIGRATE follow).
+/// One `upload.getFile` on the pooled DC connection (with FILE_MIGRATE + CDN follow).
 async fn get_file_bytes(
     client: &Client,
     mut dc_id: i32,
@@ -174,17 +180,16 @@ async fn get_file_bytes(
     loop {
         let req = tl::functions::upload::GetFile {
             precise: true,
-            cdn_supported: false,
+            // Advertise CDN support so Telegram may redirect; we follow below.
+            cdn_supported: true,
             location: location.clone(),
             offset,
             limit,
         };
         match client.invoke_on_dc(dc_id, &req).await {
             Ok(tl::enums::upload::File::File(f)) => return Ok(f.bytes),
-            Ok(tl::enums::upload::File::CdnRedirect(_)) => {
-                return Err(InvocationError::Deserialize(
-                    "upload.fileCdnRedirect received (cdn_supported=false was ignored)".into(),
-                ));
+            Ok(tl::enums::upload::File::CdnRedirect(redir)) => {
+                return get_cdn_file_bytes(client, dc_id, redir, offset, limit).await;
             }
             Err(InvocationError::Rpc(rpc))
                 if rpc.name.contains("FILE_MIGRATE")
@@ -197,6 +202,64 @@ async fn get_file_bytes(
                 dc_id = new_dc;
             }
             Err(e) => return Err(e),
+        }
+    }
+}
+
+/// Fetch one chunk after `upload.fileCdnRedirect` (AES-CTR CDN DC path).
+async fn get_cdn_file_bytes(
+    client: &Client,
+    media_dc_id: i32,
+    redir: tl::types::upload::FileCdnRedirect,
+    offset: i64,
+    limit: i32,
+) -> Result<Vec<u8>, InvocationError> {
+    let addr = client.media_dc_addr(redir.dc_id).await.ok_or_else(|| {
+        InvocationError::Deserialize(format!(
+            "no address for CDN DC{}; cannot follow fileCdnRedirect",
+            redir.dc_id
+        ))
+    })?;
+
+    let key: [u8; 32] = redir.encryption_key.as_slice().try_into().map_err(|_| {
+        InvocationError::Deserialize("CDN encryption_key must be 32 bytes".into())
+    })?;
+    let iv: [u8; 16] = redir.encryption_iv.as_slice().try_into().map_err(|_| {
+        InvocationError::Deserialize("CDN encryption_iv must be 16 bytes".into())
+    })?;
+
+    // CDN part size is fixed at 128 KiB; clamp the request to that.
+    let cdn_limit = if limit <= 0 || limit > CDN_CHUNK_SIZE {
+        CDN_CHUNK_SIZE
+    } else {
+        limit
+    };
+
+    let mut downloader = CdnDownloader::connect(
+        &addr,
+        redir.dc_id as i16,
+        redir.file_token.clone(),
+        key,
+        iv,
+        None,
+    )
+    .await?;
+
+    loop {
+        match downloader.download_chunk_raw(offset, cdn_limit).await? {
+            CdnChunkResult::Data(bytes) => return Ok(bytes),
+            CdnChunkResult::ReuploadNeeded(request_token) => {
+                client
+                    .invoke_on_dc(
+                        media_dc_id,
+                        &tl::functions::upload::ReuploadCdnFile {
+                            file_token: redir.file_token.clone(),
+                            request_token,
+                        },
+                    )
+                    .await?;
+                // Retry the same offset after reupload.
+            }
         }
     }
 }

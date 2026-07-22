@@ -4,6 +4,7 @@ import type {
   AuthOutcome,
   AuthStatus,
   AuthUser,
+  PhoneSendCodeOutcome,
   CacheChanged,
   CacheSettings,
   CacheUsage,
@@ -12,6 +13,8 @@ import type {
   ListenEndReason,
   ListenEndResult,
   PlaylistsBundle,
+  ProxySettings,
+  ProxySettingsView,
   QrOutcome,
   SyncResult,
   Track,
@@ -39,7 +42,8 @@ export type TrackSource
 
 export const api = {
   authStatus: () => invoke<AuthStatus>('auth_status'),
-  phoneSendCode: (phone: string) => invoke<void>('phone_send_code', { phone }),
+  phoneSendCode: (phone: string) =>
+    invoke<PhoneSendCodeOutcome>('phone_send_code', { phone }),
   phoneSignIn: (code: string) => invoke<AuthOutcome>('phone_sign_in', { code }),
   phoneCheckPassword: (password: string) =>
     invoke<AuthUser>('phone_check_password', { password }),
@@ -94,6 +98,21 @@ export const api = {
       ttlSecs: input.ttlSecs ?? null,
     }),
   getCacheUsage: () => invoke<CacheUsage>('get_cache_usage'),
+  getProxySettings: () => invoke<ProxySettingsView>('get_proxy_settings'),
+  setProxySettings: (input: {
+    enabled: boolean
+    server: string
+    port: number
+    secret: string
+  }) =>
+    invoke<ProxySettingsView>('set_proxy_settings', {
+      enabled: input.enabled,
+      server: input.server,
+      port: input.port,
+      secret: input.secret,
+    }),
+  parseProxyLink: (link: string) =>
+    invoke<ProxySettings>('parse_proxy_link', { link }),
   exportTrack: (trackId: number) =>
     invoke<string>('export_track', { trackId }),
   exportTracks: (trackIds: number[]) =>

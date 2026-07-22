@@ -1,0 +1,19 @@
+[package]
+name        = "ferogram-mtsender"
+description = "MTProto sender pool and retry policy for ferogram"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+
+[dependencies]
+ferogram-tl-types  = { workspace = true, features = ["tl-mtproto"] }
+ferogram-mtproto   = { workspace = true }
+ferogram-crypto    = { workspace = true }
+ferogram-connect   = { workspace = true }
+ferogram-session   = { workspace = true }
+tokio    = { version = "1", features = ["net", "io-util", "sync", "time", "rt", "macros"] }
+tracing  = { version = "0.1", features = ["log"] }
+metrics  = "0.24"

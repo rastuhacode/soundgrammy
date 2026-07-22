@@ -12,7 +12,7 @@ use crate::error::{AppError, AppResult};
 use crate::listen_stats::EndReason;
 use crate::state::AppState;
 use crate::streaming;
-use crate::telegram::auth::{self, AuthOutcome, AuthUser, QrOutcome};
+use crate::telegram::auth::{self, AuthOutcome, AuthUser, PhoneSendCodeOutcome, QrOutcome};
 use crate::telegram::saved_music::{self, SyncResult};
 
 #[derive(Serialize)]
@@ -25,14 +25,23 @@ pub struct AuthStatus {
 
 #[tauri::command]
 pub async fn auth_status(state: State<'_, AppState>) -> AppResult<AuthStatus> {
-    let authorized = crate::telegram::client::is_authorized(&state.client).await?;
+    let client = match state.client().await {
+        Ok(client) => client,
+        Err(_) => {
+            return Ok(AuthStatus {
+                authorized: false,
+                user: None,
+            });
+        }
+    };
+    let authorized = crate::telegram::client::is_authorized(&client).await?;
     if !authorized {
         return Ok(AuthStatus {
             authorized: false,
             user: None,
         });
     }
-    let user = auth::fetch_self(&state.client).await?;
+    let user = auth::fetch_self(&client).await?;
     state.db.save_profile(
         user.id,
         &user.first_name,
@@ -47,7 +56,10 @@ pub async fn auth_status(state: State<'_, AppState>) -> AppResult<AuthStatus> {
 }
 
 #[tauri::command]
-pub async fn phone_send_code(state: State<'_, AppState>, phone: String) -> AppResult<()> {
+pub async fn phone_send_code(
+    state: State<'_, AppState>,
+    phone: String,
+) -> AppResult<PhoneSendCodeOutcome> {
     auth::phone_send_code(&state, phone.trim()).await
 }
 
@@ -339,6 +351,50 @@ pub async fn set_cache_settings(
 #[tauri::command]
 pub async fn get_cache_usage(state: State<'_, AppState>) -> AppResult<cache::CacheUsage> {
     cache::get_cache_usage(&state).await
+}
+
+// ---- proxy ---------------------------------------------------------------
+
+#[tauri::command]
+pub async fn get_proxy_settings(
+    state: State<'_, AppState>,
+) -> AppResult<crate::proxy_settings::ProxySettingsView> {
+    let settings = crate::proxy_settings::load(&state.db)?;
+    Ok(crate::proxy_settings::ProxySettingsView::from_parts(
+        settings,
+        state.proxy_active().await,
+        state.proxy_last_error().await,
+        state.is_telegram_online().await,
+    ))
+}
+
+#[tauri::command]
+pub async fn set_proxy_settings(
+    state: State<'_, AppState>,
+    enabled: bool,
+    server: String,
+    port: u16,
+    secret: String,
+) -> AppResult<crate::proxy_settings::ProxySettingsView> {
+    let settings = crate::proxy_settings::ProxySettings {
+        enabled,
+        server,
+        port,
+        secret,
+    };
+    state.apply_proxy_settings(&settings).await?;
+    let settings = crate::proxy_settings::load(&state.db)?;
+    Ok(crate::proxy_settings::ProxySettingsView::from_parts(
+        settings,
+        state.proxy_active().await,
+        state.proxy_last_error().await,
+        state.is_telegram_online().await,
+    ))
+}
+
+#[tauri::command]
+pub async fn parse_proxy_link(link: String) -> AppResult<crate::proxy_settings::ProxySettings> {
+    crate::proxy_settings::from_proxy_link(&link)
 }
 
 /// Copy a track into the system Downloads folder (user-facing Download).

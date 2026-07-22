@@ -29,6 +29,14 @@ pub enum AuthOutcome {
     PasswordRequired { hint: Option<String> },
 }
 
+/// Outcome of `phone_send_code` (code pending, or session already restored).
+#[derive(Debug, Serialize)]
+#[serde(tag = "status", rename_all = "camelCase")]
+pub enum PhoneSendCodeOutcome {
+    CodeSent,
+    Authorized { user: AuthUser },
+}
+
 /// Outcome of a QR export/poll step.
 #[derive(Debug, Serialize)]
 #[serde(tag = "status", rename_all = "camelCase")]
@@ -57,7 +65,8 @@ pub async fn fetch_self(client: &Client) -> AppResult<AuthUser> {
 
 /// Persists the session and profile after any successful login.
 async fn finalize(state: &AppState) -> AppResult<AuthUser> {
-    let user = fetch_self(&state.client).await?;
+    let client = state.client().await?;
+    let user = fetch_self(&client).await?;
     state.persist_session().await?;
     state.db.save_profile(
         user.id,
@@ -74,7 +83,7 @@ async fn finalize(state: &AppState) -> AppResult<AuthUser> {
 
 // ---- phone ---------------------------------------------------------------
 
-pub async fn phone_send_code(state: &AppState, phone: &str) -> AppResult<()> {
+pub async fn phone_send_code(state: &AppState, phone: &str) -> AppResult<PhoneSendCodeOutcome> {
     // Drop leftover QR / prior phone / 2FA tokens so sendCode isn't fighting
     // an interrupted auth attempt (common after leaving QR or the code step).
     {
@@ -82,16 +91,17 @@ pub async fn phone_send_code(state: &AppState, phone: &str) -> AppResult<()> {
         *pending = Default::default();
     }
 
-    match state.client.request_login_code(phone).await? {
+    let client = state.client().await?;
+    match client.request_login_code(phone).await? {
         SendCodeOutcome::CodeRequired(token) => {
             let mut pending = state.pending.lock().await;
             pending.phone_token = Some(token);
-            Ok(())
+            Ok(PhoneSendCodeOutcome::CodeSent)
         }
         SendCodeOutcome::AlreadyAuthorized(_) => {
             // Logout-token fast path: session is already signed in.
-            let _ = finalize(state).await?;
-            Ok(())
+            let user = finalize(state).await?;
+            Ok(PhoneSendCodeOutcome::Authorized { user })
         }
     }
 }
@@ -105,7 +115,8 @@ pub async fn phone_sign_in(state: &AppState, code: &str) -> AppResult<AuthOutcom
             .ok_or_else(|| AppError::msg("no login in progress; request a code first"))?
     };
 
-    match state.client.sign_in(&token, code).await {
+    let client = state.client().await?;
+    match client.sign_in(&token, code).await {
         Ok(_) => Ok(AuthOutcome::Authorized {
             user: finalize(state).await?,
         }),
@@ -133,8 +144,8 @@ pub async fn check_password(state: &AppState, password: &str) -> AppResult<AuthU
             .ok_or_else(|| AppError::msg("no password step in progress"))?
     };
 
-    match state
-        .client
+    let client = state.client().await?;
+    match client
         .check_password(token, password.trim().as_bytes())
         .await
     {
@@ -150,7 +161,8 @@ pub async fn check_password(state: &AppState, password: &str) -> AppResult<AuthU
 
 /// Runs one QR login round. Used both to start the flow and to poll it.
 pub async fn qr_export(state: &AppState) -> AppResult<QrOutcome> {
-    match state.client.export_login_token().await {
+    let client = state.client().await?;
+    match client.export_login_token().await {
         Ok((token, _expires)) if token.is_empty() => Ok(QrOutcome::Authorized {
             user: finalize(state).await?,
         }),
@@ -173,8 +185,8 @@ pub async fn qr_check_password(state: &AppState, password: &str) -> AppResult<Au
 }
 
 async fn qr_password_required(state: &AppState) -> AppResult<QrOutcome> {
-    let password = state
-        .client
+    let client = state.client().await?;
+    let password = client
         .invoke(&tl::functions::account::GetPassword {})
         .await?;
     let tl::enums::account::Password::Password(pw) = password;
@@ -191,7 +203,9 @@ async fn qr_password_required(state: &AppState) -> AppResult<QrOutcome> {
 pub async fn logout(state: &AppState) -> AppResult<()> {
     // Best-effort remote sign-out; local library data stays available for the
     // same Telegram user on this device after they sign in again.
-    let _ = state.client.sign_out().await;
+    if let Ok(client) = state.client().await {
+        let _ = client.sign_out().await;
+    }
     if let Ok(Some(profile)) = state.db.load_profile() {
         state.db.clear_active_profile(profile.tg_user_id)?;
     }

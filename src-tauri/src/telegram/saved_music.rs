@@ -31,7 +31,8 @@ struct SyncProgress {
 
 /// Fetches the account's saved music and reconciles it into the local library.
 pub async fn sync(state: &AppState, app: &AppHandle) -> AppResult<SyncResult> {
-    let user = auth::fetch_self(&state.client).await?;
+    let client = state.client().await?;
+    let user = auth::fetch_self(&client).await?;
     let uid = user.id;
     state.db.save_profile(
         uid,
@@ -54,8 +55,8 @@ pub async fn sync(state: &AppState, app: &AppHandle) -> AppResult<SyncResult> {
 
     loop {
         let hash = if offset == 0 { prev_hash } else { 0 };
-        let result = state
-            .client
+        let client = state.client().await?;
+        let result = client
             .invoke(&tl::functions::users::GetSavedMusic {
                 id: tl::enums::InputUser::UserSelf,
                 offset,

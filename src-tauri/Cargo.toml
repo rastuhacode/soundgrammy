@@ -45,3 +45,8 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 lofty = "0.21"
 dotenvy = "0.15"
+
+# Local patch: ferogram-mtsender 0.6.4 peels Intermediate/Abridged on ciphertext
+# for Obfuscated/PaddedIntermediate (MTProxy dd). Decrypt newly-read bytes first.
+[patch.crates-io]
+ferogram-mtsender = { path = "vendor/ferogram-mtsender" }

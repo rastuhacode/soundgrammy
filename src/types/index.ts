@@ -75,6 +75,10 @@ export type AuthOutcome
   = | { status: 'authorized', user: AuthUser }
     | { status: 'passwordRequired', hint: string | null }
 
+export type PhoneSendCodeOutcome
+  = | { status: 'codeSent' }
+    | { status: 'authorized', user: AuthUser }
+
 export type QrOutcome
   = | { status: 'waiting', url: string, expires: number }
     | { status: 'passwordRequired', hint: string | null }
@@ -142,6 +146,20 @@ export interface CacheUsage {
   usedBytes: number
   limitBytes: number
   fileCount: number
+}
+
+export interface ProxySettings {
+  enabled: boolean
+  server: string
+  port: number
+  secret: string
+}
+
+export interface ProxySettingsView extends ProxySettings {
+  active: boolean
+  applyError: string | null
+  link: string | null
+  telegramOnline: boolean
 }
 
 export interface CacheChanged {

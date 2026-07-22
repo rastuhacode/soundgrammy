@@ -1,19 +1,14 @@
 import { useEffect, useState } from 'react'
+import { ChevronDown } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { CacheSettings, CacheUsage } from '@/types'
 import { useCacheStore } from '@/stores/cache-store'
+import { ProxySettingsFields } from '@/components/proxy/ProxySettingsFields'
 import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
-import { Separator } from '@/components/ui/separator'
 
 const GIB = 1024 ** 3
 
@@ -46,6 +41,8 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const [busy, setBusy] = useState(false)
   const [confirmClear, setConfirmClear] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [cacheOpen, setCacheOpen] = useState(false)
+  const [proxyOpen, setProxyOpen] = useState(false)
 
   useEffect(() => {
     if (!open) return
@@ -64,6 +61,8 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
         setTtlDays(String(Math.round(nextSettings.ttlSecs / 86_400)))
         setConfirmClear(false)
         setError(null)
+        setCacheOpen(false)
+        setProxyOpen(false)
       }
       catch (err) {
         if (!cancelled) setError(errorMessage(err))
@@ -79,33 +78,34 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     if (!next) {
       setConfirmClear(false)
       setError(null)
+      setCacheOpen(false)
+      setProxyOpen(false)
     }
     onOpenChange(next)
   }
 
-  const refreshUsage = async () => {
-    const nextUsage = await api.getCacheUsage()
-    setUsage(nextUsage)
-  }
-
   const handleSave = async () => {
+    const limit = Number.parseFloat(limitGb)
+    const days = Number.parseFloat(ttlDays)
+    if (!Number.isFinite(limit) || limit < 0) {
+      setError('Size limit must be a non-negative number')
+      return
+    }
+    if (!Number.isFinite(days) || days < 0) {
+      setError('Keep-for days must be a non-negative number')
+      return
+    }
+
     setBusy(true)
     setError(null)
     try {
-      const limit = Number(limitGb)
-      const days = Number(ttlDays)
-      if (!Number.isFinite(limit) || limit < 0) {
-        throw new Error('Cache limit must be a non-negative number of GB')
-      }
-      if (!Number.isFinite(days) || days < 0) {
-        throw new Error('Cache lifetime must be a non-negative number of days')
-      }
       const next = await api.setCacheSettings({
         limitBytes: Math.round(limit * GIB),
         ttlSecs: Math.round(days * 86_400),
       })
       setSettings(next)
-      await refreshUsage()
+      const nextUsage = await api.getCacheUsage()
+      setUsage(nextUsage)
       await useCacheStore.getState().hydrate()
     }
     catch (err) {
@@ -122,7 +122,8 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     try {
       await api.clearAudioCache()
       useCacheStore.getState().clearAll()
-      await refreshUsage()
+      const nextUsage = await api.getCacheUsage()
+      setUsage(nextUsage)
       setConfirmClear(false)
     }
     catch (err) {
@@ -139,129 +140,143 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
-      <DialogContent className="sm:max-w-lg">
-        <DialogHeader>
+      <DialogContent className="flex max-h-[90vh] flex-col gap-0 overflow-hidden p-0 sm:max-w-lg">
+        <DialogHeader className="shrink-0 border-b border-border/60 px-4 py-4 pr-12">
           <DialogTitle>Settings</DialogTitle>
-          <DialogDescription>
-            Manage audio cache used for playback inside SoundGrammy.
-          </DialogDescription>
         </DialogHeader>
 
-        <div className="flex flex-col gap-5 py-1">
-          <section className="flex flex-col gap-3">
-            <h3 className="text-sm font-medium">Audio cache</h3>
-            <p className="text-xs text-muted-foreground">
-              Cached audio stays in the app. Downloads you save to the system
-              Downloads folder are never removed by clear or eviction.
-            </p>
-
-            <div className="rounded-lg border border-border/70 bg-muted/30 px-3 py-3">
-              <div className="flex items-baseline justify-between gap-3 text-sm">
-                <span className="text-muted-foreground">Usage</span>
-                <span className="font-mono text-xs">
-                  {formatBytes(used)}
-                  {' / '}
-                  {formatBytes(limit)}
-                  {' '}
-                  (
-                  {pct}
-                  %)
-                </span>
-              </div>
-              <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
-                <div
-                  className="h-full rounded-full bg-primary transition-[width] duration-300"
-                  style={{ width: `${pct}%` }}
+        <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-4 py-4">
+          <div className="flex min-w-0 flex-col gap-2">
+            <Collapsible open={cacheOpen} onOpenChange={setCacheOpen}>
+              <CollapsibleTrigger className="flex h-auto w-full items-center justify-between rounded-md px-2 py-2.5 text-sm font-medium hover:bg-muted/40">
+                <span>Audio cache</span>
+                <ChevronDown
+                  className={`size-4 text-muted-foreground transition-transform ${cacheOpen ? 'rotate-180' : ''}`}
                 />
-              </div>
-              {usage
-                ? (
-                    <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
-                      {usage.fileCount}
+              </CollapsibleTrigger>
+              <CollapsibleContent className="mt-1 flex flex-col gap-3 px-2 pb-3">
+                <p className="text-xs text-muted-foreground">
+                  Cached audio stays in the app and accessible offline, but takes up physical space on your device.
+                </p>
+
+                <div className="rounded-lg border border-border/70 bg-muted/30 px-3 py-3">
+                  <div className="flex items-baseline justify-between gap-3 text-sm">
+                    <span className="text-muted-foreground">Usage</span>
+                    <span className="font-mono text-xs">
+                      {formatBytes(used)}
+                      {' / '}
+                      {formatBytes(limit)}
                       {' '}
-                      file
-                      {usage.fileCount === 1 ? '' : 's'}
-                    </p>
-                  )
-                : null}
-            </div>
+                      (
+                      {pct}
+                      %)
+                    </span>
+                  </div>
+                  <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-muted">
+                    <div
+                      className="h-full rounded-full bg-primary transition-[width] duration-300"
+                      style={{ width: `${pct}%` }}
+                    />
+                  </div>
+                  {usage
+                    ? (
+                        <p className="mt-2 font-mono text-[10px] uppercase tracking-[0.12em] text-muted-foreground">
+                          {usage.fileCount}
+                          {' '}
+                          file
+                          {usage.fileCount === 1 ? '' : 's'}
+                        </p>
+                      )
+                    : null}
+                </div>
 
-            <div className="grid grid-cols-2 gap-3">
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="cache-limit">Size limit (GB)</Label>
-                <Input
-                  id="cache-limit"
-                  type="number"
-                  min={0}
-                  step={0.5}
-                  value={limitGb}
-                  onChange={e => setLimitGb(e.target.value)}
-                  disabled={busy}
-                />
-              </div>
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="cache-ttl">Keep for (days)</Label>
-                <Input
-                  id="cache-ttl"
-                  type="number"
-                  min={0}
-                  step={1}
-                  value={ttlDays}
-                  onChange={e => setTtlDays(e.target.value)}
-                  disabled={busy}
-                />
-              </div>
-            </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="cache-limit">Size limit (GB)</Label>
+                    <Input
+                      id="cache-limit"
+                      type="number"
+                      min={0}
+                      step={0.5}
+                      value={limitGb}
+                      onChange={e => setLimitGb(e.target.value)}
+                      disabled={busy}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1.5">
+                    <Label htmlFor="cache-ttl">Keep for (days)</Label>
+                    <Input
+                      id="cache-ttl"
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={ttlDays}
+                      onChange={e => setTtlDays(e.target.value)}
+                      disabled={busy}
+                    />
+                  </div>
+                </div>
 
-            <div className="flex flex-wrap gap-2">
-              <Button variant="secondary" disabled={busy} onClick={handleSave}>
-                Save cache settings
-              </Button>
-              {!confirmClear
-                ? (
-                    <Button
-                      variant="outline"
-                      disabled={busy}
-                      onClick={() => setConfirmClear(true)}
-                    >
-                      Clear cache…
-                    </Button>
-                  )
-                : (
-                    <Button
-                      variant="destructive"
-                      disabled={busy}
-                      onClick={handleClear}
-                    >
-                      Confirm clear cache
-                    </Button>
-                  )}
-            </div>
-            {confirmClear
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="secondary" disabled={busy} onClick={handleSave}>
+                    Save cache settings
+                  </Button>
+                  {!confirmClear
+                    ? (
+                        <Button
+                          variant="outline"
+                          disabled={busy}
+                          onClick={() => setConfirmClear(true)}
+                        >
+                          Clear cache…
+                        </Button>
+                      )
+                    : (
+                        <Button
+                          variant="destructive"
+                          disabled={busy}
+                          onClick={handleClear}
+                        >
+                          Confirm clear cache
+                        </Button>
+                      )}
+                </div>
+                {confirmClear
+                  ? (
+                      <p className="text-xs text-muted-foreground">
+                        This removes app-cached audio only.
+                      </p>
+                    )
+                  : null}
+              </CollapsibleContent>
+            </Collapsible>
+
+            <Collapsible open={proxyOpen} onOpenChange={setProxyOpen}>
+              <CollapsibleTrigger className="flex h-auto w-full items-center justify-between rounded-md px-2 py-2.5 text-sm font-medium hover:bg-muted/40">
+                <span>MTProto proxy</span>
+                <ChevronDown
+                  className={`size-4 text-muted-foreground transition-transform ${proxyOpen ? 'rotate-180' : ''}`}
+                />
+              </CollapsibleTrigger>
+              <CollapsibleContent className="mt-1 flex min-w-0 flex-col gap-3 px-2 pb-3">
+                <p className="text-xs text-muted-foreground">
+                  Route Telegram through a local helper such as tg-ws-proxy
+                  (
+                  <span className="font-mono">127.0.0.1:1443</span>
+                  ). Paste the link from the tray (“Copy link”), then Apply to
+                  reconnect.
+                </p>
+                {open && proxyOpen ? <ProxySettingsFields /> : null}
+              </CollapsibleContent>
+            </Collapsible>
+
+            {error
               ? (
-                  <p className="text-xs text-muted-foreground">
-                    This removes app-cached audio only. Files in Downloads are
-                    unaffected.
-                  </p>
+                  <p className="wrap-break-word px-2 text-sm text-destructive">{error}</p>
                 )
               : null}
-          </section>
-
-          {error
-            ? (
-                <>
-                  <Separator />
-                  <p className="text-sm text-destructive">{error}</p>
-                </>
-              )
-            : null}
+          </div>
         </div>
-
-        <DialogFooter>
-          <Button variant="ghost" onClick={() => handleOpenChange(false)}>
-            Close
-          </Button>
-        </DialogFooter>
       </DialogContent>
     </Dialog>
   )
