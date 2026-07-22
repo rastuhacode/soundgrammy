@@ -38,13 +38,14 @@ pub fn run() {
             std::fs::create_dir_all(&cache_dir)?;
 
             let db = db::Db::open(&data_dir.join("library.db"))?;
-            let (session, client) = telegram::client::build(&config, &data_dir)?;
+            let (client, shutdown) =
+                tauri::async_runtime::block_on(telegram::client::build(&config, &data_dir))?;
 
             app.manage(AppState {
                 config,
                 db,
-                session,
                 client,
+                _shutdown: shutdown,
                 data_dir,
                 cache_dir,
                 pending: Default::default(),

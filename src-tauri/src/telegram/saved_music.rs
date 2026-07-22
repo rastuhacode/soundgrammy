@@ -3,7 +3,7 @@
 
 #![allow(deprecated)]
 
-use grammers_tl_types as tl;
+use ferogram::tl;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
@@ -74,7 +74,7 @@ pub async fn sync(state: &AppState, app: &AppHandle) -> AppResult<SyncResult> {
                     last_sync_at: state.db.last_sync_at(uid)?,
                 });
             }
-            tl::enums::users::SavedMusic::Music(m) => {
+            tl::enums::users::SavedMusic::SavedMusic(m) => {
                 let total_count = m.count;
                 let before = collected.len();
                 for document in m.documents {

@@ -1,6 +1,6 @@
 # SoundGrammy — agent notes
 
-Desktop music player (Tauri 2) over Telegram MTProto (grammers). Local-first: library and playlists live in SQLite; Telegram saved music is the remote source of truth.
+Desktop music player (Tauri 2) over Telegram MTProto (ferogram). Local-first: library and playlists live in SQLite; Telegram saved music is the remote source of truth.
 
 Human-facing setup: see [README.md](README.md).
 
@@ -9,7 +9,7 @@ Human-facing setup: see [README.md](README.md).
 | Path | Role |
 |------|------|
 | `src/` | React UI (Vite, Zustand, Tailwind) |
-| `src-tauri/` | Rust backend (commands, SQLite, grammers, session, streaming) |
+| `src-tauri/` | Rust backend (commands, SQLite, ferogram, session, streaming) |
 | `docs/` | Architecture and security detail (read on demand) |
 
 ## Commands

@@ -35,8 +35,8 @@ impl AppError {
     }
 }
 
-impl From<grammers_mtsender::InvocationError> for AppError {
-    fn from(value: grammers_mtsender::InvocationError) -> Self {
+impl From<ferogram::InvocationError> for AppError {
+    fn from(value: ferogram::InvocationError) -> Self {
         AppError::Telegram(value.to_string())
     }
 }

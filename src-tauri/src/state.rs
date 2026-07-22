@@ -1,16 +1,14 @@
 //! Shared application state managed by Tauri.
 //!
-//! A single connected grammers [`Client`] serves the one logged-in user (no
-//! pooling). The client, its session, the SQLite library, config and cache
-//! directories all live here behind cheap clones/locks.
+//! A single connected ferogram [`Client`] serves the one logged-in user (no
+//! pooling). The client, SQLite library, config and cache directories all live
+//! here behind cheap clones/locks.
 
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use grammers_client::client::{LoginToken, PasswordToken};
-use grammers_client::Client;
-use grammers_session::storages::MemorySession;
+use ferogram::{Client, LoginToken, PasswordToken, ShutdownToken};
 use tokio::sync::Mutex;
 
 use crate::config::Config;
@@ -29,10 +27,13 @@ pub struct PendingAuth {
 }
 
 pub struct AppState {
+    /// Telegram API credentials (retained for future settings such as proxies).
+    #[allow(dead_code)]
     pub config: Config,
     pub db: Db,
-    pub session: Arc<MemorySession>,
     pub client: Client,
+    /// Kept so the connection can be shut down cleanly if needed.
+    pub _shutdown: ShutdownToken,
     pub data_dir: PathBuf,
     pub cache_dir: PathBuf,
     /// Guards multi-step auth flows.
@@ -54,7 +55,10 @@ impl AppState {
     }
 
     /// Persists the current session to encrypted storage.
-    pub fn persist_session(&self) -> crate::error::AppResult<()> {
-        crate::session::save(&self.session, &self.data_dir)
+    pub async fn persist_session(&self) -> crate::error::AppResult<()> {
+        self.client
+            .save_session()
+            .await
+            .map_err(|e| crate::error::AppError::Telegram(e.to_string()))
     }
 }

@@ -13,7 +13,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
-use grammers_tl_types as tl;
+use ferogram::tl;
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 use tokio::fs;
@@ -633,7 +633,7 @@ async fn ensure_high_quality_thumbnail(
 pub async fn ensure_avatar(state: &AppState) -> AppResult<Option<PathBuf>> {
     let user = auth::fetch_self_raw(&state.client).await?;
     let photo = match user.photo {
-        Some(tl::enums::UserProfilePhoto::Photo(p)) => p,
+        Some(tl::enums::UserProfilePhoto::UserProfilePhoto(p)) => p,
         _ => return Ok(None),
     };
 

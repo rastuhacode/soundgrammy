@@ -7,7 +7,7 @@ flowchart LR
   UI[React_UI] -->|invoke_events| API[src_lib_api]
   API -->|Tauri_commands| Cmds[commands_rs]
   Cmds --> Db[SQLite_library_db]
-  Cmds --> Tg[grammers_MTProto]
+  Cmds --> Tg[ferogram_MTProto]
   Cmds --> Cache[media_cache]
   Tg --> Session[session_enc_keyring]
 ```

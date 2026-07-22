@@ -7,7 +7,7 @@
 
 use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine;
-use grammers_tl_types as tl;
+use ferogram::tl;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -100,7 +100,7 @@ impl StoredDocument {
     /// Builds an `InputDocument` for `users.GetSavedMusicByID` refreshes.
     /// An empty file reference is valid for that lookup.
     pub fn input_document(&self) -> tl::enums::InputDocument {
-        tl::enums::InputDocument::Document(tl::types::InputDocument {
+        tl::enums::InputDocument::InputDocument(tl::types::InputDocument {
             id: self.id,
             access_hash: self.access_hash,
             file_reference: Vec::new(),
@@ -193,7 +193,7 @@ fn collect_remote_thumbnails(thumbs: Option<&[tl::enums::PhotoSize]>) -> Vec<Sto
     thumbs
         .iter()
         .filter_map(|thumb| match thumb {
-            tl::enums::PhotoSize::Size(size) => Some(StoredThumbnail {
+            tl::enums::PhotoSize::PhotoSize(size) => Some(StoredThumbnail {
                 type_: size.r#type.clone(),
                 width: size.w,
                 height: size.h,

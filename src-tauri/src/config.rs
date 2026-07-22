@@ -1,9 +1,9 @@
 //! Telegram API credentials.
 //!
-//! `api_id`/`api_hash` are, as grammers recommends, embedded into the binary at
-//! build time via the `TELEGRAM_API_ID` / `TELEGRAM_API_HASH` environment
-//! variables. For local development they can also be provided at runtime through
-//! the same environment variables (handy so a rebuild isn't required).
+//! `api_id`/`api_hash` are embedded into the binary at build time via the
+//! `TELEGRAM_API_ID` / `TELEGRAM_API_HASH` environment variables. For local
+//! development they can also be provided at runtime through the same
+//! environment variables (handy so a rebuild isn't required).
 
 use crate::error::{AppError, AppResult};
 

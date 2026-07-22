@@ -1,29 +1,30 @@
-//! grammers client construction and lifecycle.
+//! ferogram client construction and lifecycle.
 
 use std::path::Path;
 use std::sync::Arc;
 
-use grammers_client::Client;
-use grammers_mtsender::SenderPool;
-use grammers_session::storages::MemorySession;
+use ferogram::{Client, ShutdownToken};
 
 use crate::config::Config;
-use crate::error::AppResult;
-use crate::session;
+use crate::error::{AppError, AppResult};
+use crate::session::EncryptedSessionBackend;
 
-/// Loads the encrypted session, builds a connected client, and spawns the
-/// network runner in the background. Returns the shared session handle and the
-/// client.
-pub fn build(config: &Config, data_dir: &Path) -> AppResult<(Arc<MemorySession>, Client)> {
-    let session = session::load_or_create(data_dir)?;
-    let SenderPool { runner, handle, .. } = SenderPool::new(Arc::clone(&session), config.api_id);
-    let client = Client::new(handle);
+/// Loads the encrypted session backend, connects a ferogram client, and returns
+/// the client plus a shutdown token for clean teardown.
+pub async fn build(config: &Config, data_dir: &Path) -> AppResult<(Client, ShutdownToken)> {
+    let backend = EncryptedSessionBackend::arc(data_dir);
+    let (client, shutdown) = Client::builder()
+        .api_id(config.api_id)
+        .api_hash(config.api_hash.clone())
+        .session_backend(backend as Arc<dyn ferogram::SessionBackend>)
+        .device_model("SoundGrammy")
+        .app_version(env!("CARGO_PKG_VERSION"))
+        .catch_up(false)
+        .connect()
+        .await
+        .map_err(|e| AppError::msg(format!("telegram connect failed: {e}")))?;
 
-    // The client owns the handle needed to talk to the runner; spawning the
-    // runner drives all network I/O for the lifetime of the app.
-    tauri::async_runtime::spawn(runner.run());
-
-    Ok((session, client))
+    Ok((client, shutdown))
 }
 
 /// Whether the persisted session corresponds to an authorized account.
