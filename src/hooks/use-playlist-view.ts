@@ -53,6 +53,7 @@ export function usePlaylistView() {
   const queue = usePlayerStore(state => state.queue)
   const isPlaying = usePlayerStore(state => state.isPlaying)
   const playPlaylist = usePlayerStore(state => state.playPlaylist)
+  const setPlaying = usePlayerStore(state => state.setPlaying)
   const enqueueNext = usePlayerStore(state => state.enqueueNext)
   const appendToQueue = usePlayerStore(state => state.appendToQueue)
   const data = usePlaylistsStore(state => state.data)
@@ -155,6 +156,12 @@ export function usePlaylistView() {
   const customPlaylists = data?.custom ?? []
 
   const handleTrackSelect = (track: Track, sourceIndex: number) => {
+    // Same membership row: toggle pause/resume instead of restarting.
+    if (playingSourceIndex === sourceIndex) {
+      setPlaying(!isPlaying)
+      return
+    }
+
     // Search filters the table only — queue is still the full playlist.
     // Column sort does apply to playback order; start at this membership slot.
     const startIndex = playableEntries.findIndex(
@@ -441,6 +448,9 @@ export function usePlaylistView() {
   }
 
   const handleCache = async (track: Track) => {
+    const cache = useCacheStore.getState()
+    if (cache.isBusy(track.id)) return
+    cache.markBusy([track.id])
     try {
       await api.cacheTrack(track.id)
       useCacheStore.getState().markCached([track.id])
@@ -448,15 +458,26 @@ export function usePlaylistView() {
     catch (error) {
       setActionError(errorMessage(error))
     }
+    finally {
+      useCacheStore.getState().clearBusy([track.id])
+    }
   }
 
   const handleBulkCache = async (trackIds: number[]) => {
+    if (trackIds.length === 0) return
+    const cache = useCacheStore.getState()
+    const ids = trackIds.filter(id => !cache.isBusy(id))
+    if (ids.length === 0) return
+    cache.markBusy(ids)
     try {
-      const cached = await api.cacheTracks(trackIds)
+      const cached = await api.cacheTracks(ids)
       useCacheStore.getState().markCached(cached)
     }
     catch (error) {
       setActionError(errorMessage(error))
+    }
+    finally {
+      useCacheStore.getState().clearBusy(ids)
     }
   }
 
@@ -466,6 +487,9 @@ export function usePlaylistView() {
   }
 
   const handleDownload = async (track: Track) => {
+    const cache = useCacheStore.getState()
+    if (cache.isBusy(track.id)) return
+    cache.markBusy([track.id])
     try {
       const path = await api.exportTrack(track.id)
       await revealItemInDir(path)
@@ -473,14 +497,25 @@ export function usePlaylistView() {
     catch (error) {
       setActionError(errorMessage(error))
     }
+    finally {
+      useCacheStore.getState().clearBusy([track.id])
+    }
   }
 
   const handleBulkDownload = async (trackIds: number[]) => {
+    if (trackIds.length === 0) return
+    const cache = useCacheStore.getState()
+    const ids = trackIds.filter(id => !cache.isBusy(id))
+    if (ids.length === 0) return
+    cache.markBusy(ids)
     try {
-      await api.exportTracks(trackIds)
+      await api.exportTracks(ids)
     }
     catch (error) {
       setActionError(errorMessage(error))
+    }
+    finally {
+      useCacheStore.getState().clearBusy(ids)
     }
   }
 

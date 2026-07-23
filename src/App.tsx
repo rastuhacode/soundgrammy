@@ -17,6 +17,7 @@ import { useSessionStore } from '@/stores/session-store'
 import { useFullscreenStore } from '@/stores/fullscreen-store'
 import {
   startCacheStatusListener,
+  startDownloadProgressListener,
   useCacheStore,
 } from '@/stores/cache-store'
 
@@ -114,6 +115,15 @@ export default function App() {
   useEffect(() => {
     if (status !== 'ready') return
     const promise = startCacheStatusListener()
+    return () => {
+      promise.then(unlisten => unlisten())
+    }
+  }, [status])
+
+  // Drive thumbnail download progress from download:progress events.
+  useEffect(() => {
+    if (status !== 'ready') return
+    const promise = startDownloadProgressListener()
     return () => {
       promise.then(unlisten => unlisten())
     }

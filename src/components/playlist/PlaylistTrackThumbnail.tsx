@@ -4,6 +4,17 @@ import { useCachedThumbnail } from '@/hooks/use-cached-thumbnail'
 import { useCacheStore } from '@/stores/cache-store'
 import { cn } from '@/lib/utils'
 
+/** Matches `size-12` thumbnail. */
+const THUMB_SIZE = 48
+/** Visual weight close to the old 1px CSS border, readable as progress. */
+const STROKE = 1
+const INSET = STROKE / 2
+/**
+ * `rounded-sm` = `--radius-sm` = `calc(0.75rem - 4px)` = 8px on the outer box.
+ * Path is inset by half the stroke, so rx is outer radius minus inset.
+ */
+const CORNER = 8 - INSET
+
 export function TrackThumbnail(props: {
   trackId: number
   fileUniqueId: string
@@ -12,16 +23,22 @@ export function TrackThumbnail(props: {
   const inView = entry?.isIntersecting ?? false
   const { url, loaded, failed } = useCachedThumbnail(props.trackId, { enabled: inView })
   const isCached = useCacheStore(state => state.cachedIds.has(props.trackId))
+  const isBusy = useCacheStore(state => state.busyIds.has(props.trackId))
+  const progress = useCacheStore(state => state.progressById.get(props.trackId))
+  const showProgress = isBusy || progress !== undefined
+  const progressPct = progress !== undefined ? progress * 100 : 0
 
   return (
     <div
       ref={ref}
-      className={cn(
-        'relative size-12 shrink-0 overflow-hidden rounded-sm bg-muted',
-        'border transition-[border-color] duration-300 ease-out',
-        isCached ? 'border-primary' : 'border-muted-foreground/35',
-      )}
-      aria-label={isCached ? 'Cached' : 'Not cached'}
+      className="relative size-12 shrink-0 overflow-hidden rounded-sm bg-muted"
+      aria-label={
+        showProgress
+          ? 'Downloading'
+          : isCached
+            ? 'Cached'
+            : 'Not cached'
+      }
     >
       {!failed && url
         ? (
@@ -29,9 +46,10 @@ export function TrackThumbnail(props: {
               src={url}
               alt="Thumbnail"
               decoding="async"
-              className={`absolute inset-0 size-12 object-cover transition-opacity duration-200 ${
-                loaded ? 'opacity-100' : 'opacity-0'
-              }`}
+              className={cn(
+                'absolute inset-0 size-full object-cover transition-opacity duration-200',
+                loaded ? 'opacity-100' : 'opacity-0',
+              )}
             />
           )
         : (
@@ -39,6 +57,50 @@ export function TrackThumbnail(props: {
               <Music className="size-5" />
             </div>
           )}
+
+      <svg
+        className={cn(
+          'pointer-events-none absolute inset-0 size-full',
+          showProgress || isCached
+            ? 'text-primary'
+            : 'text-muted-foreground/35',
+        )}
+        viewBox={`0 0 ${THUMB_SIZE} ${THUMB_SIZE}`}
+        aria-hidden
+      >
+        <rect
+          x={INSET}
+          y={INSET}
+          width={THUMB_SIZE - STROKE}
+          height={THUMB_SIZE - STROKE}
+          rx={CORNER}
+          ry={CORNER}
+          fill="none"
+          stroke="currentColor"
+          strokeOpacity={showProgress ? 0.25 : 1}
+          strokeWidth={STROKE}
+        />
+        {showProgress && (
+          <rect
+            x={INSET}
+            y={INSET}
+            width={THUMB_SIZE - STROKE}
+            height={THUMB_SIZE - STROKE}
+            rx={CORNER}
+            ry={CORNER}
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={STROKE}
+            pathLength={100}
+            strokeDasharray={
+              progress !== undefined
+                ? `${progressPct} 100`
+                : '12 88'
+            }
+            strokeLinecap="butt"
+          />
+        )}
+      </svg>
     </div>
   )
 }
