@@ -6,11 +6,14 @@ import type {
   AuthUser,
   CacheChanged,
   CacheSettings,
+  CacheTracksProgress,
   CacheUsage,
   CustomPlaylistSummary,
   LikedPlaylist,
   ListenEndReason,
   ListenEndResult,
+  PlaylistDownloadProgress,
+  PlaylistDownloadResult,
   PlaylistsBundle,
   QrOutcome,
   SyncResult,
@@ -78,8 +81,11 @@ export const api = {
     invoke<void>('prefetch_track', { trackId }),
   cacheTrack: (trackId: number) =>
     invoke<void>('cache_track', { trackId }),
-  cacheTracks: (trackIds: number[]) =>
-    invoke<number[]>('cache_tracks', { trackIds }),
+  cacheTracks: (trackIds: number[], jobId?: string | null) =>
+    invoke<number[]>('cache_tracks', {
+      trackIds,
+      jobId: jobId ?? null,
+    }),
   removeTrackFromCache: (trackId: number) =>
     invoke<void>('remove_track_from_cache', { trackId }),
   clearAudioCache: () => invoke<void>('clear_audio_cache'),
@@ -98,6 +104,12 @@ export const api = {
     invoke<string>('export_track', { trackId }),
   exportTracks: (trackIds: number[]) =>
     invoke<string>('export_tracks', { trackIds }),
+  downloadPlaylist: (name: string, trackIds: number[], jobId: string) =>
+    invoke<PlaylistDownloadResult>('download_playlist', {
+      name,
+      trackIds,
+      jobId,
+    }),
   getTrackThumbnail: (trackId: number, highQuality = false) =>
     invoke<string | null>('get_track_thumbnail', { trackId, highQuality }),
   getUserAvatar: () => invoke<string | null>('get_user_avatar'),
@@ -207,6 +219,24 @@ export function onDownloadProgress(
   cb: (p: DownloadProgress) => void,
 ): Promise<UnlistenFn> {
   return listen<DownloadProgress>('download:progress', e => cb(e.payload))
+}
+
+export function onPlaylistDownloadProgress(
+  cb: (p: PlaylistDownloadProgress) => void,
+): Promise<UnlistenFn> {
+  return listen<PlaylistDownloadProgress>(
+    'download_playlist:progress',
+    e => cb(e.payload),
+  )
+}
+
+export function onCacheTracksProgress(
+  cb: (p: CacheTracksProgress) => void,
+): Promise<UnlistenFn> {
+  return listen<CacheTracksProgress>(
+    'cache_tracks:progress',
+    e => cb(e.payload),
+  )
 }
 
 export function onCacheChanged(

@@ -18,6 +18,7 @@ describe('useCacheStore', () => {
     useCacheStore.setState({
       cachedIds: new Set(),
       busyIds: new Set(),
+      busyCounts: new Map(),
       progressById: new Map(),
       hydrated: false,
     })
@@ -77,6 +78,23 @@ describe('useCacheStore', () => {
     expect(useCacheStore.getState().isBusy(1)).toBe(false)
     expect(useCacheStore.getState().isBusy(2)).toBe(true)
     expect(useCacheStore.getState().progressById.has(1)).toBe(false)
+  })
+
+  it('keeps a track busy until overlapping clearBusy calls balance markBusy', () => {
+    const store = useCacheStore.getState()
+    store.markBusy([1, 2])
+    store.markBusy([1])
+    store.setProgress(1, 0.5)
+
+    store.clearBusy([1])
+    expect(useCacheStore.getState().isBusy(1)).toBe(true)
+    expect(useCacheStore.getState().progressById.get(1)).toBe(0.5)
+
+    store.clearBusy([1, 2])
+    expect(useCacheStore.getState().isBusy(1)).toBe(false)
+    expect(useCacheStore.getState().isBusy(2)).toBe(false)
+    expect(useCacheStore.getState().progressById.has(1)).toBe(false)
+    expect(useCacheStore.getState().busyCounts.size).toBe(0)
   })
 
   it('clamps progress into 0..1', () => {

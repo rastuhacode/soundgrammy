@@ -4,6 +4,8 @@ import { api, onCacheChanged, onDownloadProgress } from '@/lib/api'
 interface CacheState {
   cachedIds: Set<number>
   busyIds: Set<number>
+  /** Refcount per track so overlapping jobs do not clear each other's busy state. */
+  busyCounts: Map<number, number>
   progressById: Map<number, number>
   hydrated: boolean
   hydrate: () => Promise<void>
@@ -22,6 +24,7 @@ interface CacheState {
 export const useCacheStore = create<CacheState>((set, get) => ({
   cachedIds: new Set(),
   busyIds: new Set(),
+  busyCounts: new Map(),
   progressById: new Map(),
   hydrated: false,
 
@@ -56,9 +59,14 @@ export const useCacheStore = create<CacheState>((set, get) => ({
   markBusy: (trackIds) => {
     if (trackIds.length === 0) return
     set((state) => {
-      const next = new Set(state.busyIds)
-      for (const id of trackIds) next.add(id)
-      return { busyIds: next }
+      const nextBusy = new Set(state.busyIds)
+      const nextCounts = new Map(state.busyCounts)
+      for (const id of trackIds) {
+        const count = (nextCounts.get(id) ?? 0) + 1
+        nextCounts.set(id, count)
+        nextBusy.add(id)
+      }
+      return { busyIds: nextBusy, busyCounts: nextCounts }
     })
   },
 
@@ -66,12 +74,24 @@ export const useCacheStore = create<CacheState>((set, get) => ({
     if (trackIds.length === 0) return
     set((state) => {
       const nextBusy = new Set(state.busyIds)
+      const nextCounts = new Map(state.busyCounts)
       const nextProgress = new Map(state.progressById)
       for (const id of trackIds) {
-        nextBusy.delete(id)
-        nextProgress.delete(id)
+        const count = (nextCounts.get(id) ?? 0) - 1
+        if (count <= 0) {
+          nextCounts.delete(id)
+          nextBusy.delete(id)
+          nextProgress.delete(id)
+        }
+        else {
+          nextCounts.set(id, count)
+        }
       }
-      return { busyIds: nextBusy, progressById: nextProgress }
+      return {
+        busyIds: nextBusy,
+        busyCounts: nextCounts,
+        progressById: nextProgress,
+      }
     })
   },
 
@@ -96,6 +116,7 @@ export const useCacheStore = create<CacheState>((set, get) => ({
   clearAll: () => set({
     cachedIds: new Set(),
     busyIds: new Set(),
+    busyCounts: new Map(),
     progressById: new Map(),
   }),
 

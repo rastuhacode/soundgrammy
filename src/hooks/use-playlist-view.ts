@@ -20,11 +20,13 @@ import { api } from '@/lib/api'
 import { resolvePlayingSourceIndex } from '@/lib/queue/playing-source-index'
 import { useFilter } from '@/hooks/utils/use-filter'
 import {
+  canDownloadPlaylist,
   enterSelectionWithTrack,
   sortIndexedPlaylistTracks,
   sortingStateToTrackSort,
 } from '@/components/playlist/track-actions'
 import { useCacheStore } from '@/stores/cache-store'
+import { usePlaylistJobsStore } from '@/stores/playlist-jobs-store'
 
 function errorMessage(error: unknown): string {
   if (error && typeof error === 'object' && 'message' in error) {
@@ -61,6 +63,21 @@ export function usePlaylistView() {
     state => state.selectedPlaylistId,
   )
   const setData = usePlaylistsStore(state => state.setData)
+
+  const downloadJob = usePlaylistJobsStore((state) => {
+    const jobId = state.downloadJobByPlaylist[String(selectedPlaylistId)]
+    return jobId ? state.jobsById[jobId] ?? null : null
+  })
+  const cacheJob = usePlaylistJobsStore((state) => {
+    const jobId = state.cacheJobByPlaylist[String(selectedPlaylistId)]
+    return jobId ? state.jobsById[jobId] ?? null : null
+  })
+  const runDownloadPlaylist = usePlaylistJobsStore(
+    state => state.runDownloadPlaylist,
+  )
+  const runCachePlaylist = usePlaylistJobsStore(
+    state => state.runCachePlaylist,
+  )
 
   const selectedPlaylist = useMemo(
     () => resolveSelectedPlaylistTracks(
@@ -156,8 +173,9 @@ export function usePlaylistView() {
   const customPlaylists = data?.custom ?? []
 
   const handleTrackSelect = (track: Track, sourceIndex: number) => {
-    // Same membership row: toggle pause/resume instead of restarting.
-    if (playingSourceIndex === sourceIndex) {
+    // Same membership row + same track id: toggle pause/resume instead of restarting.
+    // Require both so a stale sourceIndex after playlist edits cannot pause the wrong row.
+    if (playingSourceIndex === sourceIndex && currentTrackId === track.id) {
       setPlaying(!isPlaying)
       return
     }
@@ -481,9 +499,12 @@ export function usePlaylistView() {
     }
   }
 
-  const handleCachePlaylist = async () => {
-    const trackIds = playlistTracks.map(track => track.id)
-    await handleBulkCache(trackIds)
+  const handleCachePlaylist = () => {
+    runCachePlaylist({
+      playlistId,
+      name: selectedPlaylist.name,
+      trackIds: playlistTracks.map(track => track.id),
+    })
   }
 
   const handleDownload = async (track: Track) => {
@@ -517,6 +538,17 @@ export function usePlaylistView() {
     finally {
       useCacheStore.getState().clearBusy(ids)
     }
+  }
+
+  const handleDownloadPlaylist = () => {
+    if (!canDownloadPlaylist(selectedPlaylist) || playlistTracks.length === 0) {
+      return
+    }
+    runDownloadPlaylist({
+      playlistId,
+      name: selectedPlaylist.name,
+      trackIds: playlistTracks.map(track => track.id),
+    })
   }
 
   const handleRemoveFromCache = async (track: Track) => {
@@ -573,6 +605,10 @@ export function usePlaylistView() {
     setSorting,
     infoTrack,
     actionError,
+    playlistDownloading: downloadJob != null,
+    playlistDownloadProgress: downloadJob?.progress ?? null,
+    playlistCaching: cacheJob != null,
+    playlistCacheProgress: cacheJob?.progress ?? null,
     libraryTrackCount: libraryTracks.length,
     playlistTracks,
     isCustom,
@@ -609,6 +645,7 @@ export function usePlaylistView() {
     handleCachePlaylist,
     handleDownload,
     handleBulkDownload,
+    handleDownloadPlaylist,
     handleRemoveFromCache,
     handlePlaylistPlay,
     handlePlaylistShuffle,

@@ -149,3 +149,37 @@ export interface CacheChanged {
   cached: boolean
   cleared: boolean
 }
+
+export interface PlaylistDownloadSucceeded {
+  trackId: number
+  title: string | null
+  performer: string | null
+  fileName: string
+}
+
+export interface PlaylistDownloadFailed {
+  trackId: number
+  title: string | null
+  performer: string | null
+  error: string
+}
+
+export interface PlaylistDownloadResult {
+  folderPath: string | null
+  succeeded: PlaylistDownloadSucceeded[]
+  failed: PlaylistDownloadFailed[]
+}
+
+export interface PlaylistDownloadProgress {
+  jobId: string
+  current: number
+  total: number
+  trackId: number
+}
+
+export interface CacheTracksProgress {
+  jobId: string
+  current: number
+  total: number
+  trackId: number
+}

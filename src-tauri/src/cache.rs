@@ -444,10 +444,12 @@ pub async fn clear_audio_cache(state: &AppState, app: &AppHandle) -> AppResult<(
 }
 
 /// Pre-check + cache all uncached tracks in `track_ids`.
+/// When `job_id` is set, emits `cache_tracks:progress` after each attempt.
 pub async fn cache_tracks(
     state: &AppState,
     app: &AppHandle,
     track_ids: &[i64],
+    job_id: Option<&str>,
 ) -> AppResult<Vec<i64>> {
     let uid = current_uid(state)?;
     let mut needed: u64 = 0;
@@ -504,8 +506,23 @@ pub async fn cache_tracks(
         evict_for_room(state, app, needed).await?;
     }
 
+    // Progress totals match the requested playlist size (already-cached tracks
+    // count as done) so the toolbar does not jump from `0/N` to `1/M`.
+    let total = track_ids.len() as u32;
+    let already_present = total.saturating_sub(to_cache.len() as u32);
     let mut cached = Vec::new();
-    for track in to_cache {
+    for (index, track) in to_cache.into_iter().enumerate() {
+        if let Some(job_id) = job_id {
+            let _ = app.emit(
+                "cache_tracks:progress",
+                CacheTracksProgress {
+                    job_id: job_id.to_string(),
+                    current: already_present.saturating_add(index as u32).saturating_add(1),
+                    total,
+                    track_id: track.id,
+                },
+            );
+        }
         match ensure_audio(state, app, track.id).await {
             Ok(_) => cached.push(track.id),
             Err(err) => {
@@ -521,6 +538,15 @@ pub async fn cache_tracks(
         }
     }
     Ok(cached)
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct CacheTracksProgress {
+    job_id: String,
+    current: u32,
+    total: u32,
+    track_id: i64,
 }
 
 fn format_bytes(bytes: u64) -> String {

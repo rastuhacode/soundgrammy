@@ -1,4 +1,6 @@
+import { revealItemInDir } from '@tauri-apps/plugin-opener'
 import { usePlaylistsStore } from '@/stores/playlists-store'
+import { usePlaylistJobsStore } from '@/stores/playlist-jobs-store'
 import { usePlaylistView } from '@/hooks/use-playlist-view'
 import {
   Dialog,
@@ -12,15 +14,64 @@ import { Button } from '@/components/ui/button'
 import { PlaylistEmptyState } from './PlaylistEmptyState'
 import { PlaylistToolbar } from './PlaylistToolbar'
 import { PlaylistTracksTable } from './PlaylistTracksTable'
+import { PlaylistDownloadResultDialog } from './PlaylistDownloadResultDialog'
 import { TrackInfoDialog } from './TrackInfoDialog'
 
 export function PlaylistView() {
   const selectedPlaylistId = usePlaylistsStore(
     state => state.selectedPlaylistId,
   )
+  const resultItem = usePlaylistJobsStore(state => state.resultQueue[0] ?? null)
+  const dismissResult = usePlaylistJobsStore(state => state.dismissResult)
+  const errorMessage = usePlaylistJobsStore(state => state.errorQueue[0] ?? null)
+  const dismissError = usePlaylistJobsStore(state => state.dismissError)
 
-  // Remount on playlist change so search / selection reset without an effect.
-  return <PlaylistViewContent key={selectedPlaylistId} />
+  const handleOpenFolder = async () => {
+    if (!resultItem?.result.folderPath) return
+    try {
+      await revealItemInDir(resultItem.result.folderPath)
+    }
+    catch {
+      // Ignore; user can browse Downloads manually.
+    }
+  }
+
+  return (
+    <>
+      <PlaylistViewContent key={selectedPlaylistId} />
+
+      <PlaylistDownloadResultDialog
+        result={resultItem?.result ?? null}
+        playlistName={resultItem?.playlistName ?? null}
+        open={resultItem !== null}
+        onOpenChange={(open) => {
+          if (!open) dismissResult()
+        }}
+        onOpenFolder={handleOpenFolder}
+      />
+
+      <Dialog
+        open={errorMessage !== null}
+        onOpenChange={(open) => {
+          if (!open) dismissError()
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Couldn’t finish</DialogTitle>
+            <DialogDescription className="whitespace-pre-wrap">
+              {errorMessage}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => dismissError()}>
+              OK
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </>
+  )
 }
 
 function PlaylistViewContent() {
@@ -49,9 +100,14 @@ function PlaylistViewContent() {
           customPlaylists={view.customPlaylists}
           likedTrackIds={view.likedTrackIds}
           playlistCached={view.playlistCached}
+          playlistDownloading={view.playlistDownloading}
+          playlistDownloadProgress={view.playlistDownloadProgress}
+          playlistCaching={view.playlistCaching}
+          playlistCacheProgress={view.playlistCacheProgress}
           onPlay={view.handlePlaylistPlay}
           onShuffle={view.handlePlaylistShuffle}
           onCachePlaylist={view.handleCachePlaylist}
+          onDownloadPlaylist={view.handleDownloadPlaylist}
           onExitSelection={view.handleExitSelection}
           onAddToLiked={view.handleBulkAddToLiked}
           onRemoveFromLiked={view.handleBulkRemoveFromLiked}

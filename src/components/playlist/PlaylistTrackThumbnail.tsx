@@ -23,10 +23,12 @@ export function TrackThumbnail(props: {
   const inView = entry?.isIntersecting ?? false
   const { url, loaded, failed } = useCachedThumbnail(props.trackId, { enabled: inView })
   const isCached = useCacheStore(state => state.cachedIds.has(props.trackId))
-  const isBusy = useCacheStore(state => state.busyIds.has(props.trackId))
   const progress = useCacheStore(state => state.progressById.get(props.trackId))
-  const showProgress = isBusy || progress !== undefined
-  const progressPct = progress !== undefined ? progress * 100 : 0
+  // Only real per-track download progress drives the ring. `busyIds` alone
+  // (e.g. playlist cache/download marking every track) must not override the
+  // cached / not-cached full border.
+  const showProgress = progress !== undefined
+  const progressPct = showProgress ? progress * 100 : 0
 
   return (
     <div
@@ -92,11 +94,7 @@ export function TrackThumbnail(props: {
             stroke="currentColor"
             strokeWidth={STROKE}
             pathLength={100}
-            strokeDasharray={
-              progress !== undefined
-                ? `${progressPct} 100`
-                : '12 88'
-            }
+            strokeDasharray={`${progressPct} 100`}
             strokeLinecap="butt"
           />
         )}
