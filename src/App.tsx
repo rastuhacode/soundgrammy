@@ -17,8 +17,10 @@ import { useSessionStore } from '@/stores/session-store'
 import { useFullscreenStore } from '@/stores/fullscreen-store'
 import {
   startCacheStatusListener,
+  startDownloadProgressListener,
   useCacheStore,
 } from '@/stores/cache-store'
+import { startPlaylistJobsListeners } from '@/stores/playlist-jobs-store'
 
 type AppStatus = 'loading' | 'login' | 'ready'
 
@@ -114,6 +116,24 @@ export default function App() {
   useEffect(() => {
     if (status !== 'ready') return
     const promise = startCacheStatusListener()
+    return () => {
+      promise.then(unlisten => unlisten())
+    }
+  }, [status])
+
+  // Drive thumbnail download progress from download:progress events.
+  useEffect(() => {
+    if (status !== 'ready') return
+    const promise = startDownloadProgressListener()
+    return () => {
+      promise.then(unlisten => unlisten())
+    }
+  }, [status])
+
+  // Playlist download/cache job progress (survives playlist view remounts).
+  useEffect(() => {
+    if (status !== 'ready') return
+    const promise = startPlaylistJobsListeners()
     return () => {
       promise.then(unlisten => unlisten())
     }

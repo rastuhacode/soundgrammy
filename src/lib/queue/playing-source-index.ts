@@ -30,6 +30,7 @@ export function resolvePlayingSourceIndex(options: {
       membership != null
       && membership >= 0
       && membership < playlistTrackIds.length
+      && playlistTrackIds[membership] === currentTrackId
     ) {
       return membership
     }

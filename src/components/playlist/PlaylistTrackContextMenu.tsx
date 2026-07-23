@@ -30,6 +30,7 @@ import {
   getTrackContextActions,
   type CustomPlaylistRef,
 } from './track-actions'
+import { useCacheStore } from '@/stores/cache-store'
 
 export interface PlaylistTrackContextMenuProps {
   track: Track
@@ -70,6 +71,8 @@ export function PlaylistTrackContextMenu({
 }: PlaylistTrackContextMenuProps) {
   const actions = getTrackContextActions(currentPlaylist)
   const availablePlaylists = getAvailableCustomPlaylists(customPlaylists)
+  const isCached = useCacheStore(state => state.cachedIds.has(track.id))
+  const isBusy = useCacheStore(state => state.busyIds.has(track.id))
 
   return (
     <ContextMenu>
@@ -160,22 +163,28 @@ export function PlaylistTrackContextMenu({
 
         <ContextMenuGroup>
           <ContextMenuLabel>Track</ContextMenuLabel>
-          {actions.cache && (
-            <ContextMenuItem onClick={() => onCache(track)}>
+          {actions.cache && !isCached && (
+            <ContextMenuItem
+              disabled={isBusy}
+              onClick={() => onCache(track)}
+            >
               <HardDriveDownload className="size-4" />
-              Cache
+              {isBusy ? 'Caching…' : 'Cache'}
             </ContextMenuItem>
           )}
-          {actions.download && (
-            <ContextMenuItem onClick={() => onDownload(track)}>
-              <Download className="size-4" />
-              Download
-            </ContextMenuItem>
-          )}
-          {actions.removeFromCache && (
+          {actions.removeFromCache && isCached && (
             <ContextMenuItem onClick={() => onRemoveFromCache(track)}>
               <HardDriveUpload className="size-4" />
               Remove from cache
+            </ContextMenuItem>
+          )}
+          {actions.download && (
+            <ContextMenuItem
+              disabled={isBusy}
+              onClick={() => onDownload(track)}
+            >
+              <Download className="size-4" />
+              {isBusy ? 'Downloading…' : 'Download'}
             </ContextMenuItem>
           )}
           {actions.showInfo && (

@@ -61,6 +61,20 @@ describe('resolvePlayingSourceIndex', () => {
     })).toBe(1)
   })
 
+  it('ignores stale sourceIndices when membership no longer matches currentTrackId', () => {
+    expect(resolvePlayingSourceIndex({
+      currentTrackId: 1,
+      playlistId,
+      playlistTrackIds: [3, 1, 2],
+      queue: {
+        cursor: 0,
+        source: { type: 'playlist', playlistId },
+        sourceIndices: [0, 1, 2],
+        trackIds: [1, 1, 2],
+      },
+    })).toBe(1)
+  })
+
   it('keeps the second duplicate highlighted after source is cleared (play next)', () => {
     // Playing A2, then play-next inserts X after cursor and clears source.
     expect(resolvePlayingSourceIndex({

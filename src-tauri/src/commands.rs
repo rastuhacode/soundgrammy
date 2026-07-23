@@ -300,8 +300,9 @@ pub async fn cache_tracks(
     state: State<'_, AppState>,
     app: AppHandle,
     track_ids: Vec<i64>,
+    job_id: Option<String>,
 ) -> AppResult<Vec<i64>> {
-    cache::cache_tracks(&state, &app, &track_ids).await
+    cache::cache_tracks(&state, &app, &track_ids, job_id.as_deref()).await
 }
 
 #[tauri::command]
@@ -414,6 +415,18 @@ pub async fn export_tracks(
     track_ids: Vec<i64>,
 ) -> AppResult<String> {
     crate::export::export_tracks(&state, &app, &track_ids).await
+}
+
+/// Download a named playlist folder + M3U8 into Downloads/SoundGrammy (partial success).
+#[tauri::command]
+pub async fn download_playlist(
+    state: State<'_, AppState>,
+    app: AppHandle,
+    name: String,
+    track_ids: Vec<i64>,
+    job_id: String,
+) -> AppResult<crate::export::PlaylistDownloadResult> {
+    crate::export::download_playlist(&state, &app, name, &track_ids, job_id).await
 }
 
 #[tauri::command]

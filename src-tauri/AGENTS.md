@@ -16,6 +16,7 @@ Rust Tauri 2 app: Telegram via ferogram, library in SQLite, media cache + stream
 | `src/cache.rs` | On-disk media/thumbnail paths, size limit, TTL, eviction |
 | `src/export.rs` | Copy tracks into system Downloads |
 | `src/proxy_settings.rs` | MTProto proxy persistence + link parse |
+| `src/export.rs` | Copy tracks / playlists into system Downloads (`download_playlist` + M3U) |
 | `src/listen_stats.rs` | Listen qualification, aggregates, likeness |
 | `src/state.rs` | Shared `AppState` (swappable ferogram client) |
 

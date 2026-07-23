@@ -1,5 +1,6 @@
 import type { Track } from '@/lib/db'
 import {
+  ALL_TRACKS_PLAYLIST_ID,
   LIKED_PLAYLIST_ID,
   type ResolvedSelectedPlaylist,
 } from '@/stores/playlists-store'
@@ -61,6 +62,17 @@ export function canRemoveFromPlaylist(
   playlist: Pick<ResolvedSelectedPlaylist, 'isCustom'>,
 ): boolean {
   return playlist.isCustom
+}
+
+/** All tracks, Liked, and custom playlists can be downloaded as a folder + M3U. */
+export function canDownloadPlaylist(
+  playlist: Pick<ResolvedSelectedPlaylist, 'id' | 'isCustom'>,
+): boolean {
+  if (playlist.isCustom) return true
+  return (
+    playlist.id === ALL_TRACKS_PLAYLIST_ID
+    || playlist.id === LIKED_PLAYLIST_ID
+  )
 }
 
 /**

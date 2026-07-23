@@ -1,19 +1,31 @@
 import { create } from 'zustand'
-import { api, onCacheChanged } from '@/lib/api'
+import { api, onCacheChanged, onDownloadProgress } from '@/lib/api'
 
 interface CacheState {
   cachedIds: Set<number>
+  busyIds: Set<number>
+  /** Refcount per track so overlapping jobs do not clear each other's busy state. */
+  busyCounts: Map<number, number>
+  progressById: Map<number, number>
   hydrated: boolean
   hydrate: () => Promise<void>
   markCached: (trackIds: number[]) => void
   markUncached: (trackIds: number[]) => void
+  markBusy: (trackIds: number[]) => void
+  clearBusy: (trackIds: number[]) => void
+  setProgress: (trackId: number, ratio: number) => void
+  clearProgress: (trackId: number) => void
   clearAll: () => void
   isCached: (trackId: number) => boolean
+  isBusy: (trackId: number) => boolean
   isPlaylistCached: (trackIds: number[]) => boolean
 }
 
 export const useCacheStore = create<CacheState>((set, get) => ({
   cachedIds: new Set(),
+  busyIds: new Set(),
+  busyCounts: new Map(),
+  progressById: new Map(),
   hydrated: false,
 
   hydrate: async () => {
@@ -44,9 +56,73 @@ export const useCacheStore = create<CacheState>((set, get) => ({
     })
   },
 
-  clearAll: () => set({ cachedIds: new Set() }),
+  markBusy: (trackIds) => {
+    if (trackIds.length === 0) return
+    set((state) => {
+      const nextBusy = new Set(state.busyIds)
+      const nextCounts = new Map(state.busyCounts)
+      for (const id of trackIds) {
+        const count = (nextCounts.get(id) ?? 0) + 1
+        nextCounts.set(id, count)
+        nextBusy.add(id)
+      }
+      return { busyIds: nextBusy, busyCounts: nextCounts }
+    })
+  },
+
+  clearBusy: (trackIds) => {
+    if (trackIds.length === 0) return
+    set((state) => {
+      const nextBusy = new Set(state.busyIds)
+      const nextCounts = new Map(state.busyCounts)
+      const nextProgress = new Map(state.progressById)
+      for (const id of trackIds) {
+        const count = (nextCounts.get(id) ?? 0) - 1
+        if (count <= 0) {
+          nextCounts.delete(id)
+          nextBusy.delete(id)
+          nextProgress.delete(id)
+        }
+        else {
+          nextCounts.set(id, count)
+        }
+      }
+      return {
+        busyIds: nextBusy,
+        busyCounts: nextCounts,
+        progressById: nextProgress,
+      }
+    })
+  },
+
+  setProgress: (trackId, ratio) => {
+    const clamped = Math.min(1, Math.max(0, ratio))
+    set((state) => {
+      const next = new Map(state.progressById)
+      next.set(trackId, clamped)
+      return { progressById: next }
+    })
+  },
+
+  clearProgress: (trackId) => {
+    set((state) => {
+      if (!state.progressById.has(trackId)) return state
+      const next = new Map(state.progressById)
+      next.delete(trackId)
+      return { progressById: next }
+    })
+  },
+
+  clearAll: () => set({
+    cachedIds: new Set(),
+    busyIds: new Set(),
+    busyCounts: new Map(),
+    progressById: new Map(),
+  }),
 
   isCached: trackId => get().cachedIds.has(trackId),
+
+  isBusy: trackId => get().busyIds.has(trackId),
 
   isPlaylistCached: (trackIds) => {
     if (trackIds.length === 0) return false
@@ -69,5 +145,18 @@ export function startCacheStatusListener(): Promise<() => void> {
     else {
       store.markUncached(payload.trackIds)
     }
+  })
+}
+
+/** Subscribe once after login; drives thumbnail download progress. */
+export function startDownloadProgressListener(): Promise<() => void> {
+  return onDownloadProgress((progress) => {
+    const store = useCacheStore.getState()
+    if (progress.complete) {
+      store.clearProgress(progress.trackId)
+      return
+    }
+    if (progress.total <= 0) return
+    store.setProgress(progress.trackId, progress.received / progress.total)
   })
 }

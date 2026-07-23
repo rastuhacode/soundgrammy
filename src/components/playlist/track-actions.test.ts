@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { Track } from '@/lib/db'
 import {
+  canDownloadPlaylist,
   canRemoveFromPlaylist,
   compareTracks,
   enterSelectionWithTrack,
@@ -40,6 +41,19 @@ describe('canRemoveFromPlaylist', () => {
   it('allows remove only for custom playlists', () => {
     expect(canRemoveFromPlaylist({ isCustom: true })).toBe(true)
     expect(canRemoveFromPlaylist({ isCustom: false })).toBe(false)
+  })
+})
+
+describe('canDownloadPlaylist', () => {
+  it('allows All tracks, Liked, and custom', () => {
+    expect(canDownloadPlaylist({ id: 'all', isCustom: false })).toBe(true)
+    expect(canDownloadPlaylist({ id: 'liked', isCustom: false })).toBe(true)
+    expect(canDownloadPlaylist({ id: 3, isCustom: true })).toBe(true)
+  })
+
+  it('blocks Popular and Recent', () => {
+    expect(canDownloadPlaylist({ id: 'popular', isCustom: false })).toBe(false)
+    expect(canDownloadPlaylist({ id: 'recent', isCustom: false })).toBe(false)
   })
 })
 

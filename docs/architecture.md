@@ -36,6 +36,7 @@ Optional **MTProto proxy** (tg-ws-proxy compatible: server / port / secret or `t
 
 - **App cache**: audio under the app cache dir (`audio/{file_unique_id}.{ext}`). Used for in-app playback. Subject to Settings size limit / TTL / clear. Thumbnail border (greyish → primary) reflects cache status.
 - **Download (export)**: copies a track into the system Downloads folder (`SoundGrammy/…`). Not removed by clear cache or eviction. Bulk export uses a dated subfolder.
+- **Download playlist** (`download_playlist`): writes `Downloads/SoundGrammy/<playlist name>/` with audio files plus a UTF-8 `.m3u8` (relative paths). Allowed for All tracks, Liked, and custom playlists (not Popular/Recent). Sequential per-track `ensure_audio` → copy (same as single-track download); does **not** use the bulk Cache size pre-check. Partial success: failures are skipped and reported; M3U lists only files that landed. If the M3U write fails after audio copies succeed, the command still returns the per-track result (folder + succeeded/failed) so the UI can show the summary. Job progress is keyed by `jobId` so parallel playlist downloads and playlist switches keep correct UI state (`playlist-jobs-store`).
 - **Cached playback path**: absolute path → `fileSrc()` (`asset:` URL) for `<audio>` / images.
 - **Uncached (streamed)**: `get_track_source` returns `stream`; the UI attaches `<audio>` to a MediaSource object URL and appends bytes via `read_stream_range` as the download ledger grows (`src/hooks/audio/mse-session.ts`). Full track duration is set on the `MediaSource` from metadata. Buffer UI uses `download:progress` ranges, not WebKit's optimistic `HTMLMediaElement.buffered`.
 - Completing a stream finalize marks the track cached (Telegram-like). Explicit **Cache** also fills app cache without writing to Downloads.
@@ -48,6 +49,8 @@ Optional **MTProto proxy** (tg-ws-proxy compatible: server / port / secret or `t
 |-------|---------|
 | `sync:start` / `sync:progress` / `sync:done` | Saved-music sync lifecycle |
 | `download:progress` | Per-track download bytes / ranges |
+| `download_playlist:progress` | Playlist download slot progress (`jobId` / `current` / `total` / `trackId`) |
+| `cache_tracks:progress` | Bulk cache job progress when a `jobId` is provided |
 | `cache:changed` | Track(s) entered/left app cache, or full clear |
 
 Listeners live in `src/lib/api.ts`.

@@ -114,6 +114,7 @@ pub fn run() {
             commands::get_cache_usage,
             commands::export_track,
             commands::export_tracks,
+            commands::download_playlist,
             commands::get_track_thumbnail,
             commands::get_user_avatar,
             commands::track_metadata,
