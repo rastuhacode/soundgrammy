@@ -342,4 +342,3 @@ export function resolveFrameSyncOffset(options: {
   if (lastAtOrBefore >= 0) return probeStart + lastAtOrBefore
   return null
 }
-

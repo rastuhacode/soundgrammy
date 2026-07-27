@@ -20,6 +20,7 @@ Agent-facing constraints for credentials and Telegram session material.
 - UI may hold display fields only (`AuthUser` / `SessionPayload`: name, username, ids).
 - No MTProto auth keys, DC options, or encrypted session blobs in React state, localStorage, or logs.
 - Logout must clear app session state and rely on backend `logout` to drop the Telegram session.
+- Offline UI may trust the local SQLite profile + `session.enc`; remote session revoke clears that local session only once the device reaches Telegram again (`refresh_auth` / `auth:revoked`).
 
 ## Review checklist (auth / crypto changes)
 

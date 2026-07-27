@@ -21,9 +21,18 @@ function ConnectingDot() {
   )
 }
 
+function OfflineDot() {
+  return (
+    <span className="absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full border-2 border-background bg-muted-foreground/40" />
+  )
+}
+
 export function SyncStatusDot({ phase }: { phase: SyncPhase }) {
   if (phase === 'connecting') {
     return <ConnectingDot />
+  }
+  if (phase === 'offline') {
+    return <OfflineDot />
   }
   if (phase === 'syncing') {
     return <SyncingDot />

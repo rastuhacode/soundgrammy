@@ -1,7 +1,8 @@
 import { useEffect, useState } from 'react'
 import { api, onSyncDone, onSyncStart } from '@/lib/api'
+import { useConnectivityStore } from '@/stores/connectivity-store'
 
-export type SyncPhase = 'connecting' | 'syncing' | 'live'
+export type SyncPhase = 'connecting' | 'offline' | 'syncing' | 'live'
 
 function formatLastSync(value: string | null | undefined): string | null {
   if (!value) return null
@@ -16,6 +17,7 @@ function formatLastSync(value: string | null | undefined): string | null {
 }
 
 export function useProfileMusicSync() {
+  const connectivity = useConnectivityStore(state => state.phase)
   const [lastSyncAt, setLastSyncAt] = useState<string | null | undefined>(
     undefined,
   )
@@ -35,6 +37,7 @@ export function useProfileMusicSync() {
     const startPromise = onSyncStart(() => setSyncing(true))
     const donePromise = onSyncDone(() => {
       setSyncing(false)
+      useConnectivityStore.getState().setOnline()
       api
         .syncStatus()
         .then(value => setLastSyncAt(value))
@@ -49,21 +52,35 @@ export function useProfileMusicSync() {
   }, [])
 
   const phase: SyncPhase
-    = lastSyncAt === undefined ? 'connecting' : syncing ? 'syncing' : 'live'
+    = connectivity === 'offline'
+      ? 'offline'
+      : connectivity === 'connecting' && !syncing
+        ? 'connecting'
+        : syncing
+          ? 'syncing'
+          : 'live'
 
   const lastSynced = formatLastSync(lastSyncAt)
 
   const statusLabel
-    = phase === 'connecting' ? 'connecting' : phase === 'syncing' ? 'syncing' : 'live'
+    = phase === 'connecting'
+      ? 'connecting'
+      : phase === 'offline'
+        ? 'offline'
+        : phase === 'syncing'
+          ? 'syncing'
+          : 'live'
 
   const statusDetail
     = phase === 'connecting'
       ? 'Connecting to Telegram…'
-      : phase === 'syncing'
-        ? 'Pulling your library…'
-        : lastSynced
-          ? `Last synced ${lastSynced}`
-          : 'Connected and ready'
+      : phase === 'offline'
+        ? 'Waiting for network…'
+        : phase === 'syncing'
+          ? 'Pulling your library…'
+          : lastSynced
+            ? `Last synced ${lastSynced}`
+            : 'Connected and ready'
 
   return { phase, statusLabel, statusDetail }
 }

@@ -12,38 +12,41 @@ use crate::error::{AppError, AppResult};
 use crate::listen_stats::EndReason;
 use crate::state::AppState;
 use crate::streaming;
-use crate::telegram::auth::{self, AuthOutcome, AuthUser, QrOutcome};
+use crate::telegram::auth::{self, AuthOutcome, AuthStatus, AuthUser, QrOutcome};
 use crate::telegram::saved_music::{self, SyncResult};
-
-#[derive(Serialize)]
-pub struct AuthStatus {
-    pub authorized: bool,
-    pub user: Option<AuthUser>,
-}
 
 // ---- auth ----------------------------------------------------------------
 
 #[tauri::command]
 pub async fn auth_status(state: State<'_, AppState>) -> AppResult<AuthStatus> {
-    let authorized = crate::telegram::client::is_authorized(&state.client).await?;
-    if !authorized {
+    // Local-only: never touch the network. Offline UI hydrates from SQLite + session.enc.
+    if !crate::session::exists(&state.data_dir) {
         return Ok(AuthStatus {
             authorized: false,
             user: None,
         });
     }
-    let user = auth::fetch_self(&state.client).await?;
-    state.db.save_profile(
-        user.id,
-        &user.first_name,
-        user.last_name.as_deref(),
-        user.username.as_deref(),
-        user.phone.as_deref(),
-    )?;
+    let Some(profile) = state.db.load_profile()? else {
+        return Ok(AuthStatus {
+            authorized: false,
+            user: None,
+        });
+    };
     Ok(AuthStatus {
         authorized: true,
-        user: Some(user),
+        user: Some(AuthUser {
+            id: profile.tg_user_id,
+            first_name: profile.first_name,
+            last_name: profile.last_name,
+            username: profile.username,
+            phone: profile.phone,
+        }),
     })
+}
+
+#[tauri::command]
+pub async fn refresh_auth(state: State<'_, AppState>, app: AppHandle) -> AppResult<AuthStatus> {
+    auth::refresh_auth(&state, &app).await
 }
 
 #[tauri::command]

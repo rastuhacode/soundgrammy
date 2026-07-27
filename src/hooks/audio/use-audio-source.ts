@@ -80,6 +80,7 @@ export function useAudioSource(options: UseAudioSourceOptions) {
     loadedTrackIdRef.current = null
     mseSessionRef.current = null
     // Reset MSE chrome flag synchronously on track change / remount.
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Must clear before initializeSource races the microtask queue.
     setStreamingMse(false)
 
     queueMicrotask(() => {

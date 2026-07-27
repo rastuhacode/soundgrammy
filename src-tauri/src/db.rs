@@ -412,7 +412,7 @@ impl Db {
         let conn = self.conn.lock().unwrap();
         let profile = conn
             .query_row(
-                "SELECT tg_user_id, first_name, last_name, username FROM profile LIMIT 1",
+                "SELECT tg_user_id, first_name, last_name, username, phone FROM profile LIMIT 1",
                 [],
                 |row| {
                     Ok(Profile {
@@ -420,6 +420,7 @@ impl Db {
                         first_name: row.get(1)?,
                         last_name: row.get(2)?,
                         username: row.get(3)?,
+                        phone: row.get(4)?,
                     })
                 },
             )
@@ -1204,6 +1205,7 @@ pub struct Profile {
     #[serde(rename = "lastName")]
     pub last_name: Option<String>,
     pub username: Option<String>,
+    pub phone: Option<String>,
 }
 
 fn map_track(row: &rusqlite::Row<'_>) -> rusqlite::Result<Track> {
@@ -1236,6 +1238,19 @@ mod tests {
         Ok(Db {
             conn: Mutex::new(conn),
         })
+    }
+
+    #[test]
+    fn load_profile_includes_phone() -> AppResult<()> {
+        let db = test_db()?;
+        db.save_profile(42, "Ada", Some("Lovelace"), Some("ada"), Some("+1555"))?;
+        let profile = db.load_profile()?.expect("profile");
+        assert_eq!(profile.tg_user_id, 42);
+        assert_eq!(profile.first_name, "Ada");
+        assert_eq!(profile.last_name.as_deref(), Some("Lovelace"));
+        assert_eq!(profile.username.as_deref(), Some("ada"));
+        assert_eq!(profile.phone.as_deref(), Some("+1555"));
+        Ok(())
     }
 
     #[test]

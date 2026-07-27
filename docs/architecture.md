@@ -14,10 +14,12 @@ flowchart LR
 
 ## Bootstrap
 
-1. `auth_status` — if unauthorized → login UI (phone or QR).
-2. On authorized: hydrate session store, `list_tracks` + `list_playlists` + `list_listen_stats`.
-3. Background `sync_saved_music`; on `changed`, reload library into stores.
-4. Sync errors leave the cached library as-is.
+1. `auth_status` — **local only** (`session.enc` + SQLite profile). No MTProto. Unauthorized → login UI.
+2. On authorized: hydrate session store, `list_tracks` + `list_playlists` + `list_listen_stats` → UI **ready**.
+3. Background reconnect loop: `refresh_auth` with exponential backoff (and immediate retry on browser `online`); on success, `sync_saved_music`. On sync `changed`, reload library into stores.
+4. Network timeouts / unreachable leave the cached library and local session as-is; sync-dot shows offline / connecting and keeps retrying.
+5. Server-proven session death (`AUTH_KEY_*` / `SESSION_REVOKED`, etc.) clears local session, emits `auth:revoked`, UI returns to login.
+6. Sync errors leave the cached library as-is; reconnect will retry sync after auth succeeds again.
 
 ## Data ownership
 
@@ -45,6 +47,7 @@ flowchart LR
 | Event | Meaning |
 |-------|---------|
 | `sync:start` / `sync:progress` / `sync:done` | Saved-music sync lifecycle |
+| `auth:revoked` | Local session cleared after server-proven auth death |
 | `download:progress` | Per-track download bytes / ranges |
 | `download_playlist:progress` | Playlist download slot progress (`jobId` / `current` / `total` / `trackId`) |
 | `cache_tracks:progress` | Bulk cache job progress when a `jobId` is provided |

@@ -4,7 +4,7 @@ import { MtprotoLogin } from '@/components/auth/MtprotoLogin'
 import { PlayerSidebar } from '@/components/PlayerSidebar'
 import { PlaylistView } from '@/components/playlist/PlaylistView'
 import { AudioPlayer } from '@/components/audio/AudioPlayer'
-import { api, onSyncDone } from '@/lib/api'
+import { api, onAuthRevoked, onSyncDone } from '@/lib/api'
 import { authUserToSession, type AuthUser } from '@/types'
 import { useLibraryStore } from '@/stores/library-store'
 import { usePlayerStore } from '@/stores/player-store'
@@ -21,6 +21,8 @@ import {
   useCacheStore,
 } from '@/stores/cache-store'
 import { startPlaylistJobsListeners } from '@/stores/playlist-jobs-store'
+import { useConnectivityStore } from '@/stores/connectivity-store'
+import { useTelegramReconnect } from '@/hooks/use-telegram-reconnect'
 
 type AppStatus = 'loading' | 'login' | 'ready'
 
@@ -64,19 +66,55 @@ export default function App() {
   const clearSession = useSessionStore(state => state.clearSession)
   const syncStartedRef = useRef(false)
 
+  const resetToLogin = useCallback(() => {
+    useFullscreenStore.getState().exitFullscreen()
+    clearSession()
+    useLibraryStore.getState().setLibrary([])
+    useCacheStore.getState().clearAll()
+    usePlayerStore.getState().clearQueue()
+    usePlaylistsStore.setState({
+      data: null,
+      selectedPlaylistId: ALL_TRACKS_PLAYLIST_ID,
+    })
+    useConnectivityStore.getState().reset()
+    syncStartedRef.current = false
+    setStatus('login')
+  }, [clearSession])
+
   const runSync = useCallback(async () => {
     if (syncStartedRef.current) return
     syncStartedRef.current = true
     try {
       const result = await api.syncSavedMusic()
+      useConnectivityStore.getState().setOnline()
       if (result.changed) {
         await loadLibrary(false)
       }
     }
     catch {
-      // sync failures leave the cached library intact
+      // sync failures leave the cached library intact; allow reconnect to retry
+      useConnectivityStore.getState().setOffline()
+      syncStartedRef.current = false
     }
   }, [])
+
+  const onReconnectUser = useCallback(
+    (user: AuthUser) => {
+      setSession(authUserToSession(user))
+    },
+    [setSession],
+  )
+
+  const onReconnectConnected = useCallback(async () => {
+    syncStartedRef.current = false
+    await runSync()
+  }, [runSync])
+
+  useTelegramReconnect({
+    enabled: status === 'ready',
+    onUser: onReconnectUser,
+    onConnected: onReconnectConnected,
+  })
 
   const bootstrap = useCallback(async () => {
     try {
@@ -86,20 +124,37 @@ export default function App() {
         return
       }
       setSession(authUserToSession(authStatus.user))
-      await loadLibrary(true)
+      try {
+        await loadLibrary(true)
+      }
+      catch {
+        // Local auth is enough to enter the app; empty library is fine offline.
+      }
+      useConnectivityStore.getState().setConnecting()
       setStatus('ready')
-      runSync()
+      // Reconnect loop (useTelegramReconnect) takes over refresh + sync.
     }
     catch {
+      // Local auth_status should not fail often; treat as logged out.
       setStatus('login')
     }
-  }, [setSession, runSync])
+  }, [setSession])
 
   useEffect(() => {
     // Bootstrap synchronizes React state with persisted backend auth/library state.
     // eslint-disable-next-line react-hooks/set-state-in-effect
     bootstrap()
   }, [bootstrap])
+
+  // Server-proven session death (after reconnect) → login without needing remote logout.
+  useEffect(() => {
+    const promise = onAuthRevoked(() => {
+      resetToLogin()
+    })
+    return () => {
+      promise.then(unlisten => unlisten())
+    }
+  }, [resetToLogin])
 
   // Reload the library whenever the backend reports a completed sync.
   useEffect(() => {
@@ -143,6 +198,7 @@ export default function App() {
     async (user: AuthUser) => {
       setSession(authUserToSession(user))
       syncStartedRef.current = false
+      useConnectivityStore.getState().setOnline()
       try {
         await loadLibrary(true)
       }
@@ -150,24 +206,14 @@ export default function App() {
         // ignore; sync will populate
       }
       setStatus('ready')
-      runSync()
+      void runSync()
     },
     [setSession, runSync],
   )
 
-  const handleLogout = useCallback(() => {
-    useFullscreenStore.getState().exitFullscreen()
-    clearSession()
-    useLibraryStore.getState().setLibrary([])
-    useCacheStore.getState().clearAll()
-    usePlayerStore.getState().clearQueue()
-    usePlaylistsStore.setState({
-      data: null,
-      selectedPlaylistId: ALL_TRACKS_PLAYLIST_ID,
-    })
-    syncStartedRef.current = false
-    setStatus('login')
-  }, [clearSession])
+  const handleLogout = useCallback(async () => {
+    resetToLogin()
+  }, [resetToLogin])
 
   if (status === 'loading') {
     return (

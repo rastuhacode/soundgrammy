@@ -27,6 +27,7 @@ export interface Profile {
   firstName: string
   lastName: string | null
   username: string | null
+  phone: string | null
 }
 
 export type TrackSource
@@ -42,6 +43,7 @@ export type TrackSource
 
 export const api = {
   authStatus: () => invoke<AuthStatus>('auth_status'),
+  refreshAuth: () => invoke<AuthStatus>('refresh_auth'),
   phoneSendCode: (phone: string) => invoke<void>('phone_send_code', { phone }),
   phoneSignIn: (code: string) => invoke<AuthOutcome>('phone_sign_in', { code }),
   phoneCheckPassword: (password: string) =>
@@ -243,4 +245,8 @@ export function onCacheChanged(
   cb: (p: CacheChanged) => void,
 ): Promise<UnlistenFn> {
   return listen<CacheChanged>('cache:changed', e => cb(e.payload))
+}
+
+export function onAuthRevoked(cb: () => void): Promise<UnlistenFn> {
+  return listen('auth:revoked', () => cb())
 }

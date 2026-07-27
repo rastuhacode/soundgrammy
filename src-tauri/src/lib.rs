@@ -62,6 +62,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::auth_status,
+            commands::refresh_auth,
             commands::phone_send_code,
             commands::phone_sign_in,
             commands::phone_check_password,
