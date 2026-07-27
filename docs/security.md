@@ -4,8 +4,8 @@ Agent-facing constraints for credentials and Telegram session material.
 
 ## Credentials
 
-- `TELEGRAM_API_ID` and `TELEGRAM_API_HASH` come from the environment (or compile-time embed). Dev may use `.env.local` (loaded only in debug).
-- Never commit `.env`, `.env.local`, API hashes, or session files.
+- `TELEGRAM_API_ID` and `TELEGRAM_API_HASH` are embedded at compile time (`build.rs` → `option_env!`). Prefer process env (CI secrets); otherwise `src-tauri/.env.local` is loaded for local builds. Debug also loads `.env.local` at runtime for `tauri dev`.
+- Never commit `.env`, `.env.local`, API hashes, or session files. Use `.env.example` as the template.
 - Do not log credential values or put them in frontend code / analytics.
 
 ## Session at rest

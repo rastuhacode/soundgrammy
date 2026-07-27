@@ -17,6 +17,7 @@ core2 = { git = "https://github.com/bbqsrc/core2", rev = "545e84bcb0f235b12e2135
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
+dotenvy = "0.15"
 
 [dependencies]
 tauri = { version = "2", features = ["protocol-asset"] }
