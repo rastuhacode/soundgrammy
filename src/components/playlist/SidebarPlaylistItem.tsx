@@ -25,6 +25,7 @@ export interface SidebarPlaylistItemProps {
   onEdit?: () => void
   onDelete?: () => void
   onHide?: () => void
+  onExport?: () => void
   isDeleting?: boolean
   sortable?: boolean
 }
@@ -41,6 +42,7 @@ export function SidebarPlaylistItem({
   onEdit,
   onDelete,
   onHide,
+  onExport,
   isDeleting,
   sortable = false,
 }: SidebarPlaylistItemProps) {
@@ -59,17 +61,20 @@ export function SidebarPlaylistItem({
   const canEdit = Boolean(onEdit)
   const canDelete = Boolean(onDelete)
   const canHide = Boolean(onHide)
-  const hasMenu = canEdit || canDelete || canHide
+  const canExport = Boolean(onExport)
+  const hasMenu = canEdit || canDelete || canHide || canExport
 
   return (
     <SidebarPlaylistContextMenu
       canEdit={canEdit}
       canDelete={canDelete}
       canHide={canHide}
+      canExport={canExport}
       isDeleting={isDeleting}
       onEdit={onEdit}
       onDelete={onDelete}
       onHide={onHide}
+      onExport={onExport}
     >
       <div
         ref={setNodeRef}

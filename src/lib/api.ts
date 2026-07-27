@@ -14,6 +14,9 @@ import type {
   ListenEndResult,
   PlaylistDownloadProgress,
   PlaylistDownloadResult,
+  PlaylistImportPreview,
+  PlaylistImportResult,
+  PlaylistRecipeSource,
   PlaylistsBundle,
   QrOutcome,
   SyncResult,
@@ -157,6 +160,15 @@ export const api = {
   reorderPlaylistTracks: (playlistId: number, trackIds: number[]) =>
     invoke<string>('reorder_playlist_tracks', { playlistId, trackIds }),
   toggleLike: (trackId: number) => invoke<LikedPlaylist>('toggle_like', { trackId }),
+  exportPlaylistJson: (source: PlaylistRecipeSource, path: string) =>
+    invoke<void>('export_playlist_json', { source, path }),
+  analyzePlaylistJson: (path: string) =>
+    invoke<PlaylistImportPreview>('analyze_playlist_json', { path }),
+  importPlaylistJson: (path: string, name?: string | null) =>
+    invoke<PlaylistImportResult>('import_playlist_json', {
+      path,
+      name: name ?? null,
+    }),
 
   // ---- listen statistics ----------------------------------------------
   recordListenStart: (trackId: number) =>

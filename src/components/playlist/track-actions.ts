@@ -75,6 +75,14 @@ export function canDownloadPlaylist(
   )
 }
 
+/** Liked and custom playlists can be exported as a JSON recipe. */
+export function canExportPlaylist(
+  playlist: Pick<ResolvedSelectedPlaylist, 'id' | 'isCustom'>,
+): boolean {
+  if (playlist.isCustom) return true
+  return playlist.id === LIKED_PLAYLIST_ID
+}
+
 /**
  * Custom playlists available for "add to playlist".
  * Duplicates are allowed, so every custom playlist is always available.

@@ -1,5 +1,6 @@
 import {
   EyeOff,
+  FileDown,
   Pencil,
   Trash2,
 } from 'lucide-react'
@@ -18,10 +19,12 @@ export interface SidebarPlaylistContextMenuProps {
   canEdit: boolean
   canDelete: boolean
   canHide: boolean
+  canExport?: boolean
   isDeleting?: boolean
   onEdit?: () => void
   onDelete?: () => void
   onHide?: () => void
+  onExport?: () => void
 }
 
 export function SidebarPlaylistContextMenu({
@@ -29,12 +32,15 @@ export function SidebarPlaylistContextMenu({
   canEdit,
   canDelete,
   canHide,
+  canExport,
   isDeleting,
   onEdit,
   onDelete,
   onHide,
+  onExport,
 }: SidebarPlaylistContextMenuProps) {
-  const hasActions = canEdit || canDelete || canHide
+  const hasPlaylistActions = canEdit || canDelete || Boolean(canExport)
+  const hasActions = hasPlaylistActions || canHide
   if (!hasActions) {
     return children
   }
@@ -45,35 +51,45 @@ export function SidebarPlaylistContextMenu({
         {children}
       </ContextMenuTrigger>
       <ContextMenuContent className="w-44">
-        {(canEdit || canDelete) && (
-          <ContextMenuGroup>
-            <ContextMenuLabel>Playlist</ContextMenuLabel>
-            {canEdit && onEdit
-              ? (
-                  <ContextMenuItem onClick={onEdit}>
-                    <Pencil className="size-4" />
-                    Edit playlist
-                  </ContextMenuItem>
-                )
-              : null}
-            {canDelete && onDelete
-              ? (
-                  <ContextMenuItem
-                    variant="destructive"
-                    disabled={isDeleting}
-                    onClick={onDelete}
-                  >
-                    <Trash2 className="size-4" />
-                    Delete playlist
-                  </ContextMenuItem>
-                )
-              : null}
-          </ContextMenuGroup>
-        )}
+        {hasPlaylistActions
+          ? (
+              <ContextMenuGroup>
+                <ContextMenuLabel>Playlist</ContextMenuLabel>
+                {canEdit && onEdit
+                  ? (
+                      <ContextMenuItem onClick={onEdit}>
+                        <Pencil className="size-4" />
+                        Edit playlist
+                      </ContextMenuItem>
+                    )
+                  : null}
+                {canExport && onExport
+                  ? (
+                      <ContextMenuItem onClick={onExport}>
+                        <FileDown className="size-4" />
+                        Export playlist
+                      </ContextMenuItem>
+                    )
+                  : null}
+                {canDelete && onDelete
+                  ? (
+                      <ContextMenuItem
+                        variant="destructive"
+                        disabled={isDeleting}
+                        onClick={onDelete}
+                      >
+                        <Trash2 className="size-4" />
+                        Delete playlist
+                      </ContextMenuItem>
+                    )
+                  : null}
+              </ContextMenuGroup>
+            )
+          : null}
         {canHide && onHide
           ? (
               <>
-                {(canEdit || canDelete) && <ContextMenuSeparator />}
+                {hasPlaylistActions && <ContextMenuSeparator />}
                 <ContextMenuGroup>
                   <ContextMenuLabel>Visibility</ContextMenuLabel>
                   <ContextMenuItem onClick={onHide}>

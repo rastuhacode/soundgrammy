@@ -602,6 +602,35 @@ pub async fn toggle_like(
     state.db.toggle_like(track_id, uid)
 }
 
+/// Write a SoundGrammy playlist recipe JSON to `path` (Liked or custom).
+#[tauri::command]
+pub async fn export_playlist_json(
+    state: State<'_, AppState>,
+    source: crate::playlist_recipe::PlaylistRecipeSource,
+    path: String,
+) -> AppResult<()> {
+    crate::playlist_recipe::export_playlist_json(&state, source, path)
+}
+
+/// Analyze a playlist recipe JSON without creating a playlist.
+#[tauri::command]
+pub async fn analyze_playlist_json(
+    state: State<'_, AppState>,
+    path: String,
+) -> AppResult<crate::playlist_recipe::PlaylistImportPreview> {
+    crate::playlist_recipe::analyze_playlist_json(&state, path)
+}
+
+/// Import a playlist recipe JSON from `path` as a new custom playlist.
+#[tauri::command]
+pub async fn import_playlist_json(
+    state: State<'_, AppState>,
+    path: String,
+    name: Option<String>,
+) -> AppResult<crate::playlist_recipe::PlaylistImportResult> {
+    crate::playlist_recipe::import_playlist_json(&state, path, name)
+}
+
 // ---- listen statistics ---------------------------------------------------
 
 #[tauri::command]

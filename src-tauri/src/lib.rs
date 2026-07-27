@@ -7,6 +7,7 @@ mod db;
 mod error;
 mod export;
 mod listen_stats;
+mod playlist_recipe;
 mod session;
 mod state;
 mod streaming;
@@ -27,6 +28,7 @@ pub fn run() {
             });
         })
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let handle = app.handle();
 
@@ -103,6 +105,9 @@ pub fn run() {
             commands::remove_track_from_playlist,
             commands::reorder_playlist_tracks,
             commands::toggle_like,
+            commands::export_playlist_json,
+            commands::analyze_playlist_json,
+            commands::import_playlist_json,
             commands::record_listen_start,
             commands::record_listen_end,
             commands::get_track_listen_stats,

@@ -16,6 +16,7 @@ Rust Tauri 2 app: Telegram via grammers, library in SQLite, media cache + stream
 | `src/streaming.rs` | Range streaming for uncached tracks |
 | `src/cache.rs` | On-disk media/thumbnail paths, size limit, TTL, eviction |
 | `src/export.rs` | Copy tracks / playlists into system Downloads (`download_playlist` + M3U) |
+| `src/playlist_recipe.rs` | JSON playlist recipe export/import (same-account sync) |
 | `src/listen_stats.rs` | Listen qualification, aggregates, likeness |
 | `src/state.rs` | Shared `AppState` |
 
