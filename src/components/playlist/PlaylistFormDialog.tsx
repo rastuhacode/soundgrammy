@@ -39,9 +39,6 @@ export function PlaylistFormDialog({
   const fileInputRef = useRef<HTMLInputElement>(null)
   const data = usePlaylistsStore(state => state.data)
   const setData = usePlaylistsStore(state => state.setData)
-  const setSelectedPlaylist = usePlaylistsStore(
-    state => state.setSelectedPlaylist,
-  )
 
   const isEdit = mode === 'edit'
   const existingThumbnail = usePlaylistThumbnail(
@@ -111,12 +108,10 @@ export function PlaylistFormDialog({
 
     const trimmed = name.trim()
     if (trimmed.length === 0) {
-      setNameError('Playlist name is required')
-      return
+      return setNameError('Playlist name is required')
     }
     if (trimmed.length > 100) {
-      setNameError('Playlist name must be at most 100 characters')
-      return
+      return setNameError('Playlist name must be at most 100 characters')
     }
     setNameError(null)
 
@@ -134,10 +129,9 @@ export function PlaylistFormDialog({
       }
     }
     catch (err) {
-      setThumbnailError(
+      return setThumbnailError(
         err instanceof Error ? err.message : 'Invalid thumbnail',
       )
-      return
     }
 
     setIsSubmitting(true)
@@ -164,7 +158,6 @@ export function PlaylistFormDialog({
           thumbnailMime: thumbnailPayload?.mime ?? null,
         })
         setData({ ...data, custom: [...data.custom, created] })
-        setSelectedPlaylist(created.id)
       }
       onOpenChange(false)
     }
@@ -205,6 +198,9 @@ export function PlaylistFormDialog({
               aria-invalid={Boolean(nameError)}
               placeholder="My playlist"
               autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
             />
             {nameError
               ? (

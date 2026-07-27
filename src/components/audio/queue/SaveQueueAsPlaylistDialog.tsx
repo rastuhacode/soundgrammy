@@ -141,6 +141,9 @@ export function SaveQueueAsPlaylistDialog({
               onChange={event => setName(event.target.value)}
               placeholder="Playlist name"
               autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
               maxLength={100}
             />
             {nameError && (
