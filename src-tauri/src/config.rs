@@ -1,9 +1,10 @@
 //! Telegram API credentials.
 //!
-//! `api_id`/`api_hash` are embedded into the binary at build time via the
-//! `TELEGRAM_API_ID` / `TELEGRAM_API_HASH` environment variables. For local
-//! development they can also be provided at runtime through the same
-//! environment variables (handy so a rebuild isn't required).
+//! `api_id`/`api_hash` are embedded into the binary at build time via
+//! `TELEGRAM_API_ID` / `TELEGRAM_API_HASH`. `build.rs` loads
+//! gitignored `src-tauri/.env.local` when those vars are unset (local builds);
+//! CI should export them as secrets. Runtime env still overrides the embed
+//! (handy for `tauri dev` without a rebuild).
 
 use crate::error::{AppError, AppResult};
 

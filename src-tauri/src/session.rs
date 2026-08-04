@@ -161,9 +161,49 @@ impl SessionBackend for EncryptedSessionBackend {
     }
 }
 
+/// Whether a non-trivial encrypted session file is on disk (no network, no decrypt).
+///
+/// Used as the local “logged in” gate together with a SQLite profile row.
+pub fn exists(data_dir: &Path) -> bool {
+    let path = session_path(data_dir);
+    match std::fs::metadata(&path) {
+        Ok(meta) => meta.is_file() && meta.len() > NONCE_LEN as u64,
+        Err(_) => false,
+    }
+}
+
 /// Deletes the persisted session file (used on logout).
 pub fn clear(data_dir: &Path) -> AppResult<()> {
     EncryptedSessionBackend::new(data_dir)
         .delete()
         .map_err(|e| AppError::msg(format!("failed to clear session: {e}")))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn exists_requires_non_trivial_session_file() {
+        let dir = std::env::temp_dir().join(format!(
+            "soundgrammy-session-exists-{}",
+            std::process::id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+
+        assert!(!exists(&dir));
+
+        fs::write(session_path(&dir), [0u8; NONCE_LEN]).unwrap();
+        assert!(!exists(&dir), "nonce-only file is not a session");
+
+        fs::write(session_path(&dir), [0u8; NONCE_LEN + 1]).unwrap();
+        assert!(exists(&dir));
+
+        clear(&dir).unwrap();
+        assert!(!exists(&dir));
+
+        let _ = fs::remove_dir_all(&dir);
+    }
 }

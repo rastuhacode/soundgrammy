@@ -201,3 +201,33 @@ export interface CacheTracksProgress {
   total: number
   trackId: number
 }
+
+export type PlaylistRecipeSource
+  = | { kind: 'liked' }
+    | { kind: 'custom', playlistId: number }
+
+export interface PlaylistImportSucceeded {
+  fileUniqueId: string
+  title: string | null
+  performer: string | null
+}
+
+export interface PlaylistImportFailed {
+  fileUniqueId: string
+  title: string | null
+  performer: string | null
+  reason: string
+}
+
+export interface PlaylistImportPreview {
+  suggestedName: string
+  succeeded: PlaylistImportSucceeded[]
+  failed: PlaylistImportFailed[]
+}
+
+export interface PlaylistImportResult {
+  playlistId: number
+  playlistName: string
+  succeeded: PlaylistImportSucceeded[]
+  failed: PlaylistImportFailed[]
+}

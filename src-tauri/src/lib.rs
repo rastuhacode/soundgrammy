@@ -7,6 +7,7 @@ mod db;
 mod error;
 mod export;
 mod listen_stats;
+mod playlist_recipe;
 mod proxy_settings;
 mod session;
 mod state;
@@ -28,6 +29,7 @@ pub fn run() {
             });
         })
         .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let handle = app.handle();
 
@@ -88,6 +90,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             commands::auth_status,
+            commands::refresh_auth,
             commands::phone_send_code,
             commands::phone_sign_in,
             commands::phone_check_password,
@@ -128,6 +131,9 @@ pub fn run() {
             commands::remove_track_from_playlist,
             commands::reorder_playlist_tracks,
             commands::toggle_like,
+            commands::export_playlist_json,
+            commands::analyze_playlist_json,
+            commands::import_playlist_json,
             commands::record_listen_start,
             commands::record_listen_end,
             commands::get_track_listen_stats,

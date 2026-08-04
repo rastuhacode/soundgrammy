@@ -7,12 +7,27 @@ import {
   SortableContext,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
 import { PlaylistFormDialog } from '@/components/playlist/PlaylistFormDialog'
 import { SidebarPlaylistItem } from '@/components/playlist/SidebarPlaylistItem'
 import { SidebarPlaylistsToolbar } from '@/components/playlist/SidebarPlaylistsToolbar'
 import { canHidePlaylist } from '@/lib/playlist-visibility'
 import { useSidebarPlaylists } from '@/hooks/use-sidebar-playlists'
+import {
+  exportPlaylistRecipeFile,
+  formatInvokeError,
+} from '@/lib/playlist-recipe-io'
+import type { PlaylistRecipeSource } from '@/types'
+import { canExportPlaylist } from '@/components/playlist/track-actions'
 import { SidebarProfile } from './SidebarProfile'
 
 export function PlayerSidebar(props: { onLogout: () => void }) {
@@ -37,6 +52,20 @@ export function PlayerSidebar(props: { onLogout: () => void }) {
     handleUnhide,
     handleDelete,
   } = useSidebarPlaylists()
+
+  const [actionError, setActionError] = useState<string | null>(null)
+
+  const handleExportPlaylist = async (
+    source: PlaylistRecipeSource,
+    name: string,
+  ) => {
+    try {
+      await exportPlaylistRecipeFile({ source, name })
+    }
+    catch (error) {
+      setActionError(formatInvokeError(error))
+    }
+  }
 
   return (
     <div className="flex h-full grow flex-col gap-4 pt-4">
@@ -83,6 +112,10 @@ export function PlayerSidebar(props: { onLogout: () => void }) {
             {filteredPlaylists.map((item) => {
               const customPlaylist = item.playlist
               const hideId = canHidePlaylist(item.id) ? item.id : null
+              const exportable = canExportPlaylist({
+                id: item.id,
+                isCustom: Boolean(customPlaylist),
+              })
 
               return (
                 <SidebarPlaylistItem
@@ -103,6 +136,14 @@ export function PlayerSidebar(props: { onLogout: () => void }) {
                     ? () => handleDelete(customPlaylist.id)
                     : undefined}
                   onHide={hideId ? () => handleHide(hideId) : undefined}
+                  onExport={exportable
+                    ? () => {
+                        const source: PlaylistRecipeSource = customPlaylist
+                          ? { kind: 'custom', playlistId: customPlaylist.id }
+                          : { kind: 'liked' }
+                        void handleExportPlaylist(source, item.name)
+                      }
+                    : undefined}
                   isDeleting={customPlaylist ? deletingId === customPlaylist.id : undefined}
                 />
               )
@@ -119,6 +160,27 @@ export function PlayerSidebar(props: { onLogout: () => void }) {
         mode={dialogState?.mode ?? 'create'}
         playlist={dialogState?.mode === 'edit' ? dialogState.playlist : undefined}
       />
+
+      <Dialog
+        open={actionError !== null}
+        onOpenChange={(open) => {
+          if (!open) setActionError(null)
+        }}
+      >
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>Couldn’t finish</DialogTitle>
+            <DialogDescription className="whitespace-pre-wrap">
+              {actionError}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="secondary" onClick={() => setActionError(null)}>
+              OK
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

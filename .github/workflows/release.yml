@@ -1,0 +1,65 @@
+name: Release
+
+on:
+  # Option A: push a version tag
+  push:
+    tags:
+      - "v*"
+  # Option B: manual run from Actions tab
+  workflow_dispatch:
+
+jobs:
+  publish:
+    permissions:
+      contents: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: macos-latest      # Apple Silicon runner; builds universal or arm64
+            args: "--target aarch64-apple-darwin"
+          - platform: macos-latest
+            args: "--target x86_64-apple-darwin"
+          - platform: windows-latest
+            args: ""
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14   # match package.json packageManager
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - name: Install frontend deps
+        run: bun install --frozen-lockfile
+
+      - name: Build Tauri app & upload release
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+        with:
+          projectPath: "."
+          # Prefer bun over npm for tauri CLI
+          tauriScript: bun run tauri
+          tagName: v__VERSION__
+          releaseName: "SoundGrammy v__VERSION__"
+          releaseBody: "See the commit history for changes."
+          releaseDraft: true
+          prerelease: false
+          args: ${{ matrix.args }}

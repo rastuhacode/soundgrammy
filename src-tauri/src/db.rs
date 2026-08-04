@@ -304,6 +304,88 @@ impl Db {
         Ok(track)
     }
 
+    /// Looks up local track ids by Telegram document id (`file_unique_id`).
+    pub fn track_ids_by_file_unique_ids(
+        &self,
+        tg_user_id: i64,
+        file_unique_ids: &[String],
+    ) -> AppResult<std::collections::HashMap<String, i64>> {
+        if file_unique_ids.is_empty() {
+            return Ok(std::collections::HashMap::new());
+        }
+        let conn = self.conn.lock().unwrap();
+        let mut map = std::collections::HashMap::new();
+        let mut stmt = conn.prepare(
+            "SELECT id, file_unique_id FROM tracks \
+             WHERE tg_user_id = ?1 AND file_unique_id = ?2",
+        )?;
+        for uid in file_unique_ids {
+            if map.contains_key(uid) {
+                continue;
+            }
+            if let Some((id, unique)) = stmt
+                .query_row(params![tg_user_id, uid], |row| {
+                    Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+                })
+                .optional()?
+            {
+                map.insert(unique, id);
+            }
+        }
+        Ok(map)
+    }
+
+    /// Ordered track rows for a playlist (duplicates preserved as separate positions).
+    pub fn playlist_tracks_ordered(
+        &self,
+        playlist_id: i64,
+        tg_user_id: i64,
+    ) -> AppResult<Vec<Track>> {
+        let conn = self.conn.lock().unwrap();
+        let exists: Option<i64> = conn
+            .query_row(
+                "SELECT id FROM playlists WHERE id = ?1 AND tg_user_id = ?2",
+                params![playlist_id, tg_user_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if exists.is_none() {
+            return Err(crate::error::AppError::msg("Playlist not found"));
+        }
+        let mut stmt = conn.prepare(
+            "SELECT t.id, t.tg_user_id, t.file_id, t.file_unique_id, t.title, t.performer, \
+             t.duration, t.source, t.mime_type, t.file_size, t.created_at, t.mtproto_document \
+             FROM playlist_tracks pt \
+             JOIN tracks t ON t.id = pt.track_id \
+             WHERE pt.playlist_id = ?1 \
+             ORDER BY pt.position ASC, pt.added_at ASC, pt.id ASC",
+        )?;
+        let tracks = stmt
+            .query_map(params![playlist_id], map_track)?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(tracks)
+    }
+
+    pub fn liked_playlist_id(&self, tg_user_id: i64) -> AppResult<i64> {
+        let conn = self.conn.lock().unwrap();
+        self.ensure_liked(&conn, tg_user_id)
+    }
+
+    pub fn custom_playlist_name_and_kind(
+        &self,
+        playlist_id: i64,
+        tg_user_id: i64,
+    ) -> AppResult<(String, String)> {
+        let conn = self.conn.lock().unwrap();
+        conn.query_row(
+            "SELECT name, kind FROM playlists WHERE id = ?1 AND tg_user_id = ?2",
+            params![playlist_id, tg_user_id],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?
+        .ok_or_else(|| crate::error::AppError::msg("Playlist not found"))
+    }
+
     pub fn upsert_track(&self, t: &UpsertTrack) -> AppResult<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
@@ -412,7 +494,7 @@ impl Db {
         let conn = self.conn.lock().unwrap();
         let profile = conn
             .query_row(
-                "SELECT tg_user_id, first_name, last_name, username FROM profile LIMIT 1",
+                "SELECT tg_user_id, first_name, last_name, username, phone FROM profile LIMIT 1",
                 [],
                 |row| {
                     Ok(Profile {
@@ -420,6 +502,7 @@ impl Db {
                         first_name: row.get(1)?,
                         last_name: row.get(2)?,
                         username: row.get(3)?,
+                        phone: row.get(4)?,
                     })
                 },
             )
@@ -1204,6 +1287,7 @@ pub struct Profile {
     #[serde(rename = "lastName")]
     pub last_name: Option<String>,
     pub username: Option<String>,
+    pub phone: Option<String>,
 }
 
 fn map_track(row: &rusqlite::Row<'_>) -> rusqlite::Result<Track> {
@@ -1236,6 +1320,19 @@ mod tests {
         Ok(Db {
             conn: Mutex::new(conn),
         })
+    }
+
+    #[test]
+    fn load_profile_includes_phone() -> AppResult<()> {
+        let db = test_db()?;
+        db.save_profile(42, "Ada", Some("Lovelace"), Some("ada"), Some("+1555"))?;
+        let profile = db.load_profile()?.expect("profile");
+        assert_eq!(profile.tg_user_id, 42);
+        assert_eq!(profile.first_name, "Ada");
+        assert_eq!(profile.last_name.as_deref(), Some("Lovelace"));
+        assert_eq!(profile.username.as_deref(), Some("ada"));
+        assert_eq!(profile.phone.as_deref(), Some("+1555"));
+        Ok(())
     }
 
     #[test]

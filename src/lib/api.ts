@@ -15,6 +15,9 @@ import type {
   ListenEndResult,
   PlaylistDownloadProgress,
   PlaylistDownloadResult,
+  PlaylistImportPreview,
+  PlaylistImportResult,
+  PlaylistRecipeSource,
   PlaylistsBundle,
   ProxySettings,
   ProxySettingsView,
@@ -30,6 +33,7 @@ export interface Profile {
   firstName: string
   lastName: string | null
   username: string | null
+  phone: string | null
 }
 
 export type TrackSource
@@ -45,6 +49,7 @@ export type TrackSource
 
 export const api = {
   authStatus: () => invoke<AuthStatus>('auth_status'),
+  refreshAuth: () => invoke<AuthStatus>('refresh_auth'),
   phoneSendCode: (phone: string) =>
     invoke<PhoneSendCodeOutcome>('phone_send_code', { phone }),
   phoneSignIn: (code: string) => invoke<AuthOutcome>('phone_sign_in', { code }),
@@ -174,6 +179,15 @@ export const api = {
   reorderPlaylistTracks: (playlistId: number, trackIds: number[]) =>
     invoke<string>('reorder_playlist_tracks', { playlistId, trackIds }),
   toggleLike: (trackId: number) => invoke<LikedPlaylist>('toggle_like', { trackId }),
+  exportPlaylistJson: (source: PlaylistRecipeSource, path: string) =>
+    invoke<void>('export_playlist_json', { source, path }),
+  analyzePlaylistJson: (path: string) =>
+    invoke<PlaylistImportPreview>('analyze_playlist_json', { path }),
+  importPlaylistJson: (path: string, name?: string | null) =>
+    invoke<PlaylistImportResult>('import_playlist_json', {
+      path,
+      name: name ?? null,
+    }),
 
   // ---- listen statistics ----------------------------------------------
   recordListenStart: (trackId: number) =>
@@ -262,4 +276,8 @@ export function onCacheChanged(
   cb: (p: CacheChanged) => void,
 ): Promise<UnlistenFn> {
   return listen<CacheChanged>('cache:changed', e => cb(e.payload))
+}
+
+export function onAuthRevoked(cb: () => void): Promise<UnlistenFn> {
+  return listen('auth:revoked', () => cb())
 }

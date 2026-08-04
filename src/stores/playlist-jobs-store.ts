@@ -171,8 +171,10 @@ export const usePlaylistJobsStore = create<PlaylistJobsState>((set, get) => ({
     finally {
       useCacheStore.getState().clearBusy(trackIds)
       set((state) => {
-        const { [jobId]: _removed, ...jobsById } = state.jobsById
-        const { [key]: _dl, ...downloadJobByPlaylist } = state.downloadJobByPlaylist
+        const jobsById = { ...state.jobsById }
+        delete jobsById[jobId]
+        const downloadJobByPlaylist = { ...state.downloadJobByPlaylist }
+        delete downloadJobByPlaylist[key]
         return { jobsById, downloadJobByPlaylist }
       })
     }
@@ -209,8 +211,10 @@ export const usePlaylistJobsStore = create<PlaylistJobsState>((set, get) => ({
     finally {
       useCacheStore.getState().clearBusy(trackIds)
       set((state) => {
-        const { [jobId]: _removed, ...jobsById } = state.jobsById
-        const { [key]: _c, ...cacheJobByPlaylist } = state.cacheJobByPlaylist
+        const jobsById = { ...state.jobsById }
+        delete jobsById[jobId]
+        const cacheJobByPlaylist = { ...state.cacheJobByPlaylist }
+        delete cacheJobByPlaylist[key]
         return { jobsById, cacheJobByPlaylist }
       })
     }

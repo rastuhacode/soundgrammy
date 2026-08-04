@@ -24,7 +24,7 @@ export interface AudioPlayerBarProps {
 
 export function AudioPlayerBar(props: AudioPlayerBarProps) {
   return (
-    <div className="relative flex h-24 w-full flex-col border-t border-border bg-card/80 backdrop-blur-xl">
+    <div className="relative flex shrink-0 h-24 w-full flex-col border-t border-border bg-card/80 backdrop-blur-xl">
       <AudioProgressBar
         currentTime={props.currentTime}
         duration={props.duration}

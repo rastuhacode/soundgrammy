@@ -12,47 +12,43 @@ use crate::error::{AppError, AppResult};
 use crate::listen_stats::EndReason;
 use crate::state::AppState;
 use crate::streaming;
-use crate::telegram::auth::{self, AuthOutcome, AuthUser, PhoneSendCodeOutcome, QrOutcome};
+use crate::telegram::auth::{
+    self, AuthOutcome, AuthStatus, AuthUser, PhoneSendCodeOutcome, QrOutcome,
+};
 use crate::telegram::saved_music::{self, SyncResult};
-
-#[derive(Serialize)]
-pub struct AuthStatus {
-    pub authorized: bool,
-    pub user: Option<AuthUser>,
-}
 
 // ---- auth ----------------------------------------------------------------
 
 #[tauri::command]
 pub async fn auth_status(state: State<'_, AppState>) -> AppResult<AuthStatus> {
-    let client = match state.client().await {
-        Ok(client) => client,
-        Err(_) => {
-            return Ok(AuthStatus {
-                authorized: false,
-                user: None,
-            });
-        }
-    };
-    let authorized = crate::telegram::client::is_authorized(&client).await?;
-    if !authorized {
+    // Local-only: never touch the network. Offline UI hydrates from SQLite + session.enc.
+    if !crate::session::exists(&state.data_dir) {
         return Ok(AuthStatus {
             authorized: false,
             user: None,
         });
     }
-    let user = auth::fetch_self(&client).await?;
-    state.db.save_profile(
-        user.id,
-        &user.first_name,
-        user.last_name.as_deref(),
-        user.username.as_deref(),
-        user.phone.as_deref(),
-    )?;
+    let Some(profile) = state.db.load_profile()? else {
+        return Ok(AuthStatus {
+            authorized: false,
+            user: None,
+        });
+    };
     Ok(AuthStatus {
         authorized: true,
-        user: Some(user),
+        user: Some(AuthUser {
+            id: profile.tg_user_id,
+            first_name: profile.first_name,
+            last_name: profile.last_name,
+            username: profile.username,
+            phone: profile.phone,
+        }),
     })
+}
+
+#[tauri::command]
+pub async fn refresh_auth(state: State<'_, AppState>, app: AppHandle) -> AppResult<AuthStatus> {
+    auth::refresh_auth(&state, &app).await
 }
 
 #[tauri::command]
@@ -653,6 +649,35 @@ pub async fn toggle_like(
 ) -> AppResult<LikedPlaylist> {
     let uid = require_uid(&state)?;
     state.db.toggle_like(track_id, uid)
+}
+
+/// Write a SoundGrammy playlist recipe JSON to `path` (Liked or custom).
+#[tauri::command]
+pub async fn export_playlist_json(
+    state: State<'_, AppState>,
+    source: crate::playlist_recipe::PlaylistRecipeSource,
+    path: String,
+) -> AppResult<()> {
+    crate::playlist_recipe::export_playlist_json(&state, source, path)
+}
+
+/// Analyze a playlist recipe JSON without creating a playlist.
+#[tauri::command]
+pub async fn analyze_playlist_json(
+    state: State<'_, AppState>,
+    path: String,
+) -> AppResult<crate::playlist_recipe::PlaylistImportPreview> {
+    crate::playlist_recipe::analyze_playlist_json(&state, path)
+}
+
+/// Import a playlist recipe JSON from `path` as a new custom playlist.
+#[tauri::command]
+pub async fn import_playlist_json(
+    state: State<'_, AppState>,
+    path: String,
+    name: Option<String>,
+) -> AppResult<crate::playlist_recipe::PlaylistImportResult> {
+    crate::playlist_recipe::import_playlist_json(&state, path, name)
 }
 
 // ---- listen statistics ---------------------------------------------------

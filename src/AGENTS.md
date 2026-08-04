@@ -4,7 +4,7 @@ React 19 + Zustand + Vite + Tailwind. Import alias: `@/` → `src/`.
 
 ## Bootstrap
 
-[App.tsx](App.tsx): `auth_status` → login or hydrate session → `listTracks` / `listPlaylists` → background `sync_saved_music`. Sync failures leave the cached library intact.
+[App.tsx](App.tsx): local `auth_status` (`session.enc` + SQLite profile) → login or hydrate session → `listTracks` / `listPlaylists` → UI ready → background reconnect loop (`useTelegramReconnect`: `refresh_auth` + backoff + browser `online`/`offline`) then `sync_saved_music`. Network failures leave the cached library intact; `auth:revoked` forces login.
 
 ## Boundaries
 
@@ -20,6 +20,7 @@ Zustand stores under `stores/`:
 | Store | Owns |
 |-------|------|
 | `session-store` | Logged-in user display fields |
+| `connectivity-store` | Telegram reachability (`connecting` / `online` / `offline`) |
 | `library-store` | Track list |
 | `playlists-store` | Liked + custom playlists, selection |
 | `listen-stats-store` | Per-track listen aggregates (smart playlists) |

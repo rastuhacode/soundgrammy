@@ -15,10 +15,12 @@ flowchart LR
 
 ## Bootstrap
 
-1. `auth_status` — if unauthorized → login UI (phone or QR).
-2. On authorized: hydrate session store, `list_tracks` + `list_playlists` + `list_listen_stats`.
-3. Background `sync_saved_music`; on `changed`, reload library into stores.
-4. Sync errors leave the cached library as-is.
+1. `auth_status` — **local only** (`session.enc` + SQLite profile). No MTProto. Unauthorized → login UI.
+2. On authorized: hydrate session store, `list_tracks` + `list_playlists` + `list_listen_stats` → UI **ready**.
+3. Background reconnect loop: `refresh_auth` with exponential backoff (and immediate retry on browser `online`); on success, `sync_saved_music`. On sync `changed`, reload library into stores.
+4. Network timeouts / unreachable leave the cached library and local session as-is; sync-dot shows offline / connecting and keeps retrying.
+5. Server-proven session death (`AUTH_KEY_*` / `SESSION_REVOKED`, etc.) clears local session, emits `auth:revoked`, UI returns to login.
+6. Sync errors leave the cached library as-is; reconnect will retry sync after auth succeeds again.
 
 Optional **MTProto proxy** (tg-ws-proxy compatible: server / port / secret or `tg://proxy?…`) is stored in SQLite `app_settings` and applied when building the ferogram client. Changing proxy settings rebuilds the client in-process. If a configured proxy fails at startup, the app falls back to a direct connection so the login UI can still load and the user can disable the proxy.
 
@@ -31,6 +33,8 @@ Optional **MTProto proxy** (tg-ws-proxy compatible: server / port / secret or `t
 | Liked playlist | App | SQLite |
 | Playback queue / UI state | App | Zustand (ephemeral session order; not restored across restart) |
 | Listen statistics | App (listen behaviour) | SQLite events + aggregates ([listen-statistics.md](./listen-statistics.md)) |
+
+**Playlist JSON recipe** (`export_playlist_json` / `analyze_playlist_json` / `import_playlist_json`): same-account cross-device sync for Liked and custom playlists. File contains ordered Telegram document ids (`file_unique_id`), optional playlist cover, and exporter `tgUserId`. Import is a prepare-then-create flow in the Create playlist dialog (analyze matches first; name can be edited). Import always creates a new custom playlist (duplicate names allowed); other-account files are rejected. Distinct from **Download playlist** (audio files + M3U under Downloads).
 
 ## Media
 
@@ -48,6 +52,7 @@ Optional **MTProto proxy** (tg-ws-proxy compatible: server / port / secret or `t
 | Event | Meaning |
 |-------|---------|
 | `sync:start` / `sync:progress` / `sync:done` | Saved-music sync lifecycle |
+| `auth:revoked` | Local session cleared after server-proven auth death |
 | `download:progress` | Per-track download bytes / ranges |
 | `download_playlist:progress` | Playlist download slot progress (`jobId` / `current` / `total` / `trackId`) |
 | `cache_tracks:progress` | Bulk cache job progress when a `jobId` is provided |

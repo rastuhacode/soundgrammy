@@ -1,13 +1,30 @@
 //! Authentication flows: phone + 2FA and QR login via ferogram.
 
+use std::time::Duration;
+
 use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64URL;
 use base64::Engine;
-use ferogram::{Client, InvocationError, PasswordToken, SendCodeOutcome, SignInError};
 use ferogram::tl;
+use ferogram::{Client, InvocationError, PasswordToken, SendCodeOutcome, SignInError};
 use serde::Serialize;
+use tauri::{AppHandle, Emitter};
 
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
+use crate::telegram::client;
+
+/// How long background online auth refresh may wait before treating Telegram as unreachable.
+const REFRESH_AUTH_TIMEOUT: Duration = Duration::from_secs(8);
+
+/// RPC / error fragments that mean the local session is dead on the server.
+const AUTH_REVOKED_MARKERS: &[&str] = &[
+    "AUTH_KEY_UNREGISTERED",
+    "AUTH_KEY_INVALID",
+    "SESSION_REVOKED",
+    "SESSION_EXPIRED",
+    "USER_DEACTIVATED",
+    "USER_DEACTIVATED_BAN",
+];
 
 /// The logged-in user, as surfaced to the frontend.
 #[derive(Debug, Clone, Serialize)]
@@ -19,6 +36,13 @@ pub struct AuthUser {
     pub last_name: Option<String>,
     pub username: Option<String>,
     pub phone: Option<String>,
+}
+
+/// Local or refreshed session status for the UI.
+#[derive(Debug, Clone, Serialize)]
+pub struct AuthStatus {
+    pub authorized: bool,
+    pub user: Option<AuthUser>,
 }
 
 /// Outcome of a phone sign-in step.
@@ -79,6 +103,97 @@ async fn finalize(state: &AppState) -> AppResult<AuthUser> {
     let mut pending = state.pending.lock().await;
     *pending = Default::default();
     Ok(user)
+}
+
+pub(crate) fn is_auth_revoked_message(message: &str) -> bool {
+    let upper = message.to_ascii_uppercase();
+    AUTH_REVOKED_MARKERS
+        .iter()
+        .any(|marker| upper.contains(marker))
+}
+
+fn clear_local_session(state: &AppState) -> AppResult<()> {
+    if let Ok(Some(profile)) = state.db.load_profile() {
+        state.db.clear_active_profile(profile.tg_user_id)?;
+    }
+    crate::session::clear(&state.data_dir)?;
+    Ok(())
+}
+
+async fn clear_local_session_and_pending(state: &AppState) -> AppResult<()> {
+    clear_local_session(state)?;
+    let mut pending = state.pending.lock().await;
+    *pending = Default::default();
+    Ok(())
+}
+
+fn emit_auth_revoked(app: &AppHandle) {
+    let _ = app.emit("auth:revoked", ());
+}
+
+/// Online check: refresh profile from Telegram, or report unreachable / revoked.
+///
+/// Timeouts and generic network errors do **not** clear the local session.
+/// Only server-proven auth death clears local session and emits `auth:revoked`.
+pub async fn refresh_auth(state: &AppState, app: &AppHandle) -> AppResult<AuthStatus> {
+    if !crate::session::exists(&state.data_dir) || state.db.load_profile()?.is_none() {
+        return Ok(AuthStatus {
+            authorized: false,
+            user: None,
+        });
+    }
+
+    let result = tokio::time::timeout(REFRESH_AUTH_TIMEOUT, async {
+        // A Ferogram client owns a live connection. Rebuild it for each
+        // reconnect attempt so an offline startup or dead socket can recover.
+        state.rebuild_client().await?;
+        let client = state.client().await?;
+        let authorized = client::is_authorized(&client).await?;
+        if !authorized {
+            return Ok::<AuthStatus, AppError>(AuthStatus {
+                authorized: false,
+                user: None,
+            });
+        }
+        let user = fetch_self(&client).await?;
+        state.db.save_profile(
+            user.id,
+            &user.first_name,
+            user.last_name.as_deref(),
+            user.username.as_deref(),
+            user.phone.as_deref(),
+        )?;
+        Ok(AuthStatus {
+            authorized: true,
+            user: Some(user),
+        })
+    })
+    .await;
+
+    match result {
+        Ok(Ok(status)) => {
+            if !status.authorized {
+                // Session file present but client reports unauthorized — treat as revoked.
+                clear_local_session_and_pending(state).await?;
+                emit_auth_revoked(app);
+            }
+            Ok(status)
+        }
+        Ok(Err(err)) => {
+            let message = err.to_string();
+            if is_auth_revoked_message(&message) {
+                clear_local_session_and_pending(state).await?;
+                emit_auth_revoked(app);
+                return Ok(AuthStatus {
+                    authorized: false,
+                    user: None,
+                });
+            }
+            // Unreachable / transient — keep local session; surface as soft error for UI.
+            Err(AppError::msg("telegram unreachable"))
+        }
+        Err(_elapsed) => Err(AppError::msg("telegram unreachable")),
+    }
 }
 
 // ---- phone ---------------------------------------------------------------
@@ -206,11 +321,19 @@ pub async fn logout(state: &AppState) -> AppResult<()> {
     if let Ok(client) = state.client().await {
         let _ = client.sign_out().await;
     }
-    if let Ok(Some(profile)) = state.db.load_profile() {
-        state.db.clear_active_profile(profile.tg_user_id)?;
+    clear_local_session_and_pending(state).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_auth_revoked_message;
+
+    #[test]
+    fn detects_revoked_auth_markers() {
+        assert!(is_auth_revoked_message("telegram error: AUTH_KEY_UNREGISTERED"));
+        assert!(is_auth_revoked_message("RpcError { name: SESSION_REVOKED }"));
+        assert!(is_auth_revoked_message("user_deactivated_ban"));
+        assert!(!is_auth_revoked_message("telegram unreachable"));
+        assert!(!is_auth_revoked_message("FLOOD_WAIT_30"));
     }
-    crate::session::clear(&state.data_dir)?;
-    let mut pending = state.pending.lock().await;
-    *pending = Default::default();
-    Ok(())
 }
