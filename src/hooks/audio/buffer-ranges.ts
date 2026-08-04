@@ -95,6 +95,8 @@ export function computeBufferedRanges(options: {
   currentTime?: number
   /** Fallback before any bytes are appended (leading download prefix only). */
   cachedRanges?: TimeRange[]
+  /** The whole file is available locally, regardless of decoder read-ahead. */
+  fullyCached?: boolean
 }): TimeRange[] {
   const {
     mediaRanges = [],
@@ -102,8 +104,14 @@ export function computeBufferedRanges(options: {
     duration,
     currentTime = 0,
     cachedRanges = [],
+    fullyCached = false,
   } = options
   if (!(duration > 0)) return []
+
+  // Chromium/WebView2 may initially expose only its current read-ahead window
+  // through HTMLMediaElement.buffered for a local file. That is a decoder
+  // implementation detail, not the availability of a file already in cache.
+  if (fullyCached) return [{ start: 0, end: duration }]
 
   if (mediaRanges.length > 0) {
     // Single coherent range around the playhead / active island.

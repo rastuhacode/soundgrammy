@@ -178,9 +178,10 @@ export function useAudioSeek(options: UseAudioSeekOptions) {
         duration,
         currentTime,
         cachedRanges,
+        fullyCached: downloadProgress?.complete,
       })
     },
-    [cachedRanges, currentTime, duration, isMseActive, mediaRanges, playableEnd, streamingMse],
+    [cachedRanges, currentTime, downloadProgress?.complete, duration, isMseActive, mediaRanges, playableEnd, streamingMse],
   )
 
   const finishPendingSeek = (audio: HTMLAudioElement) => {

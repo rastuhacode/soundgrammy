@@ -95,6 +95,16 @@ describe('landTimeOnRanges', () => {
 describe('computeBufferedRanges', () => {
   const duration = 200
 
+  it('shows a fully cached local file as completely available', () => {
+    expect(computeBufferedRanges({
+      mediaRanges: [{ start: 0, end: 45 }],
+      playableEnd: duration,
+      duration,
+      currentTime: 10,
+      fullyCached: true,
+    })).toEqual([{ start: 0, end: duration }])
+  })
+
   it('prefers the active media buffered island around the playhead', () => {
     expect(computeBufferedRanges({
       mediaRanges: [
