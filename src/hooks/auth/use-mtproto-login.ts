@@ -229,13 +229,19 @@ export function useMtprotoLogin(onAuthenticated: (user: AuthUser) => void) {
 
     setBusy(true)
     try {
+      let outcome
       try {
-        await api.phoneSendCode(phone)
+        outcome = await api.phoneSendCode(phone)
       }
       catch {
         // After an interrupted QR attempt, Telegram often rejects the first
         // sendCode; one immediate retry usually succeeds.
-        await api.phoneSendCode(phone)
+        outcome = await api.phoneSendCode(phone)
+      }
+      if (outcome.status === 'authorized') {
+        codeSentForPhoneRef.current = null
+        onAuthenticatedRef.current(outcome.user)
+        return
       }
       codeSentForPhoneRef.current = phone
       setCode('')

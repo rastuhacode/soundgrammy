@@ -1,7 +1,7 @@
 //! Telegram API credentials.
 //!
-//! `api_id`/`api_hash` are, as grammers recommends, embedded into the binary at
-//! build time via `TELEGRAM_API_ID` / `TELEGRAM_API_HASH`. `build.rs` loads
+//! `api_id`/`api_hash` are embedded into the binary at build time via
+//! `TELEGRAM_API_ID` / `TELEGRAM_API_HASH`. `build.rs` loads
 //! gitignored `src-tauri/.env.local` when those vars are unset (local builds);
 //! CI should export them as secrets. Runtime env still overrides the embed
 //! (handy for `tauri dev` without a rebuild).

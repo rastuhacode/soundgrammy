@@ -1,37 +1,23 @@
 //! Downloading documents and thumbnails, with file-reference refresh.
 //!
-//! grammers' `iter_download` transparently handles DC migration and copying the
-//! authorization to the target DC, but it does *not* refresh expired file
-//! references. We detect `FILE_REFERENCE_EXPIRED` and retry once after fetching
-//! a fresh document via `users.GetSavedMusicByID`.
+//! Chunk fetches go through [`Client::invoke_on_dc`] with `upload.getFile`, the
+//! same pattern grammers used. ferogram's `iter_download` opens a dedicated
+//! worker TCP connection per iterator; creating one iterator per 128 KiB chunk
+//! (as streaming does) caused multi-second reconnect overhead and hangs under
+//! concurrent range requests.
 
 use std::path::Path;
 
-use grammers_client::media::Downloadable;
-use grammers_client::Client;
-use grammers_mtsender::InvocationError;
-use grammers_tl_types as tl;
+use ferogram::cdn_download::{CdnChunkResult, CdnDownloader, CDN_CHUNK_SIZE};
+use ferogram::tl;
+use ferogram::{Client, InvocationError};
 
 use crate::db::Track;
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 use crate::telegram::document::{parse_document, StoredDocument};
 
-/// A raw, location-based downloadable for documents and their thumbnails.
-struct RawDownloadable {
-    location: tl::enums::InputFileLocation,
-    size: Option<usize>,
-}
-
-impl Downloadable for RawDownloadable {
-    fn to_raw_input_location(&self) -> Option<tl::enums::InputFileLocation> {
-        Some(self.location.clone())
-    }
-
-    fn size(&self) -> Option<usize> {
-        self.size
-    }
-}
+const CHUNK_SIZE: i32 = 128 * 1024;
 
 pub(crate) fn is_file_reference_error(err: &InvocationError) -> bool {
     matches!(err, InvocationError::Rpc(e) if e.name.contains("FILE_REFERENCE"))
@@ -45,28 +31,27 @@ pub fn stored_document(track: &Track) -> AppResult<StoredDocument> {
     Ok(serde_json::from_str(json)?)
 }
 
-/// Downloads one aligned 128 KiB streaming part.
+/// Downloads one aligned 128 KiB streaming part via pooled `upload.getFile`.
 pub(crate) async fn download_chunk(
     client: &Client,
     document: &StoredDocument,
     chunk_index: usize,
 ) -> Result<Vec<u8>, InvocationError> {
-    const CHUNK_SIZE: i32 = 128 * 1024;
-    let chunk_index = i32::try_from(chunk_index).map_err(|_| {
+    let chunk_index = i64::try_from(chunk_index).map_err(|_| {
         InvocationError::Io(std::io::Error::new(
             std::io::ErrorKind::InvalidInput,
             "audio chunk index is too large",
         ))
     })?;
-    let downloadable = RawDownloadable {
-        location: document.input_location(),
-        size: Some(document.size_bytes() as usize),
-    };
-    let mut download = client
-        .iter_download(&downloadable)
-        .chunk_size(CHUNK_SIZE)
-        .skip_chunks(chunk_index);
-    Ok(download.next().await?.unwrap_or_default())
+    let offset = chunk_index * i64::from(CHUNK_SIZE);
+    get_file_bytes(
+        client,
+        document.dc_id,
+        document.input_location(),
+        offset,
+        CHUNK_SIZE,
+    )
+    .await
 }
 
 /// Downloads the remote thumbnail (if the document has one) to `dest`.
@@ -89,8 +74,9 @@ pub async fn download_thumbnail(
         return Ok(false);
     };
     let part = with_part_extension(dest);
+    let client = state.client().await?;
 
-    match download_bytes(&state.client, location.clone()).await {
+    match download_location_bytes(&client, doc.dc_id, location.clone()).await {
         Ok(bytes) => {
             tokio::fs::write(&part, &bytes).await?;
         }
@@ -99,7 +85,8 @@ pub async fn download_thumbnail(
             let Some(location) = refreshed.thumb_input_location_for(high_quality) else {
                 return Ok(false);
             };
-            let bytes = download_bytes(&state.client, location).await?;
+            let client = state.client().await?;
+            let bytes = download_location_bytes(&client, refreshed.dc_id, location).await?;
             tokio::fs::write(&part, &bytes).await?;
         }
         Err(err) => return Err(err.into()),
@@ -116,8 +103,8 @@ pub(crate) async fn refresh_file_reference(
     track: &Track,
 ) -> AppResult<StoredDocument> {
     let doc = stored_document(track)?;
-    let result = state
-        .client
+    let client = state.client().await?;
+    let result = client
         .invoke(&tl::functions::users::GetSavedMusicById {
             id: tl::enums::InputUser::UserSelf,
             documents: vec![doc.input_document()],
@@ -125,7 +112,7 @@ pub(crate) async fn refresh_file_reference(
         .await?;
 
     let documents = match result {
-        tl::enums::users::SavedMusic::Music(m) => m.documents,
+        tl::enums::users::SavedMusic::SavedMusic(m) => m.documents,
         tl::enums::users::SavedMusic::NotModified(_) => Vec::new(),
     };
 
@@ -146,33 +133,135 @@ pub(crate) async fn refresh_file_reference(
     ))
 }
 
-/// Downloads a location with no file reference (e.g. profile photos) to `dest`.
+/// Downloads a location (e.g. profile photos) to `dest`.
+///
+/// `dc_id` must be the file's real DC (e.g. `UserProfilePhoto.dc_id`). Do not
+/// pass `0`: [`Client::invoke_on_dc`] does not map 0 to the home DC.
 pub async fn download_location(
     client: &Client,
+    dc_id: i32,
     location: tl::enums::InputFileLocation,
     dest: &Path,
 ) -> AppResult<()> {
-    let bytes = download_bytes(client, location).await?;
+    let bytes = download_location_bytes(client, dc_id, location).await?;
     let part = with_part_extension(dest);
     tokio::fs::write(&part, &bytes).await?;
     tokio::fs::rename(&part, dest).await?;
     Ok(())
 }
 
-async fn download_bytes(
+async fn download_location_bytes(
     client: &Client,
+    dc_id: i32,
     location: tl::enums::InputFileLocation,
 ) -> Result<Vec<u8>, InvocationError> {
-    let downloadable = RawDownloadable {
-        location,
-        size: None,
-    };
-    let mut iter = client.iter_download(&downloadable);
+    let mut offset = 0i64;
     let mut bytes = Vec::new();
-    while let Some(chunk) = iter.next().await? {
+    loop {
+        let chunk = get_file_bytes(client, dc_id, location.clone(), offset, CHUNK_SIZE).await?;
+        let n = chunk.len() as i32;
         bytes.extend_from_slice(&chunk);
+        if n < CHUNK_SIZE {
+            break;
+        }
+        offset += i64::from(CHUNK_SIZE);
     }
     Ok(bytes)
+}
+
+/// One `upload.getFile` on the pooled DC connection (with FILE_MIGRATE + CDN follow).
+async fn get_file_bytes(
+    client: &Client,
+    mut dc_id: i32,
+    location: tl::enums::InputFileLocation,
+    offset: i64,
+    limit: i32,
+) -> Result<Vec<u8>, InvocationError> {
+    loop {
+        let req = tl::functions::upload::GetFile {
+            precise: true,
+            // Advertise CDN support so Telegram may redirect; we follow below.
+            cdn_supported: true,
+            location: location.clone(),
+            offset,
+            limit,
+        };
+        match client.invoke_on_dc(dc_id, &req).await {
+            Ok(tl::enums::upload::File::File(f)) => return Ok(f.bytes),
+            Ok(tl::enums::upload::File::CdnRedirect(redir)) => {
+                return get_cdn_file_bytes(client, dc_id, redir, offset, limit).await;
+            }
+            Err(InvocationError::Rpc(rpc))
+                if rpc.name.contains("FILE_MIGRATE")
+                    || (rpc.code == 303 && rpc.name.contains("MIGRATE")) =>
+            {
+                let new_dc = rpc.value.unwrap_or(0) as i32;
+                if new_dc == 0 || new_dc == dc_id {
+                    return Err(InvocationError::Rpc(rpc));
+                }
+                dc_id = new_dc;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+}
+
+/// Fetch one chunk after `upload.fileCdnRedirect` (AES-CTR CDN DC path).
+async fn get_cdn_file_bytes(
+    client: &Client,
+    media_dc_id: i32,
+    redir: tl::types::upload::FileCdnRedirect,
+    offset: i64,
+    limit: i32,
+) -> Result<Vec<u8>, InvocationError> {
+    let addr = client.media_dc_addr(redir.dc_id).await.ok_or_else(|| {
+        InvocationError::Deserialize(format!(
+            "no address for CDN DC{}; cannot follow fileCdnRedirect",
+            redir.dc_id
+        ))
+    })?;
+
+    let key: [u8; 32] = redir.encryption_key.as_slice().try_into().map_err(|_| {
+        InvocationError::Deserialize("CDN encryption_key must be 32 bytes".into())
+    })?;
+    let iv: [u8; 16] = redir.encryption_iv.as_slice().try_into().map_err(|_| {
+        InvocationError::Deserialize("CDN encryption_iv must be 16 bytes".into())
+    })?;
+
+    // CDN part size is fixed at 128 KiB; clamp the request to that.
+    let cdn_limit = if limit <= 0 || limit > CDN_CHUNK_SIZE {
+        CDN_CHUNK_SIZE
+    } else {
+        limit
+    };
+
+    let mut downloader = CdnDownloader::connect(
+        &addr,
+        redir.dc_id as i16,
+        redir.file_token.clone(),
+        key,
+        iv,
+        None,
+    )
+    .await?;
+
+    loop {
+        match downloader.download_chunk_raw(offset, cdn_limit).await? {
+            CdnChunkResult::Data(bytes) => return Ok(bytes),
+            CdnChunkResult::ReuploadNeeded(request_token) => {
+                client
+                    .invoke_on_dc(
+                        media_dc_id,
+                        &tl::functions::upload::ReuploadCdnFile {
+                            file_token: redir.file_token.clone(),
+                            request_token,
+                        },
+                    )
+                    .await?;
+                // Retry the same offset after reupload.
+            }
+        }
+    }
 }
 
 fn with_part_extension(path: &Path) -> std::path::PathBuf {

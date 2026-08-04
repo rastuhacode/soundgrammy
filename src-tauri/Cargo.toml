@@ -4,16 +4,11 @@ version = "0.1.0"
 description = "SoundGrammy — a native desktop player for your Telegram profile music"
 authors = ["SoundGrammy"]
 edition = "2021"
-rust-version = "1.80"
+rust-version = "1.85"
 
 [lib]
 name = "soundgrammy_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
-
-# core2 was yanked upstream (RUSTSEC-2026-0105); pin to the pre-yank commit so
-# grammers-crypto's transitive dependency still resolves.
-[patch.crates-io]
-core2 = { git = "https://github.com/bbqsrc/core2", rev = "545e84bcb0f235b12e21351e0c69767958efe2a7" }
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
@@ -28,13 +23,8 @@ tauri-plugin-dialog = "2"
 tokio = { version = "1", features = ["full"] }
 futures-util = "0.3"
 
-# Telegram MTProto (from git: crates.io 0.9.0 pulls a yanked transitive dep).
-# Pinned to a revision that builds alongside rusqlite (later revs hard-depend on
-# a conflicting `sqlite` native crate) and carries the saved-music TL methods.
-grammers-client = { git = "https://github.com/Lonami/grammers.git", rev = "fa7692e49f301f16dc671c2f305ac1a32cad1a8e", features = ["fs"] }
-grammers-session = { git = "https://github.com/Lonami/grammers.git", rev = "fa7692e49f301f16dc671c2f305ac1a32cad1a8e", default-features = false, features = ["serde"] }
-grammers-tl-types = { git = "https://github.com/Lonami/grammers.git", rev = "fa7692e49f301f16dc671c2f305ac1a32cad1a8e" }
-grammers-mtsender = { git = "https://github.com/Lonami/grammers.git", rev = "fa7692e49f301f16dc671c2f305ac1a32cad1a8e" }
+# Telegram MTProto
+ferogram = { version = "=0.6.5", default-features = false, features = ["parsers"] }
 
 # Storage
 rusqlite = { version = "0.32", features = ["bundled"] }

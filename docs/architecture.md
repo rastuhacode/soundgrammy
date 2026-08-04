@@ -7,9 +7,10 @@ flowchart LR
   UI[React_UI] -->|invoke_events| API[src_lib_api]
   API -->|Tauri_commands| Cmds[commands_rs]
   Cmds --> Db[SQLite_library_db]
-  Cmds --> Tg[grammers_MTProto]
+  Cmds --> Tg[ferogram_MTProto]
   Cmds --> Cache[media_cache]
   Tg --> Session[session_enc_keyring]
+  Tg -.->|optional_MTProxy| Proxy[local_tg_ws_proxy]
 ```
 
 ## Bootstrap
@@ -20,6 +21,8 @@ flowchart LR
 4. Network timeouts / unreachable leave the cached library and local session as-is; sync-dot shows offline / connecting and keeps retrying.
 5. Server-proven session death (`AUTH_KEY_*` / `SESSION_REVOKED`, etc.) clears local session, emits `auth:revoked`, UI returns to login.
 6. Sync errors leave the cached library as-is; reconnect will retry sync after auth succeeds again.
+
+Optional **MTProto proxy** (tg-ws-proxy compatible: server / port / secret or `tg://proxy?…`) is stored in SQLite `app_settings` and applied when building the ferogram client. Changing proxy settings rebuilds the client in-process. If a configured proxy fails at startup, the app falls back to a direct connection so the login UI can still load and the user can disable the proxy.
 
 ## Data ownership
 

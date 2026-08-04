@@ -8,6 +8,7 @@ mod error;
 mod export;
 mod listen_stats;
 mod playlist_recipe;
+mod proxy_settings;
 mod session;
 mod state;
 mod streaming;
@@ -40,19 +41,44 @@ pub fn run() {
             std::fs::create_dir_all(&cache_dir)?;
 
             let db = db::Db::open(&data_dir.join("library.db"))?;
-            let (session, client) = telegram::client::build(&config, &data_dir)?;
+            let proxy = proxy_settings::load(&db)?;
+            let want_proxy = proxy.for_connect();
 
-            app.manage(AppState {
+            let (client, proxy_active, proxy_last_error) =
+                tauri::async_runtime::block_on(async {
+                    match telegram::client::build(&config, &data_dir, want_proxy).await {
+                        Ok((client, shutdown)) => (
+                            Some((client, shutdown)),
+                            want_proxy.is_some(),
+                            None,
+                        ),
+                        Err(err) if want_proxy.is_some() => {
+                            match telegram::client::build(&config, &data_dir, None).await {
+                                Ok((client, shutdown)) => {
+                                    (Some((client, shutdown)), false, Some(err.to_string()))
+                                }
+                                Err(direct_err) => (
+                                    None,
+                                    false,
+                                    Some(format!(
+                                        "proxy failed ({err}); direct also failed ({direct_err})"
+                                    )),
+                                ),
+                            }
+                        }
+                        Err(err) => (None, false, Some(err.to_string())),
+                    }
+                });
+
+            app.manage(AppState::new(
                 config,
                 db,
-                session,
                 client,
                 data_dir,
                 cache_dir,
-                pending: Default::default(),
-                download_locks: Default::default(),
-                streaming: Default::default(),
-            });
+                proxy_active,
+                proxy_last_error,
+            ));
 
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -113,6 +139,9 @@ pub fn run() {
             commands::get_track_listen_stats,
             commands::list_listen_stats,
             commands::rebuild_listen_stats,
+            commands::get_proxy_settings,
+            commands::set_proxy_settings,
+            commands::parse_proxy_link,
         ])
         .run(tauri::generate_context!())
         .expect("error while running SoundGrammy");

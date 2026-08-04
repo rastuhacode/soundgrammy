@@ -1,6 +1,6 @@
 # Backend (`src-tauri/`) — agent notes
 
-Rust Tauri 2 app: Telegram via grammers, library in SQLite, media cache + stream protocol.
+Rust Tauri 2 app: Telegram via ferogram, library in SQLite, media cache + stream protocol.
 
 ## Module map
 
@@ -10,15 +10,17 @@ Rust Tauri 2 app: Telegram via grammers, library in SQLite, media cache + stream
 | `src/lib.rs` | App setup, command registration, `stream` protocol |
 | `src/db.rs` | SQLite (`library.db`) |
 | `src/telegram/` | Client, auth, saved music sync, download |
-| `src/session.rs` | Encrypted session at rest + keyring |
+| `src/session.rs` | Encrypted ferogram `SessionBackend` + keyring |
 | `src/config.rs` | `TELEGRAM_API_ID` / `TELEGRAM_API_HASH` (runtime resolve) |
 | `build.rs` | Embeds API credentials from env or `.env.local` |
 | `src/streaming.rs` | Range streaming for uncached tracks |
 | `src/cache.rs` | On-disk media/thumbnail paths, size limit, TTL, eviction |
+| `src/export.rs` | Copy tracks into system Downloads |
+| `src/proxy_settings.rs` | MTProto proxy persistence + link parse |
 | `src/export.rs` | Copy tracks / playlists into system Downloads (`download_playlist` + M3U) |
 | `src/playlist_recipe.rs` | JSON playlist recipe export/import (same-account sync) |
 | `src/listen_stats.rs` | Listen qualification, aggregates, likeness |
-| `src/state.rs` | Shared `AppState` |
+| `src/state.rs` | Shared `AppState` (swappable ferogram client) |
 
 ## Adding a command
 
@@ -28,12 +30,12 @@ Rust Tauri 2 app: Telegram via grammers, library in SQLite, media cache + stream
 
 ## Dependencies
 
-- grammers crates are **git-pinned** in [Cargo.toml](Cargo.toml) (rev + `core2` patch). Do not bump casually; build breakage is common.
+- Do **not** enable ferogram `sqlite-session` (conflicts with our rusqlite usage pattern / dual session stores).
 - Prefer `cargo check` from this directory after Rust changes.
 
 ## High-risk (minimal diffs)
 
-- `session.rs` — AES-GCM session file + OS keyring
+- `session.rs` — AES-GCM session file + OS keyring (`SessionBackend`)
 - `config.rs` — API credentials
 - `telegram/auth.rs` — login / QR / 2FA flows
 

@@ -1,14 +1,11 @@
-//! Authentication flows: phone + 2FA and QR login (raw `auth.ExportLoginToken`).
+//! Authentication flows: phone + 2FA and QR login via ferogram.
 
 use std::time::Duration;
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD as B64URL;
 use base64::Engine;
-use grammers_client::client::PasswordToken;
-use grammers_client::SignInError;
-use grammers_mtsender::InvocationError;
-use grammers_session::Session;
-use grammers_tl_types as tl;
+use ferogram::tl;
+use ferogram::{Client, InvocationError, PasswordToken, SendCodeOutcome, SignInError};
 use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
@@ -56,6 +53,14 @@ pub enum AuthOutcome {
     PasswordRequired { hint: Option<String> },
 }
 
+/// Outcome of `phone_send_code` (code pending, or session already restored).
+#[derive(Debug, Serialize)]
+#[serde(tag = "status", rename_all = "camelCase")]
+pub enum PhoneSendCodeOutcome {
+    CodeSent,
+    Authorized { user: AuthUser },
+}
+
 /// Outcome of a QR export/poll step.
 #[derive(Debug, Serialize)]
 #[serde(tag = "status", rename_all = "camelCase")]
@@ -65,24 +70,13 @@ pub enum QrOutcome {
     Authorized { user: AuthUser },
 }
 
-/// Fetches the raw self `User` via `users.GetUsers(InputUserSelf)`.
-pub async fn fetch_self_raw(client: &grammers_client::Client) -> AppResult<tl::types::User> {
-    let users = client
-        .invoke(&tl::functions::users::GetUsers {
-            id: vec![tl::enums::InputUser::UserSelf],
-        })
-        .await?;
-
-    for user in users {
-        if let tl::enums::User::User(u) = user {
-            return Ok(u);
-        }
-    }
-    Err(AppError::msg("failed to load your Telegram profile"))
+/// Fetches the raw self `User` via ferogram's `get_me`.
+pub async fn fetch_self_raw(client: &Client) -> AppResult<tl::types::User> {
+    Ok(client.get_me().await?)
 }
 
-/// Fetches the current account's profile via `users.GetUsers(InputUserSelf)`.
-pub async fn fetch_self(client: &grammers_client::Client) -> AppResult<AuthUser> {
+/// Fetches the current account's profile.
+pub async fn fetch_self(client: &Client) -> AppResult<AuthUser> {
     let u = fetch_self_raw(client).await?;
     Ok(AuthUser {
         id: u.id,
@@ -95,8 +89,9 @@ pub async fn fetch_self(client: &grammers_client::Client) -> AppResult<AuthUser>
 
 /// Persists the session and profile after any successful login.
 async fn finalize(state: &AppState) -> AppResult<AuthUser> {
-    let user = fetch_self(&state.client).await?;
-    state.persist_session()?;
+    let client = state.client().await?;
+    let user = fetch_self(&client).await?;
+    state.persist_session().await?;
     state.db.save_profile(
         user.id,
         &user.first_name,
@@ -149,14 +144,18 @@ pub async fn refresh_auth(state: &AppState, app: &AppHandle) -> AppResult<AuthSt
     }
 
     let result = tokio::time::timeout(REFRESH_AUTH_TIMEOUT, async {
-        let authorized = client::is_authorized(&state.client).await?;
+        // A Ferogram client owns a live connection. Rebuild it for each
+        // reconnect attempt so an offline startup or dead socket can recover.
+        state.rebuild_client().await?;
+        let client = state.client().await?;
+        let authorized = client::is_authorized(&client).await?;
         if !authorized {
             return Ok::<AuthStatus, AppError>(AuthStatus {
                 authorized: false,
                 user: None,
             });
         }
-        let user = fetch_self(&state.client).await?;
+        let user = fetch_self(&client).await?;
         state.db.save_profile(
             user.id,
             &user.first_name,
@@ -199,7 +198,7 @@ pub async fn refresh_auth(state: &AppState, app: &AppHandle) -> AppResult<AuthSt
 
 // ---- phone ---------------------------------------------------------------
 
-pub async fn phone_send_code(state: &AppState, phone: &str) -> AppResult<()> {
+pub async fn phone_send_code(state: &AppState, phone: &str) -> AppResult<PhoneSendCodeOutcome> {
     // Drop leftover QR / prior phone / 2FA tokens so sendCode isn't fighting
     // an interrupted auth attempt (common after leaving QR or the code step).
     {
@@ -207,18 +206,22 @@ pub async fn phone_send_code(state: &AppState, phone: &str) -> AppResult<()> {
         *pending = Default::default();
     }
 
-    let token = state
-        .client
-        .request_login_code(phone, &state.config.api_hash)
-        .await?;
-    let mut pending = state.pending.lock().await;
-    pending.phone_token = Some(token);
-    Ok(())
+    let client = state.client().await?;
+    match client.request_login_code(phone).await? {
+        SendCodeOutcome::CodeRequired(token) => {
+            let mut pending = state.pending.lock().await;
+            pending.phone_token = Some(token);
+            Ok(PhoneSendCodeOutcome::CodeSent)
+        }
+        SendCodeOutcome::AlreadyAuthorized(_) => {
+            // Logout-token fast path: session is already signed in.
+            let user = finalize(state).await?;
+            Ok(PhoneSendCodeOutcome::Authorized { user })
+        }
+    }
 }
 
 pub async fn phone_sign_in(state: &AppState, code: &str) -> AppResult<AuthOutcome> {
-    // `LoginToken` isn't `Clone`, so take it out; put it back if the code was
-    // simply wrong so the user can retry without re-requesting a code.
     let token = {
         let mut pending = state.pending.lock().await;
         pending
@@ -227,14 +230,15 @@ pub async fn phone_sign_in(state: &AppState, code: &str) -> AppResult<AuthOutcom
             .ok_or_else(|| AppError::msg("no login in progress; request a code first"))?
     };
 
-    match state.client.sign_in(&token, code).await {
+    let client = state.client().await?;
+    match client.sign_in(&token, code).await {
         Ok(_) => Ok(AuthOutcome::Authorized {
             user: finalize(state).await?,
         }),
         Err(SignInError::PasswordRequired(password_token)) => {
             let hint = password_token.hint().map(str::to_owned);
             let mut pending = state.pending.lock().await;
-            pending.password_token = Some(password_token);
+            pending.password_token = Some(*password_token);
             Ok(AuthOutcome::PasswordRequired { hint })
         }
         Err(SignInError::InvalidCode) => {
@@ -255,35 +259,39 @@ pub async fn check_password(state: &AppState, password: &str) -> AppResult<AuthU
             .ok_or_else(|| AppError::msg("no password step in progress"))?
     };
 
-    match state.client.check_password(token, password.trim()).await {
+    let client = state.client().await?;
+    match client
+        .check_password(token, password.trim().as_bytes())
+        .await
+    {
         Ok(_) => finalize(state).await,
-        Err(SignInError::InvalidPassword(_)) => Err(AppError::msg("incorrect password")),
+        Err(InvocationError::Rpc(e)) if e.name.contains("PASSWORD") => {
+            Err(AppError::msg("incorrect password"))
+        }
         Err(e) => Err(AppError::Telegram(e.to_string())),
     }
 }
 
 // ---- QR ------------------------------------------------------------------
 
-/// Runs one `auth.ExportLoginToken` round. Used both to start the QR flow and
-/// to poll it: while unscanned it returns a `Waiting` token URL; once scanned
-/// it resolves to `Authorized` (following any DC migration) or, when 2FA is
-/// enabled, `PasswordRequired`.
+/// Runs one QR login round. Used both to start the flow and to poll it.
 pub async fn qr_export(state: &AppState) -> AppResult<QrOutcome> {
-    let request = tl::functions::auth::ExportLoginToken {
-        api_id: state.config.api_id,
-        api_hash: state.config.api_hash.clone(),
-        except_ids: Vec::new(),
-    };
-
-    let result = match state.client.invoke(&request).await {
-        Ok(r) => r,
-        Err(InvocationError::Rpc(e)) if e.name.contains("SESSION_PASSWORD_NEEDED") => {
-            return qr_password_required(state).await;
+    let client = state.client().await?;
+    match client.export_login_token().await {
+        Ok((token, _expires)) if token.is_empty() => Ok(QrOutcome::Authorized {
+            user: finalize(state).await?,
+        }),
+        Ok((token, expires)) => {
+            let url = format!("tg://login?token={}", B64URL.encode(&token));
+            let mut pending = state.pending.lock().await;
+            pending.qr_token = Some(token);
+            Ok(QrOutcome::Waiting { url, expires })
         }
-        Err(e) => return Err(e.into()),
-    };
-
-    handle_login_token(state, result).await
+        Err(InvocationError::Rpc(e)) if e.name.contains("SESSION_PASSWORD_NEEDED") => {
+            qr_password_required(state).await
+        }
+        Err(e) => Err(e.into()),
+    }
 }
 
 /// Submits the 2FA password for the QR flow.
@@ -292,12 +300,12 @@ pub async fn qr_check_password(state: &AppState, password: &str) -> AppResult<Au
 }
 
 async fn qr_password_required(state: &AppState) -> AppResult<QrOutcome> {
-    let password = state
-        .client
+    let client = state.client().await?;
+    let password = client
         .invoke(&tl::functions::account::GetPassword {})
         .await?;
     let tl::enums::account::Password::Password(pw) = password;
-    let token = PasswordToken::new(pw);
+    let token = PasswordToken { password: pw };
     let hint = token.hint().map(str::to_owned);
 
     let mut pending = state.pending.lock().await;
@@ -305,49 +313,14 @@ async fn qr_password_required(state: &AppState) -> AppResult<QrOutcome> {
     Ok(QrOutcome::PasswordRequired { hint })
 }
 
-async fn handle_login_token(
-    state: &AppState,
-    token: tl::enums::auth::LoginToken,
-) -> AppResult<QrOutcome> {
-    match token {
-        tl::enums::auth::LoginToken::Token(t) => {
-            let url = format!("tg://login?token={}", B64URL.encode(&t.token));
-            let mut pending = state.pending.lock().await;
-            pending.qr_token = Some(t.token);
-            Ok(QrOutcome::Waiting {
-                url,
-                expires: t.expires,
-            })
-        }
-        tl::enums::auth::LoginToken::MigrateTo(m) => {
-            state.session.set_home_dc_id(m.dc_id).await;
-            let imported = state
-                .client
-                .invoke_in_dc(
-                    m.dc_id,
-                    &tl::functions::auth::ImportLoginToken { token: m.token },
-                )
-                .await?;
-            // After import the token should resolve to success.
-            match imported {
-                tl::enums::auth::LoginToken::Success(_) => Ok(QrOutcome::Authorized {
-                    user: finalize(state).await?,
-                }),
-                other => Box::pin(handle_login_token(state, other)).await,
-            }
-        }
-        tl::enums::auth::LoginToken::Success(_) => Ok(QrOutcome::Authorized {
-            user: finalize(state).await?,
-        }),
-    }
-}
-
 // ---- session lifecycle ---------------------------------------------------
 
 pub async fn logout(state: &AppState) -> AppResult<()> {
     // Best-effort remote sign-out; local library data stays available for the
     // same Telegram user on this device after they sign in again.
-    let _ = state.client.sign_out().await;
+    if let Ok(client) = state.client().await {
+        let _ = client.sign_out().await;
+    }
     clear_local_session_and_pending(state).await
 }
 

@@ -1,4 +1,4 @@
-//! Telegram/MTProto integration built on grammers.
+//! Telegram/MTProto integration built on ferogram.
 
 pub mod auth;
 pub mod client;

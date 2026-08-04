@@ -32,6 +32,8 @@ Zustand stores under `stores/`:
 
 Prefer updating existing stores over adding parallel state.
 
+Proxy / connection settings are edited via Settings and the login-screen panel; they persist in the backend (`app_settings`) and are not kept in Zustand.
+
 ## UI conventions
 
 - Components by area: `components/audio/`, `playlist/`, `auth/`, `ui/`.
