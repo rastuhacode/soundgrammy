@@ -21,8 +21,8 @@ tauri-plugin-opener = "2"
 tokio = { version = "1", features = ["full"] }
 futures-util = "0.3"
 
-# Telegram MTProto (ferogram 0.6.4 — pin; 0.x API may still shift)
-ferogram = { version = "=0.6.4", default-features = false, features = ["parsers"] }
+# Telegram MTProto
+ferogram = { version = "=0.6.5", default-features = false, features = ["parsers"] }
 
 # Storage
 rusqlite = { version = "0.32", features = ["bundled"] }
@@ -45,8 +45,3 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 lofty = "0.21"
 dotenvy = "0.15"
-
-# Local patch: ferogram-mtsender 0.6.4 peels Intermediate/Abridged on ciphertext
-# for Obfuscated/PaddedIntermediate (MTProxy dd). Decrypt newly-read bytes first.
-[patch.crates-io]
-ferogram-mtsender = { path = "vendor/ferogram-mtsender" }
