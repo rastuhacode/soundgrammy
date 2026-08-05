@@ -243,7 +243,7 @@ export default function App() {
         <SplitterPanel
           id="playlist-sidebar"
           defaultSize={320}
-          minSize={240}
+          minSize={220}
           maxSize={480}
           groupResizeBehavior="preserve-pixel-size"
         >
