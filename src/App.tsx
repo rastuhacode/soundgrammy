@@ -23,6 +23,11 @@ import {
 import { startPlaylistJobsListeners } from '@/stores/playlist-jobs-store'
 import { useConnectivityStore } from '@/stores/connectivity-store'
 import { useTelegramReconnect } from '@/hooks/use-telegram-reconnect'
+import {
+  SplitterGroup,
+  SplitterPanel,
+  SplitterResizeHandle,
+} from '@/components/ui/splitter'
 
 type AppStatus = 'loading' | 'login' | 'ready'
 
@@ -229,14 +234,30 @@ export default function App() {
 
   return (
     <div className="hifi-bg flex h-screen w-screen flex-col overflow-hidden">
-      <div className="flex min-h-0 grow">
-        <aside className="w-80 shrink-0 border-r border-border bg-sidebar/60 backdrop-blur-sm">
-          <PlayerSidebar onLogout={handleLogout} />
-        </aside>
-        <main className="flex min-h-0 grow flex-col">
-          <PlaylistView />
-        </main>
-      </div>
+      <SplitterGroup
+        id="player-layout"
+        autoSaveId="player-layout"
+        panelIds={['playlist-sidebar', 'track-list']}
+        className="min-h-0 grow"
+      >
+        <SplitterPanel
+          id="playlist-sidebar"
+          defaultSize={320}
+          minSize={240}
+          maxSize={480}
+          groupResizeBehavior="preserve-pixel-size"
+        >
+          <aside className="size-full bg-sidebar/60 backdrop-blur-sm">
+            <PlayerSidebar onLogout={handleLogout} />
+          </aside>
+        </SplitterPanel>
+        <SplitterResizeHandle aria-label="Resize playlist sidebar" />
+        <SplitterPanel id="track-list" minSize={400}>
+          <main className="flex size-full min-h-0 flex-col">
+            <PlaylistView />
+          </main>
+        </SplitterPanel>
+      </SplitterGroup>
       <AudioPlayer />
     </div>
   )

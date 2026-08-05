@@ -1,7 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Volume1, Volume2, VolumeX } from 'lucide-react'
 import type { PopoverRoot } from '@base-ui/react/popover'
-import { cn } from '@/lib/utils'
 import {
   consumeVolumeWheelDelta,
   normalizeVolume,
@@ -10,6 +9,7 @@ import {
 } from '@/lib/volume'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
+import { Slider } from '@/components/ui/slider'
 import {
   Popover,
   PopoverContent,
@@ -194,29 +194,16 @@ export function AudioVolume(props: AudioVolumeProps) {
                 {`${props.volume}%`}
               </Button>
             )}
-        <div className="flex h-24 w-8 items-center justify-center">
-          <input
-            type="range"
-            className={
-              cn(
-                'appearance-none outline-none w-24 h-0.5 -rotate-90',
-                '[background:linear-gradient(to_right,var(--primary)_0%,var(--primary)_var(--progress,0%),color-mix(in_oklch,var(--foreground)_18%,transparent)_var(--progress,0%),color-mix(in_oklch,var(--foreground)_18%,transparent)_100%)]',
-                '[&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:appearance-none',
-                '[&::-webkit-slider-thumb]:transition-transform [&::-webkit-slider-thumb]:duration-150 [&::-webkit-slider-thumb:hover]:scale-125',
-                '[&::-moz-range-thumb]:size-3 [&::-webkit-slider-thumb]:size-3',
-                '[&::-moz-range-thumb]:border-none [&::-moz-range-thumb]:bg-primary [&::-moz-range-thumb]:rounded-full',
-              )
-            }
-            min={0}
-            max={100}
-            step={1}
-            value={props.volume}
-            onChange={e => changeVolume(Number(e.target.value))}
-            autoComplete="off"
-            aria-label="Volume"
-            style={{ '--progress': `${props.volume}%` } as React.CSSProperties}
-          />
-        </div>
+        <Slider
+          className="h-24"
+          orientation="vertical"
+          min={VOLUME_MIN}
+          max={VOLUME_MAX}
+          step={1}
+          value={props.volume}
+          onValueChange={value => changeVolume(Number(value))}
+          aria-label="Volume"
+        />
       </PopoverContent>
     </Popover>
   )
