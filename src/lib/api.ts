@@ -226,6 +226,10 @@ export interface SyncProgress {
   total: number
 }
 
+export interface SyncError {
+  message: string
+}
+
 export interface DownloadProgress {
   trackId: number
   received: number
@@ -246,6 +250,10 @@ export function onSyncProgress(
 
 export function onSyncDone(cb: () => void): Promise<UnlistenFn> {
   return listen('sync:done', () => cb())
+}
+
+export function onSyncError(cb: (error: SyncError) => void): Promise<UnlistenFn> {
+  return listen<SyncError>('sync:error', event => cb(event.payload))
 }
 
 export function onDownloadProgress(

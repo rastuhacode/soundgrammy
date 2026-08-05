@@ -48,6 +48,8 @@ pub struct AppState {
     pub cache_dir: PathBuf,
     /// Guards multi-step auth flows.
     pub pending: Mutex<PendingAuth>,
+    /// Serializes saved-music reconciliation across automatic and manual syncs.
+    pub sync_lock: Mutex<()>,
     /// Per-cache-key locks so concurrent plays don't double-download a file.
     pub download_locks: Mutex<HashMap<String, Arc<Mutex<()>>>>,
     /// Active progressive audio downloads, shared by playback and explicit saves.
@@ -75,6 +77,7 @@ impl AppState {
             data_dir,
             cache_dir,
             pending: Default::default(),
+            sync_lock: Default::default(),
             download_locks: Default::default(),
             streaming: Default::default(),
         }

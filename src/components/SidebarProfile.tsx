@@ -31,7 +31,14 @@ export function SidebarProfile({ onLogout }: SidebarProfileProps) {
   const [settingsOpen, setSettingsOpen] = useState(false)
   const session = useSessionStore(state => state.session)
   const avatarSrc = useUserAvatar(Boolean(session))
-  const { phase, statusLabel, statusDetail } = useProfileMusicSync()
+  const {
+    phase,
+    statusLabel,
+    statusDetail,
+    lastSyncDetail,
+    requestSync,
+    isSyncing,
+  } = useProfileMusicSync()
 
   if (!session) return null
 
@@ -110,18 +117,41 @@ export function SidebarProfile({ onLogout }: SidebarProfileProps) {
               <DropdownMenuLabel>Telegram</DropdownMenuLabel>
 
               <div className="flex items-center gap-2.5 rounded-lg py-2">
-                <Button variant="ghost" size="icon-sm">
-                  <RadioTower className="text-primary/80" />
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  disabled={isSyncing}
+                  aria-label={isSyncing ? 'Syncing Telegram music' : 'Sync Telegram music now'}
+                  title={isSyncing ? 'Syncing…' : 'Sync now'}
+                  onClick={() => void requestSync()}
+                >
+                  <RadioTower className={isSyncing ? 'animate-pulse text-primary' : 'text-primary/80'} />
                 </Button>
-                <span className="flex min-w-0 flex-col gap-0.5">
+                <div className="flex min-w-0 flex-col gap-0.5">
                   <span className="text-xs text-muted-foreground">Sync status</span>
-                  <span className="font-mono text-[10px] uppercase tracking-[0.14em] text-primary">
+                  <span
+                    className={phase === 'error'
+                      ? 'font-mono text-[10px] uppercase tracking-[0.14em] text-destructive'
+                      : 'font-mono text-[10px] uppercase tracking-[0.14em] text-primary'}
+                  >
                     {statusLabel}
                   </span>
-                  <span className="text-xs leading-snug text-foreground text-ellipsis">
+                  <span
+                    className={phase === 'error'
+                      ? 'text-xs leading-snug text-destructive'
+                      : 'text-xs leading-snug text-foreground'}
+                    title={statusDetail}
+                  >
                     {statusDetail}
                   </span>
-                </span>
+                  {phase === 'offline' || phase === 'error'
+                    ? (
+                        <span className="text-xs leading-snug text-muted-foreground">
+                          {lastSyncDetail}
+                        </span>
+                      )
+                    : null}
+                </div>
               </div>
 
             </DropdownMenuGroup>

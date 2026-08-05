@@ -29,8 +29,35 @@ struct SyncProgress {
     total: i32,
 }
 
+#[derive(Clone, Serialize)]
+struct SyncError {
+    message: String,
+}
+
 /// Fetches the account's saved music and reconciles it into the local library.
 pub async fn sync(state: &AppState, app: &AppHandle) -> AppResult<SyncResult> {
+    let _guard = state.sync_lock.lock().await;
+    let _ = app.emit("sync:start", ());
+    let result = sync_inner(state, app).await;
+
+    match &result {
+        Ok(_) => {
+            let _ = app.emit("sync:done", ());
+        }
+        Err(error) => {
+            let _ = app.emit(
+                "sync:error",
+                SyncError {
+                    message: error.to_string(),
+                },
+            );
+        }
+    }
+
+    result
+}
+
+async fn sync_inner(state: &AppState, app: &AppHandle) -> AppResult<SyncResult> {
     let client = state.client().await?;
     let user = auth::fetch_self(&client).await?;
     let uid = user.id;
@@ -47,8 +74,6 @@ pub async fn sync(state: &AppState, app: &AppHandle) -> AppResult<SyncResult> {
         .saved_music_hash(uid)?
         .and_then(|h| h.parse::<i64>().ok())
         .unwrap_or(0);
-
-    let _ = app.emit("sync:start", ());
 
     let mut collected: Vec<tl::types::Document> = Vec::new();
     let mut offset = 0i32;
@@ -68,7 +93,6 @@ pub async fn sync(state: &AppState, app: &AppHandle) -> AppResult<SyncResult> {
         match result {
             tl::enums::users::SavedMusic::NotModified(n) => {
                 state.db.mark_synced(uid)?;
-                let _ = app.emit("sync:done", ());
                 return Ok(SyncResult {
                     changed: false,
                     total: n.count as i64,
@@ -123,8 +147,6 @@ pub async fn sync(state: &AppState, app: &AppHandle) -> AppResult<SyncResult> {
     let new_hash = compute_saved_music_hash(&ids);
     state.db.set_saved_music_hash(uid, &new_hash.to_string())?;
     state.db.mark_synced(uid)?;
-
-    let _ = app.emit("sync:done", ());
 
     Ok(SyncResult {
         changed: true,

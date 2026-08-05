@@ -27,6 +27,12 @@ function OfflineDot() {
   )
 }
 
+function ErrorDot() {
+  return (
+    <span className="absolute -bottom-0.5 -right-0.5 size-2.5 rounded-full border-2 border-background bg-destructive shadow-[0_0_8px_color-mix(in_oklch,var(--destructive)_60%,transparent)]" />
+  )
+}
+
 export function SyncStatusDot({ phase }: { phase: SyncPhase }) {
   if (phase === 'connecting') {
     return <ConnectingDot />
@@ -36,6 +42,9 @@ export function SyncStatusDot({ phase }: { phase: SyncPhase }) {
   }
   if (phase === 'syncing') {
     return <SyncingDot />
+  }
+  if (phase === 'error') {
+    return <ErrorDot />
   }
   return <OnlineDot />
 }
