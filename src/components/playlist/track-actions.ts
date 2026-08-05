@@ -292,6 +292,16 @@ export function reorderByIndex<T>(
   return next
 }
 
+/** Stable sortable identities for tracks, including duplicate memberships. */
+export function getTrackSortableIds(trackIds: number[]): string[] {
+  const occurrences = new Map<number, number>()
+  return trackIds.map((trackId) => {
+    const occurrence = occurrences.get(trackId) ?? 0
+    occurrences.set(trackId, occurrence + 1)
+    return `${trackId}:${occurrence}`
+  })
+}
+
 /** Move `activeId` to the index of `overId` within a track id list. */
 export function reorderTrackIds(
   order: number[],

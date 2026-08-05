@@ -28,7 +28,7 @@ export interface PlaylistTrackRowViewProps {
   onPlayFromThumb?: () => void
 }
 
-/** Presentational track row (list item or drag overlay). */
+/** Presentational track row. */
 export function PlaylistTrackRowView({
   track,
   isActive,
@@ -224,7 +224,9 @@ export function PlaylistTrackRow({
         isPlaying={isPlaying}
         isSelected={isSelected}
         selectionMode={selectionMode}
-        className={cn(isDragging && 'opacity-0')}
+        className={cn(
+          isDragging && 'cursor-grabbing bg-muted opacity-95 shadow-md',
+        )}
         onRowClick={onRowClick}
         onToggleSelected={onToggleSelected}
         onPlayFromThumb={onPlayFromThumb}

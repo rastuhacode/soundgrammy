@@ -2,8 +2,7 @@ import {
   closestCenter,
   DndContext,
   type DragEndEvent,
-  type DragStartEvent,
-  DragOverlay,
+  type Modifier,
   KeyboardSensor,
   PointerSensor,
   useSensor,
@@ -26,7 +25,7 @@ import {
 } from '@tanstack/react-table'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react'
-import { useMemo, useRef, useState } from 'react'
+import { useMemo, useRef } from 'react'
 import type { Track } from '@/lib/db'
 import type { ResolvedSelectedPlaylist } from '@/stores/playlists-store'
 import { cn } from '@/lib/utils'
@@ -37,9 +36,18 @@ import {
   TRACK_GRID_COLS_SELECT,
   TRACK_ROW_STRIDE,
   PlaylistTrackRow,
-  PlaylistTrackRowView,
 } from './PlaylistTrackRow'
-import { compareTracks, reorderByIndex, type CustomPlaylistRef } from './track-actions'
+import {
+  compareTracks,
+  getTrackSortableIds,
+  reorderByIndex,
+  type CustomPlaylistRef,
+} from './track-actions'
+
+const restrictToVerticalAxis: Modifier = ({ transform }) => ({
+  ...transform,
+  x: 0,
+})
 
 export interface PlaylistTracksTableProps {
   tracks: Track[]
@@ -107,7 +115,6 @@ export function PlaylistTracksTable({
   onShowInfo,
 }: PlaylistTracksTableProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
-  const [activeSourceIndex, setActiveSourceIndex] = useState<number | null>(null)
 
   const columns = useMemo<ColumnDef<Track>[]>(() => {
     const defs: ColumnDef<Track>[] = []
@@ -185,10 +192,11 @@ export function PlaylistTracksTable({
   })
 
   const rows = table.getRowModel().rows
-  const sortableIds = useMemo(
-    () => sourceIndices.map(index => String(index)),
-    [sourceIndices],
+  const rowSortableIds = useMemo(
+    () => getTrackSortableIds(tracks.map(track => track.id)),
+    [tracks],
   )
+  const sortableIds = rows.map(row => rowSortableIds[row.index]!)
 
   const sensors = useSensors(
     useSensor(PointerSensor, {
@@ -211,26 +219,13 @@ export function PlaylistTracksTable({
     ? TRACK_GRID_COLS_SELECT
     : TRACK_GRID_COLS
 
-  const activeTrack = activeSourceIndex === null
-    ? null
-    : tracks[sourceIndices.indexOf(activeSourceIndex)] ?? null
-
-  const handleDragStart = (event: DragStartEvent) => {
-    setActiveSourceIndex(Number(event.active.id))
-  }
-
-  const handleDragCancel = () => {
-    setActiveSourceIndex(null)
-  }
-
   const handleDragEnd = (event: DragEndEvent) => {
-    setActiveSourceIndex(null)
     if (!canReorder) return
     const { active, over } = event
     if (!over || active.id === over.id) return
 
-    const fromIndex = sourceIndices.indexOf(Number(active.id))
-    const toIndex = sourceIndices.indexOf(Number(over.id))
+    const fromIndex = sortableIds.indexOf(String(active.id))
+    const toIndex = sortableIds.indexOf(String(over.id))
     if (fromIndex < 0 || toIndex < 0) return
 
     const trackIds = tracks.map(track => track.id)
@@ -323,8 +318,7 @@ export function PlaylistTracksTable({
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
-          onDragStart={handleDragStart}
-          onDragCancel={handleDragCancel}
+          modifiers={[restrictToVerticalAxis]}
           onDragEnd={handleDragEnd}
         >
           <SortableContext
@@ -343,10 +337,12 @@ export function PlaylistTracksTable({
                 const track = row.original
                 const sourceIndex = Number(row.id)
                 const isSelected = row.getIsSelected()
+                const sortableId = rowSortableIds[row.index]
+                if (!sortableId) return null
 
                 return (
                   <PlaylistTrackContextMenu
-                    key={row.id}
+                    key={sortableId}
                     track={track}
                     sourceIndex={sourceIndex}
                     isLiked={isTrackLiked(track.id)}
@@ -366,7 +362,7 @@ export function PlaylistTracksTable({
                     <PlaylistTrackRow
                       virtualStart={virtualRow.start}
                       track={track}
-                      sortableId={row.id}
+                      sortableId={sortableId}
                       isActive={playingSourceIndex === sourceIndex}
                       isPlaying={isPlaying}
                       isSelected={isSelected}
@@ -391,21 +387,6 @@ export function PlaylistTracksTable({
               })}
             </div>
           </SortableContext>
-
-          <DragOverlay dropAnimation={null}>
-            {activeTrack
-              ? (
-                  <PlaylistTrackRowView
-                    track={activeTrack}
-                    isActive={playingSourceIndex === activeSourceIndex}
-                    isPlaying={isPlaying}
-                    isSelected={false}
-                    selectionMode={false}
-                    className="cursor-grabbing bg-muted opacity-95 shadow-md"
-                  />
-                )
-              : null}
-          </DragOverlay>
         </DndContext>
       </div>
     </div>

@@ -10,6 +10,7 @@ import {
   getAvailableCustomPlaylists,
   getBulkActions,
   getTrackContextActions,
+  getTrackSortableIds,
   reorderByIndex,
   reorderTrackIds,
   selectionModeAfterPlaylistChange,
@@ -297,6 +298,17 @@ describe('reorderByIndex', () => {
   it('returns the same reference when indexes are unchanged', () => {
     const order = [1, 2, 3]
     expect(reorderByIndex(order, 1, 1)).toBe(order)
+  })
+})
+
+describe('getTrackSortableIds', () => {
+  it('keeps duplicate track memberships uniquely identifiable', () => {
+    expect(getTrackSortableIds([2, 1, 2, 2])).toEqual([
+      '2:0',
+      '1:0',
+      '2:1',
+      '2:2',
+    ])
   })
 })
 
