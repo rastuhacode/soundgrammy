@@ -108,16 +108,15 @@ export function SidebarPlaylistItem({
           name={name}
         />
 
-        <div className="min-w-0 grow">
-          <p
-            className={cn(
-              'truncate text-sm font-medium',
-              isActive ? 'text-foreground' : 'text-foreground/90',
-            )}
-          >
-            {name}
-          </p>
-        </div>
+        <span
+          className={cn(
+            'min-w-0 grow truncate text-sm font-medium',
+            isActive ? 'text-foreground' : 'text-foreground/90',
+          )}
+          title={name}
+        >
+          {name}
+        </span>
 
         <div className="flex shrink-0 items-center gap-1">
           <span className="min-w-6 text-right font-mono text-xs tabular-nums text-muted-foreground">
