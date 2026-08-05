@@ -18,7 +18,7 @@ export interface AudioPlayerBarProps {
   onSeek: (time: number) => void
   onSeekStart: () => void
   onSeekEnd: () => void
-  onVolumeChange: (event: React.ChangeEvent<HTMLInputElement>) => void
+  onVolumeChange: (volume: number) => void
   onMuteToggle: () => void
 }
 

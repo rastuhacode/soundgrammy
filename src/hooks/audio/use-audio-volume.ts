@@ -1,36 +1,24 @@
-import { useEffect, useRef, useState, type RefObject } from 'react'
+import { useEffect, useRef, type RefObject } from 'react'
 import { useLocalStorage } from '@mantine/hooks'
-import { z } from 'zod'
+import {
+  normalizeVolume,
+  parseStoredVolume,
+  VOLUME_DEFAULT,
+} from '@/lib/volume'
 
 const VOLUME_STORAGE_KEY = 'soundgrammy-volume'
-const VOLUME_DEFAULT = 25 // 25% (player shouldn't scream by default)
-
-function parseStoredVolume(stored: string | undefined): number {
-  const volumeSchema = z.number().min(0).max(100).default(VOLUME_DEFAULT)
-
-  if (stored === undefined) return VOLUME_DEFAULT
-  let value: number | undefined
-  try {
-    value = volumeSchema.safeParse(JSON.parse(stored)).data
-  }
-  catch {
-    value = volumeSchema.safeParse(Number(stored)).data
-  }
-  return value ?? VOLUME_DEFAULT
-}
 
 export function useAudioVolume(
   audioRef: RefObject<HTMLAudioElement | null>,
 ) {
-  const [volume, setVolume] = useLocalStorage<number>({
+  const [volume, setStoredVolume] = useLocalStorage<number>({
     key: VOLUME_STORAGE_KEY,
     defaultValue: VOLUME_DEFAULT,
     getInitialValueInEffect: false,
     deserialize: parseStoredVolume,
   })
-  const [isMuted, setIsMuted] = useState(false)
   const volumeRef = useRef(volume)
-  const preMuteVolumeRef = useRef(volume)
+  const preMuteVolumeRef = useRef(volume > 0 ? volume : VOLUME_DEFAULT)
 
   const applyVolume = () => {
     const audio = audioRef.current
@@ -45,32 +33,27 @@ export function useAudioVolume(
     }
   }
 
-  const handleVolumeChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setIsMuted(false)
-    const nextVolume = Number(e.target.value)
-    setVolume(nextVolume)
+  const handleVolumeChange = (value: number) => {
+    const nextVolume = normalizeVolume(value)
+    if (nextVolume > 0) preMuteVolumeRef.current = nextVolume
+    setStoredVolume(nextVolume)
     volumeRef.current = nextVolume
     applyVolume()
   }
 
   const handleMuteToggle = () => {
-    if (isMuted) {
-      const restored = preMuteVolumeRef.current
-      setVolume(restored)
-      volumeRef.current = restored
-      setIsMuted(false)
+    if (volumeRef.current === 0) {
+      handleVolumeChange(preMuteVolumeRef.current || VOLUME_DEFAULT)
     }
     else {
-      preMuteVolumeRef.current = volume
-      setVolume(0)
-      volumeRef.current = 0
-      setIsMuted(true)
+      preMuteVolumeRef.current = volumeRef.current
+      handleVolumeChange(0)
     }
-    applyVolume()
   }
 
   useEffect(() => {
     volumeRef.current = volume
+    if (volume > 0) preMuteVolumeRef.current = volume
     const audio = audioRef.current
     if (!audio) return
     audio.volume = volumeRef.current / 100

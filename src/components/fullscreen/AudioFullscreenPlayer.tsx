@@ -26,7 +26,7 @@ interface AudioFullscreenPlayerProps {
   bufferedRanges: AudioBufferedRange[]
   showInitialLoading: boolean
   volume: number
-  onVolumeChange: (event: React.ChangeEvent<HTMLInputElement>) => void
+  onVolumeChange: (volume: number) => void
   onMuteToggle: () => void
   onSeek: (time: number) => void
   onSeekStart: () => void
