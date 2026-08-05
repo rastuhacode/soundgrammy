@@ -1,6 +1,6 @@
 {
   "name": "soundgrammy",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "author": "Rasten Remizov",
   "type": "module",
   "private": true,
@@ -12,6 +12,7 @@
     "tauri:dev": "tauri dev",
     "tauri:build": "tauri build",
     "generate-icons": "tauri icon src-tauri/icons/original/soundgrammy-original.svg -o src-tauri/icons --ios-color \"#0088CC\" && cp src-tauri/icons/32x32.png public/favicon-32x32.png && cp src-tauri/icons/icon.ico public/favicon.ico && cp src-tauri/icons/ios/AppIcon-60x60@3x.png public/apple-touch-icon.png",
+    "check:versions": "bun run scripts/check-version-sync.ts",
     "lint": "eslint .",
     "format": "eslint --fix .",
     "typecheck": "tsc --noEmit",

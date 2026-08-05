@@ -1,22 +1,46 @@
-name: Release
+name: Build release
 
 on:
-  # Option A: push a version tag
-  push:
-    tags:
-      - "v*"
-  # Option B: manual run from Actions tab
+  workflow_call:
+    inputs:
+      tag:
+        description: Existing or new release tag, for example v0.2.0
+        required: true
+        type: string
+      sha:
+        description: Exact release commit; defaults to the tag for manual runs
+        required: false
+        type: string
+    secrets:
+      TELEGRAM_API_ID:
+        required: true
+      TELEGRAM_API_HASH:
+        required: true
   workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing or new release tag, for example v0.2.0
+        required: true
+        type: string
+      sha:
+        description: Exact release commit; leave empty to build the tag
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-build-${{ inputs.tag }}
+  cancel-in-progress: false
 
 jobs:
   publish:
-    permissions:
-      contents: write
     strategy:
       fail-fast: false
       matrix:
         include:
-          - platform: macos-latest      # Apple Silicon runner; builds universal or arm64
+          - platform: macos-latest
             args: "--target aarch64-apple-darwin"
           - platform: macos-latest
             args: "--target x86_64-apple-darwin"
@@ -26,13 +50,15 @@ jobs:
     runs-on: ${{ matrix.platform }}
 
     steps:
-      - name: Checkout
+      - name: Checkout release commit
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.sha || inputs.tag }}
 
       - name: Setup Bun
         uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.3.14   # match package.json packageManager
+          bun-version: 1.3.14
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -44,22 +70,25 @@ jobs:
         with:
           workspaces: "./src-tauri -> target"
 
-      - name: Install frontend deps
+      - name: Install frontend dependencies
         run: bun install --frozen-lockfile
 
-      - name: Build Tauri app & upload release
-        uses: tauri-apps/tauri-action@v0
+      - name: Verify release versions
+        run: bun run check:versions
+        env:
+          EXPECTED_VERSION: ${{ inputs.tag }}
+
+      - name: Build Tauri app and upload artifacts
+        uses: tauri-apps/tauri-action@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
           TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
         with:
           projectPath: "."
-          # Prefer bun over npm for tauri CLI
           tauriScript: bun run tauri
-          tagName: v__VERSION__
-          releaseName: "SoundGrammy v__VERSION__"
-          releaseBody: "See the commit history for changes."
+          tagName: ${{ inputs.tag }}
+          releaseName: SoundGrammy ${{ inputs.tag }}
           releaseDraft: true
           prerelease: false
           args: ${{ matrix.args }}

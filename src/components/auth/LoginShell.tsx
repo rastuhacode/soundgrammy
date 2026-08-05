@@ -125,8 +125,8 @@ export function LoginShell({ children }: { children: ReactNode }) {
           </Collapsible>
         </div>
 
-        <p className="mt-6 text-center font-mono text-[10px] uppercase tracking-[0.3em] text-muted-foreground/60">
-          End-to-end via MTProto
+        <p className="mx-auto mt-6 max-w-xs text-center text-xs leading-relaxed text-muted-foreground">
+          SoundGrammy is an independent app that uses the Telegram API. It is not affiliated with or endorsed by Telegram.
         </p>
       </div>
     </div>
