@@ -95,6 +95,17 @@ pub struct TrackListenStats {
     pub likeness: f64,
 }
 
+#[derive(Debug, Clone)]
+pub struct TrackBounceProfileRecord {
+    pub track_id: i64,
+    pub algorithm_version: i64,
+    pub frame_ms: i64,
+    pub duration_ms: i64,
+    pub file_size: Option<i64>,
+    pub loudness: Vec<u8>,
+    pub onset: Vec<u8>,
+}
+
 #[derive(Debug, Clone, Serialize)]
 pub struct ListenEndResult {
     pub qualified: bool,
@@ -205,6 +216,17 @@ impl Db {
               first_played_at_ms INTEGER,
               last_played_at_ms INTEGER,
               likeness REAL NOT NULL DEFAULT 0
+            );
+
+            CREATE TABLE IF NOT EXISTS track_bounce_profiles (
+              track_id INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
+              algorithm_version INTEGER NOT NULL,
+              frame_ms INTEGER NOT NULL,
+              duration_ms INTEGER NOT NULL,
+              file_size INTEGER,
+              loudness BLOB NOT NULL,
+              onset BLOB NOT NULL,
+              created_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
             "#,
         )?;
@@ -1238,6 +1260,63 @@ impl Db {
         })
     }
 
+    // ---- bounce profiles ------------------------------------------------
+
+    pub fn track_bounce_profile(
+        &self,
+        track_id: i64,
+    ) -> AppResult<Option<TrackBounceProfileRecord>> {
+        let conn = self.conn.lock().unwrap();
+        conn.query_row(
+            "SELECT track_id, algorithm_version, frame_ms, duration_ms, file_size, loudness, onset
+             FROM track_bounce_profiles WHERE track_id = ?1",
+            params![track_id],
+            |row| {
+                Ok(TrackBounceProfileRecord {
+                    track_id: row.get(0)?,
+                    algorithm_version: row.get(1)?,
+                    frame_ms: row.get(2)?,
+                    duration_ms: row.get(3)?,
+                    file_size: row.get(4)?,
+                    loudness: row.get(5)?,
+                    onset: row.get(6)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(Into::into)
+    }
+
+    pub fn save_track_bounce_profile(
+        &self,
+        profile: &TrackBounceProfileRecord,
+    ) -> AppResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute(
+            "INSERT INTO track_bounce_profiles
+               (track_id, algorithm_version, frame_ms, duration_ms, file_size, loudness, onset)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+             ON CONFLICT(track_id) DO UPDATE SET
+               algorithm_version = excluded.algorithm_version,
+               frame_ms = excluded.frame_ms,
+               duration_ms = excluded.duration_ms,
+               file_size = excluded.file_size,
+               loudness = excluded.loudness,
+               onset = excluded.onset,
+               created_at = datetime('now')",
+            params![
+                profile.track_id,
+                profile.algorithm_version,
+                profile.frame_ms,
+                profile.duration_ms,
+                profile.file_size,
+                profile.loudness,
+                profile.onset,
+            ],
+        )?;
+        Ok(())
+    }
+
     // ---- app settings ---------------------------------------------------
 
     pub fn get_setting(&self, key: &str) -> AppResult<Option<String>> {
@@ -1332,6 +1411,41 @@ mod tests {
         assert_eq!(profile.last_name.as_deref(), Some("Lovelace"));
         assert_eq!(profile.username.as_deref(), Some("ada"));
         assert_eq!(profile.phone.as_deref(), Some("+1555"));
+        Ok(())
+    }
+
+    #[test]
+    fn bounce_profile_round_trips_and_cascades_with_track() -> AppResult<()> {
+        let db = test_db()?;
+        {
+            let conn = db.conn.lock().unwrap();
+            conn.execute(
+                "INSERT INTO tracks
+                   (id, tg_user_id, file_id, file_unique_id, source, file_size)
+                 VALUES (7, 42, 'file', 'unique', 'mtproto', 1234)",
+                [],
+            )?;
+        }
+        let expected = TrackBounceProfileRecord {
+            track_id: 7,
+            algorithm_version: 3,
+            frame_ms: 50,
+            duration_ms: 10_000,
+            file_size: Some(1234),
+            loudness: vec![1, 2, 3],
+            onset: vec![4, 5, 6],
+        };
+        db.save_track_bounce_profile(&expected)?;
+        let loaded = db.track_bounce_profile(7)?.expect("profile");
+        assert_eq!(loaded.algorithm_version, expected.algorithm_version);
+        assert_eq!(loaded.loudness, expected.loudness);
+        assert_eq!(loaded.onset, expected.onset);
+
+        db.conn
+            .lock()
+            .unwrap()
+            .execute("DELETE FROM tracks WHERE id = 7", [])?;
+        assert!(db.track_bounce_profile(7)?.is_none());
         Ok(())
     }
 

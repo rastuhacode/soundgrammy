@@ -1,6 +1,7 @@
 //! SoundGrammy desktop backend: Tauri builder, state, and command registration.
 
 mod cache;
+mod bounce_analysis;
 mod commands;
 mod config;
 mod db;
@@ -103,6 +104,7 @@ pub fn run() {
             commands::get_profile,
             commands::sync_status,
             commands::get_track_source,
+            commands::get_track_bounce_profile,
             commands::read_stream_range,
             commands::ensure_stream_range,
             commands::download_track,

@@ -6,7 +6,7 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{atomic::AtomicI64, Arc};
 
 use ferogram::{Client, LoginToken, PasswordToken, ShutdownToken};
 use tokio::sync::{Mutex, RwLock};
@@ -52,6 +52,11 @@ pub struct AppState {
     pub sync_lock: Mutex<()>,
     /// Per-cache-key locks so concurrent plays don't double-download a file.
     pub download_locks: Mutex<HashMap<String, Arc<Mutex<()>>>>,
+    /// Per-track locks deduplicate profile requests; the slot keeps CPU-heavy
+    /// decoding to one track at a time.
+    pub bounce_analysis_locks: Mutex<HashMap<i64, Arc<Mutex<()>>>>,
+    pub bounce_analysis_slot: Mutex<()>,
+    pub bounce_requested_track: AtomicI64,
     /// Active progressive audio downloads, shared by playback and explicit saves.
     pub streaming: StreamingManager,
 }
@@ -79,6 +84,9 @@ impl AppState {
             pending: Default::default(),
             sync_lock: Default::default(),
             download_locks: Default::default(),
+            bounce_analysis_locks: Default::default(),
+            bounce_analysis_slot: Default::default(),
+            bounce_requested_track: AtomicI64::new(-1),
             streaming: Default::default(),
         }
     }
@@ -123,6 +131,14 @@ impl AppState {
         let mut locks = self.download_locks.lock().await;
         locks
             .entry(key.to_string())
+            .or_insert_with(|| Arc::new(Mutex::new(())))
+            .clone()
+    }
+
+    pub async fn bounce_lock_for(&self, track_id: i64) -> Arc<Mutex<()>> {
+        let mut locks = self.bounce_analysis_locks.lock().await;
+        locks
+            .entry(track_id)
             .or_insert_with(|| Arc::new(Mutex::new(())))
             .clone()
     }

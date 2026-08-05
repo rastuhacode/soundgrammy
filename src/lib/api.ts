@@ -4,6 +4,7 @@ import type {
   AuthOutcome,
   AuthStatus,
   AuthUser,
+  BounceProfileResponse,
   PhoneSendCodeOutcome,
   CacheChanged,
   CacheSettings,
@@ -139,6 +140,8 @@ export const api = {
   getUserAvatar: () => invoke<string | null>('get_user_avatar'),
   trackMetadata: (trackId: number) =>
     invoke<TrackMetadata>('track_metadata', { trackId }),
+  getTrackBounceProfile: (trackId: number) =>
+    invoke<BounceProfileResponse>('get_track_bounce_profile', { trackId }),
 
   // ---- playlists --------------------------------------------------------
   listPlaylists: () => invoke<PlaylistsBundle>('list_playlists'),

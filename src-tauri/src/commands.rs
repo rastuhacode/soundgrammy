@@ -164,6 +164,15 @@ pub async fn get_track_source(
     })
 }
 
+#[tauri::command]
+pub async fn get_track_bounce_profile(
+    state: State<'_, AppState>,
+    app: AppHandle,
+    track_id: i64,
+) -> AppResult<crate::bounce_analysis::BounceProfileResponse> {
+    Ok(crate::bounce_analysis::profile_for_track(&state, &app, track_id).await)
+}
+
 /// Reads a byte range from an active stream (or a fully cached file).
 ///
 /// `start`/`end` are inclusive. Responses are capped at one streaming chunk

@@ -293,7 +293,7 @@ export function ProxySettingsFields({
           ? 'Proxy is active for Telegram traffic.'
           : enabled
             ? 'Proxy saved but not active — apply again or check the helper.'
-            : 'Connecting directly to Telegram.'}
+            : ''}
       </p>
 
       {applyError

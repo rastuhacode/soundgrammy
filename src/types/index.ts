@@ -148,6 +148,17 @@ export interface CacheUsage {
   fileCount: number
 }
 
+export type BounceProfileResponse
+  = | {
+    status: 'ready'
+    algorithmVersion: number
+    frameMs: number
+    durationMs: number
+    loudnessData: string
+    onsetData: string
+  }
+  | { status: 'unavailable' }
+
 export interface ProxySettings {
   enabled: boolean
   server: string

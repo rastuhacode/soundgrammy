@@ -4,6 +4,7 @@ import { Minimize2, Music } from 'lucide-react'
 import type { Track } from '@/lib/db'
 import { useCachedThumbnail } from '@/hooks/use-cached-thumbnail'
 import { useImagePalette } from '@/hooks/use-image-palette'
+import { useArtworkBounce } from '@/hooks/use-artwork-bounce'
 import { formatTime } from '@/lib/format-time'
 import { cn } from '@/lib/utils'
 import { useFullscreenStore } from '@/stores/fullscreen-store'
@@ -31,6 +32,7 @@ interface AudioFullscreenPlayerProps {
   onSeek: (time: number) => void
   onSeekStart: () => void
   onSeekEnd: () => void
+  getAudioElement: () => HTMLAudioElement | null
 }
 
 export function AudioFullscreenPlayer(props: AudioFullscreenPlayerProps) {
@@ -41,6 +43,13 @@ export function AudioFullscreenPlayer(props: AudioFullscreenPlayerProps) {
   const queue = usePlayerStore(state => state.queue)
   const [controlsVisible, setControlsVisible] = useState(true)
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const artworkBounceRef = useRef<HTMLDivElement>(null)
+
+  useArtworkBounce({
+    trackId: props.track.id,
+    elementRef: artworkBounceRef,
+    getAudioElement: props.getAudioElement,
+  })
 
   const hideControlsLater = useCallback(() => {
     if (hideTimerRef.current) clearTimeout(hideTimerRef.current)
@@ -131,21 +140,26 @@ export function AudioFullscreenPlayer(props: AudioFullscreenPlayerProps) {
       <div className="relative z-10 flex h-full items-center justify-center px-10 pb-44 pt-12">
         <div
           key={props.track.id}
-          className="fullscreen-art-enter aspect-square w-[min(58vh,54vw)] min-w-64 overflow-hidden rounded-2xl border border-white/10 bg-white/5 shadow-[0_35px_100px_rgba(0,0,0,0.55)]"
+          className="fullscreen-art-enter aspect-square w-[min(58vh,54vw)] min-w-64"
         >
-          {failed || !url
-            ? (
-                <div className="flex size-full items-center justify-center text-muted-foreground">
-                  <Music className="size-20" />
-                </div>
-              )
-            : (
-                <img
-                  src={url}
-                  alt={`${props.track.title ?? 'Unknown title'} artwork`}
-                  className="size-full object-cover"
-                />
-              )}
+          <div
+            ref={artworkBounceRef}
+            className="size-full overflow-hidden rounded-2xl border border-white/10 bg-white/5 shadow-[0_35px_100px_rgba(0,0,0,0.55)]"
+          >
+            {failed || !url
+              ? (
+                  <div className="flex size-full items-center justify-center text-muted-foreground">
+                    <Music className="size-20" />
+                  </div>
+                )
+              : (
+                  <img
+                    src={url}
+                    alt={`${props.track.title ?? 'Unknown title'} artwork`}
+                    className="size-full object-cover"
+                  />
+                )}
+          </div>
         </div>
       </div>
 

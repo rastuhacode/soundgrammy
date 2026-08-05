@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { registerPlaybackController } from '@/lib/playback-controller'
 import { usePlayerStore } from '@/stores/player-store'
 import { useRepeatStore } from '@/stores/repeat-store'
@@ -380,6 +380,8 @@ export function useAudioEngine() {
     }
   }
 
+  const getAudioElement = useCallback(() => audioRef.current, [])
+
   return {
     audioRefCallback,
     audioProps: {
@@ -402,5 +404,6 @@ export function useAudioEngine() {
     handleSeekEnd,
     handleVolumeChange,
     handleMuteToggle,
+    getAudioElement,
   }
 }

@@ -3,12 +3,16 @@ import { ChevronDown } from 'lucide-react'
 import { api } from '@/lib/api'
 import type { CacheSettings, CacheUsage } from '@/types'
 import { useCacheStore } from '@/stores/cache-store'
+import { useFullscreenStore } from '@/stores/fullscreen-store'
 import { ProxySettingsFields } from '@/components/proxy/ProxySettingsFields'
 import { Button } from '@/components/ui/button'
+import { Checkbox } from '@/components/ui/checkbox'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { Slider } from '@/components/ui/slider'
+import { ExperementalBadge } from './badges/ExperementalBadge'
 
 const GIB = 1024 ** 3
 
@@ -43,6 +47,10 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const [error, setError] = useState<string | null>(null)
   const [cacheOpen, setCacheOpen] = useState(false)
   const [proxyOpen, setProxyOpen] = useState(false)
+  const [bounceOpen, setBounceOpen] = useState(false)
+  const bounce = useFullscreenStore(state => state.bounce)
+  const setBounceSettings = useFullscreenStore(state => state.setBounceSettings)
+  const resetBounceSettings = useFullscreenStore(state => state.resetBounceSettings)
 
   useEffect(() => {
     if (!open) return
@@ -63,6 +71,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
         setError(null)
         setCacheOpen(false)
         setProxyOpen(false)
+        setBounceOpen(false)
       }
       catch (err) {
         if (!cancelled) setError(errorMessage(err))
@@ -80,6 +89,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       setError(null)
       setCacheOpen(false)
       setProxyOpen(false)
+      setBounceOpen(false)
     }
     onOpenChange(next)
   }
@@ -260,13 +270,65 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
               </CollapsibleTrigger>
               <CollapsibleContent className="mt-1 flex min-w-0 flex-col gap-3 px-2 pb-3">
                 <p className="text-xs text-muted-foreground">
-                  Route Telegram through a local helper such as tg-ws-proxy
-                  (
-                  <span className="font-mono">127.0.0.1:1443</span>
-                  ). Paste the link from the tray (“Copy link”), then Apply to
-                  reconnect.
+                  Route Telegram through a local helper such as&nbsp;
+                  <a href="https://github.com/Flowseal/tg-ws-proxy" target="_blank" rel="noopener noreferrer" className="underline">tg-ws-proxy</a>
+                  . This could be helpful to avoid censorship.
                 </p>
                 {open && proxyOpen ? <ProxySettingsFields /> : null}
+              </CollapsibleContent>
+            </Collapsible>
+
+            <Collapsible open={bounceOpen} onOpenChange={setBounceOpen}>
+              <CollapsibleTrigger className="flex h-auto w-full items-center justify-between rounded-md px-2 py-2.5 text-sm font-medium hover:bg-muted/40">
+                <div className="flex items-center gap-2">
+                  <span>Fullscreen bounce</span>
+                  <ExperementalBadge />
+                </div>
+                <ChevronDown
+                  className={`size-4 text-muted-foreground transition-transform ${bounceOpen ? 'rotate-180' : ''}`}
+                />
+              </CollapsibleTrigger>
+              <CollapsibleContent className="mt-1 flex flex-col gap-4 px-2 pb-3">
+                <p className="text-xs text-muted-foreground">
+                  Move fullscreen artwork with the track’s overall dynamics and rhythmic accents.
+                </p>
+
+                <label className="flex items-center gap-2 text-sm">
+                  <Checkbox
+                    checked={bounce.enabled}
+                    onCheckedChange={checked => setBounceSettings({ enabled: checked === true })}
+                  />
+                  <span>Enable artwork bounce</span>
+                </label>
+
+                <BounceSlider
+                  label="Strength"
+                  value={bounce.strength}
+                  disabled={!bounce.enabled}
+                  onChange={strength => setBounceSettings({ strength })}
+                />
+                <BounceSlider
+                  label="Dynamics ↔ Beats"
+                  value={bounce.balance}
+                  disabled={!bounce.enabled}
+                  onChange={balance => setBounceSettings({ balance })}
+                  left="Dynamics"
+                  right="Beats"
+                />
+                <BounceSlider
+                  label="Smoothness"
+                  value={bounce.smoothness}
+                  disabled={!bounce.enabled}
+                  onChange={smoothness => setBounceSettings({ smoothness })}
+                  left="Snappy"
+                  right="Fluid"
+                />
+
+                <div>
+                  <Button variant="outline" size="sm" onClick={resetBounceSettings}>
+                    Reset defaults
+                  </Button>
+                </div>
               </CollapsibleContent>
             </Collapsible>
 
@@ -279,5 +341,43 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
         </div>
       </DialogContent>
     </Dialog>
+  )
+}
+
+function BounceSlider(props: {
+  label: string
+  value: number
+  disabled: boolean
+  onChange: (value: number) => void
+  left?: string
+  right?: string
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      <div className="flex items-center justify-between gap-3 text-sm">
+        <Label>{props.label}</Label>
+        <span className="font-mono text-xs tabular-nums text-muted-foreground">
+          {props.value}
+          %
+        </span>
+      </div>
+      <Slider
+        min={0}
+        max={100}
+        step={1}
+        value={props.value}
+        disabled={props.disabled}
+        onValueChange={value => props.onChange(Number(value))}
+        aria-label={props.label}
+      />
+      {props.left && props.right
+        ? (
+            <div className="flex justify-between text-[10px] uppercase tracking-wide text-muted-foreground">
+              <span>{props.left}</span>
+              <span>{props.right}</span>
+            </div>
+          )
+        : null}
+    </div>
   )
 }

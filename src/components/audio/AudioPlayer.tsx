@@ -23,6 +23,7 @@ export function AudioPlayer() {
     handleSeekEnd,
     handleVolumeChange,
     handleMuteToggle,
+    getAudioElement,
   } = useAudioEngine()
 
   useEffect(hydratePreferences, [hydratePreferences])
@@ -52,6 +53,7 @@ export function AudioPlayer() {
               onSeek={handleSeek}
               onSeekStart={handleSeekStart}
               onSeekEnd={handleSeekEnd}
+              getAudioElement={getAudioElement}
             />
           )
         : null}
