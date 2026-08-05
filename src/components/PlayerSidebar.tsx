@@ -2,6 +2,7 @@ import { Plus } from 'lucide-react'
 import {
   DndContext,
   closestCenter,
+  type Modifier,
 } from '@dnd-kit/core'
 import {
   SortableContext,
@@ -29,6 +30,11 @@ import {
 import type { PlaylistRecipeSource } from '@/types'
 import { canExportPlaylist } from '@/components/playlist/track-actions'
 import { SidebarProfile } from './SidebarProfile'
+
+const restrictToVerticalAxis: Modifier = ({ transform }) => ({
+  ...transform,
+  x: 0,
+})
 
 export function PlayerSidebar(props: { onLogout: () => void }) {
   const {
@@ -102,13 +108,14 @@ export function PlayerSidebar(props: { onLogout: () => void }) {
       <DndContext
         sensors={sensors}
         collisionDetection={closestCenter}
+        modifiers={[restrictToVerticalAxis]}
         onDragEnd={handleDragEnd}
       >
         <SortableContext
           items={filteredPlaylists.map(item => item.id)}
           strategy={verticalListSortingStrategy}
         >
-          <div className="flex min-h-0 grow flex-col gap-0.5 overflow-y-auto px-2 pb-2">
+          <div className="flex min-h-0 grow flex-col gap-0.5 overflow-x-hidden overflow-y-auto px-2 pb-2">
             {filteredPlaylists.map((item) => {
               const customPlaylist = item.playlist
               const hideId = canHidePlaylist(item.id) ? item.id : null
