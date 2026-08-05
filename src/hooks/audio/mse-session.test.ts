@@ -11,6 +11,7 @@ import {
   attachMseSession,
   isMseTypeSupported,
   resolveMseMimeType,
+  type MseFailure,
   type MseSession,
 } from './mse-session'
 
@@ -174,7 +175,7 @@ describe('attachMseSession', () => {
     holdAppends?: boolean
     onAppendedOffset?: (offset: number) => void
     onBufferedChanged?: () => void
-    onError?: () => void
+    onError?: (failure: MseFailure) => void
   }): Promise<{ session: MseSession, mediaSource: FakeMediaSource }> {
     const mimeType = options?.mimeType ?? 'audio/mpeg'
     const total = options?.total ?? TOTAL
@@ -372,6 +373,10 @@ describe('attachMseSession', () => {
 
     await waitFor(() => onError.mock.calls.length >= 1)
     expect(active.getAppendedOffset()).toBe(0)
+    expect(onError).toHaveBeenCalledWith(expect.objectContaining({
+      stage: 'append-pump',
+      cause: expect.anything(),
+    }))
   })
 
   it('snaps and lands onto SourceBuffer ranges (not element buffered)', async () => {

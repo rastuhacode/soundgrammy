@@ -37,6 +37,7 @@ export interface UseAudioSourceOptions {
   resumeAfterSeekRef: RefObject<boolean>
   loadGenerationRef: RefObject<number>
   loadedTrackIdRef: RefObject<number | null>
+  sourceErrorRef: RefObject<boolean>
   resetSeekRefs: () => void
   setCurrentTime: Dispatch<SetStateAction<number>>
   setDuration: Dispatch<SetStateAction<number>>
@@ -54,6 +55,7 @@ export function useAudioSource(options: UseAudioSourceOptions) {
     resumeAfterSeekRef,
     loadGenerationRef,
     loadedTrackIdRef,
+    sourceErrorRef,
     resetSeekRefs,
     setCurrentTime,
     setDuration,
@@ -67,6 +69,7 @@ export function useAudioSource(options: UseAudioSourceOptions) {
   const [showInitialLoading, setShowInitialLoading] = useState(false)
   /** True once we know this track uses MSE — drives honest buffer chrome. */
   const [streamingMse, setStreamingMse] = useState(false)
+  const [sourceLoadEpoch, setSourceLoadEpoch] = useState(0)
   const mseSessionRef = useRef<MseSession | null>(null)
 
   // Resolve a complete local file or attach an MSE-backed stream.
@@ -78,6 +81,7 @@ export function useAudioSource(options: UseAudioSourceOptions) {
     let mseSession: MseSession | null = null
 
     loadedTrackIdRef.current = null
+    sourceErrorRef.current = false
     mseSessionRef.current = null
     // Reset MSE chrome flag synchronously on track change / remount.
     // eslint-disable-next-line react-hooks/set-state-in-effect -- Must clear before initializeSource races the microtask queue.
@@ -284,11 +288,24 @@ export function useAudioSource(options: UseAudioSourceOptions) {
               setBufferRevision(value => value + 1)
             }
           },
-          onError: () => {
+          onError: (failure) => {
             if (
               !disposed
               && loadGenerationRef.current === generation
             ) {
+              sourceErrorRef.current = true
+              console.error('[audio] MSE session failed', {
+                trackId: track.id,
+                generation,
+                failure,
+                mediaSource: {
+                  currentSrc: audio.currentSrc,
+                  networkState: audio.networkState,
+                  readyState: audio.readyState,
+                  errorCode: audio.error?.code ?? null,
+                  errorMessage: audio.error?.message ?? null,
+                },
+              })
               setShowInitialLoading(false)
               setPlaying(false)
             }
@@ -297,8 +314,14 @@ export function useAudioSource(options: UseAudioSourceOptions) {
         mseSessionRef.current = mseSession
         finishAttach(false)
       }
-      catch {
+      catch (error) {
         if (!disposed && loadGenerationRef.current === generation) {
+          sourceErrorRef.current = true
+          console.error('[audio] source initialization failed', {
+            trackId: track.id,
+            generation,
+            error,
+          })
           setShowInitialLoading(false)
           setPlaying(false)
         }
@@ -315,7 +338,11 @@ export function useAudioSource(options: UseAudioSourceOptions) {
       setStreamingMse(false)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [track?.id])
+  }, [sourceLoadEpoch, track?.id])
+
+  const retrySource = () => {
+    setSourceLoadEpoch(epoch => epoch + 1)
+  }
 
   const seekMseToTime = (time: number) => {
     const session = mseSessionRef.current
@@ -345,6 +372,7 @@ export function useAudioSource(options: UseAudioSourceOptions) {
     mseSnapToBufferedTime,
     mseLandToBufferedTime,
     isMseActive,
+    retrySource,
     streamingMse,
     showInitialLoading,
     setShowInitialLoading,

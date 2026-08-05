@@ -1,0 +1,76 @@
+name: Release with DevTools
+
+on:
+  # Diagnostic artifacts are intentionally manual: they expose the WebView
+  # inspector and must not be mixed with normal public release packages.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: ${{ matrix.artifact }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - platform: windows-latest
+            artifact: soundgrammy-windows-x64-release-devtools
+            args: ""
+            targets: ""
+            bundles: |
+              src-tauri/target/release/bundle/msi/*.msi
+              src-tauri/target/release/bundle/nsis/*.exe
+          - platform: macos-latest
+            artifact: soundgrammy-macos-arm64-release-devtools
+            args: "--target aarch64-apple-darwin"
+            targets: "aarch64-apple-darwin"
+            bundles: |
+              src-tauri/target/aarch64-apple-darwin/release/bundle/dmg/*.dmg
+          - platform: macos-latest
+            artifact: soundgrammy-macos-x64-release-devtools
+            args: "--target x86_64-apple-darwin"
+            targets: "x86_64-apple-darwin"
+            bundles: |
+              src-tauri/target/x86_64-apple-darwin/release/bundle/dmg/*.dmg
+
+    runs-on: ${{ matrix.platform }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.14
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.targets }}
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+          key: ${{ matrix.artifact }}
+
+      - name: Install frontend dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build release app with WebView DevTools
+        env:
+          TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
+          TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
+        run: bun run tauri build --features release-devtools ${{ matrix.args }}
+
+      - name: Upload diagnostic installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.bundles }}
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14

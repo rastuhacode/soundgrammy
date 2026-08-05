@@ -83,7 +83,12 @@ function preferredBufferMode(mimeType: string): 'sequence' | 'segments' {
 export interface MseSessionCallbacks {
   onAppendedOffset?: (offset: number) => void
   onBufferedChanged?: () => void
-  onError?: () => void
+  onError?: (failure: MseFailure) => void
+}
+
+export interface MseFailure {
+  stage: string
+  cause?: unknown
 }
 
 export interface AttachMseSessionOptions extends MseSessionCallbacks {
@@ -306,9 +311,9 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
       }
       return true
     }
-    catch {
+    catch (error) {
       mpegStartResolved = true
-      fail()
+      fail('resolve-mpeg-payload', error)
       return false
     }
   }
@@ -318,9 +323,9 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
     onBufferedChanged?.()
   }
 
-  const fail = () => {
+  const fail = (stage: string, cause?: unknown) => {
     if (disposed) return
-    onError?.()
+    onError?.({ stage, cause })
   }
 
   const tryEndOfStream = () => {
@@ -390,7 +395,7 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
       }
     }
     buffer.addEventListener('updateend', onSourceBufferUpdateEnd)
-    buffer.addEventListener('error', fail)
+    buffer.addEventListener('error', event => fail('source-buffer', event))
   }
 
   /** Clears buffered media. Returns false if remove failed — callers must abort the seek. */
@@ -536,7 +541,7 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
     // Stagnant or incomplete growth: do not snap a far target onto the buffer tip
     // and pretend the seek landed.
     if (snapTimeIntoBuffer(buffer, clampedTime) === null) {
-      fail()
+      fail('grow-buffer-stalled')
       return
     }
     setAudioTimeInBuffer(buffer, clampedTime)
@@ -574,15 +579,15 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
     }
     const ok = await opened
     if (!ok || disposed || generation !== seekGeneration) {
-      fail()
+      fail('reattach-media-source')
       return
     }
     try {
       sourceBuffer = mediaSource.addSourceBuffer(mimeType)
       configureSourceBuffer(sourceBuffer)
     }
-    catch {
-      fail()
+    catch (error) {
+      fail('add-source-buffer-after-reattach', error)
       return
     }
     await growUntilTime(sourceBuffer, clampedTime, generation)
@@ -652,7 +657,7 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
 
     if (disposed || generation !== seekGeneration) return
     if (snapTimeIntoBuffer(buffer, clampedTime) === null) {
-      fail()
+      fail('rebuild-prefix-stalled')
       return
     }
     setAudioTimeInBuffer(buffer, clampedTime)
@@ -852,8 +857,8 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
       nextAppendOffset = nextOffset
       emitAppended()
     }
-    catch {
-      fail()
+    catch (error) {
+      fail('append-pump', error)
       reschedule = false
     }
     finally {
@@ -924,7 +929,7 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
         const cleared = await clearBuffered(buffer)
         if (disposed || generation !== seekGeneration) return
         if (!cleared) {
-          fail()
+          fail('clear-buffer-for-prefix-seek')
           return
         }
         await rebuildFromPrefix(buffer, clampedTime, generation)
@@ -935,7 +940,7 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
       const cleared = await clearBuffered(buffer)
       if (disposed || generation !== seekGeneration) return
       if (!cleared) {
-        fail()
+        fail('clear-buffer-for-island-seek')
         return
       }
       const islandOk = await appendIsland(buffer, clampedTime, targetByte, generation)
@@ -956,12 +961,12 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
           && sourceBuffer
           && snapTimeIntoBuffer(sourceBuffer, clampedTime) === null
         ) {
-          fail()
+          fail('seek-buffer-stalled')
         }
       }
     }
-    catch {
-      if (generation === seekGeneration) fail()
+    catch (error) {
+      if (generation === seekGeneration) fail('seek', error)
     }
     finally {
       if (generation === seekGeneration) {
@@ -978,13 +983,13 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
       configureSourceBuffer(sourceBuffer)
       schedulePump()
     }
-    catch {
-      fail()
+    catch (error) {
+      fail('add-source-buffer', error)
     }
   }
 
   mediaSource.addEventListener('sourceopen', onSourceOpen, { once: true })
-  mediaSource.addEventListener('error', fail)
+  mediaSource.addEventListener('error', event => fail('media-source', event))
   audio.addEventListener('timeupdate', onAudioTimeUpdate)
   audio.src = objectUrl
 

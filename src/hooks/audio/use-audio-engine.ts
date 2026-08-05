@@ -32,6 +32,8 @@ export function useAudioEngine() {
   const isPlayingRef = useRef(isPlaying)
   const loadGenerationRef = useRef(0)
   const loadedTrackIdRef = useRef<number | null>(null)
+  /** Lets Play recover a source pipeline that failed without changing track. */
+  const sourceErrorRef = useRef(false)
   const pendingSeekRef = useRef<number | null>(null)
   const resumeAfterSeekRef = useRef(false)
   const isSeekingRef = useRef(false)
@@ -55,8 +57,19 @@ export function useAudioEngine() {
           audio.pause()
         }
       })
-      .catch(() => {
+      .catch((error) => {
         if (loadGenerationRef.current === generation) {
+          sourceErrorRef.current = true
+          console.error('[audio] play() failed', {
+            trackId: loadedTrackIdRef.current,
+            generation,
+            error,
+            currentSrc: audio.currentSrc,
+            networkState: audio.networkState,
+            readyState: audio.readyState,
+            errorCode: audio.error?.code ?? null,
+            errorMessage: audio.error?.message ?? null,
+          })
           setPlaying(false)
         }
       })
@@ -77,6 +90,7 @@ export function useAudioEngine() {
     mseLandToBufferedTime,
     isMseActive,
     streamingMse,
+    retrySource,
     showInitialLoading,
     setShowInitialLoading,
   } = useAudioSource({
@@ -89,6 +103,7 @@ export function useAudioEngine() {
     resumeAfterSeekRef,
     loadGenerationRef,
     loadedTrackIdRef,
+    sourceErrorRef,
     resetSeekRefs,
     setCurrentTime,
     setDuration,
@@ -225,8 +240,17 @@ export function useAudioEngine() {
 
   useEffect(() => {
     const audio = audioRef.current
-    if (!audio || !track || !audio.src) return
+    if (!audio || !track) return
 
+    // Source setup is keyed by track id. After a failed setup, a normal Play
+    // toggle must explicitly rebuild it; otherwise only changing tracks can
+    // escape the paused/empty-buffer state.
+    if (isPlaying && sourceErrorRef.current) {
+      retrySource()
+      return
+    }
+
+    if (!audio.src) return
     const generation = loadGenerationRef.current
 
     if (isPlaying && loadedTrackIdRef.current === track.id) {
@@ -284,6 +308,17 @@ export function useAudioEngine() {
 
   const onMediaError = () => {
     if (loadedTrackIdRef.current !== track?.id) return
+    const audio = audioRef.current
+    sourceErrorRef.current = true
+    console.error('[audio] media element failed', {
+      trackId: track?.id ?? null,
+      generation: loadGenerationRef.current,
+      currentSrc: audio?.currentSrc ?? '',
+      networkState: audio?.networkState ?? null,
+      readyState: audio?.readyState ?? null,
+      errorCode: audio?.error?.code ?? null,
+      errorMessage: audio?.error?.message ?? null,
+    })
     setShowInitialLoading(false)
     pendingSeekRef.current = null
     resumeAfterSeekRef.current = false
