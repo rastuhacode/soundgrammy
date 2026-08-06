@@ -1,6 +1,6 @@
 [package]
 name = "soundgrammy"
-version = "0.1.1"
+version = "0.2.0"
 description = "SoundGrammy — a native desktop player for your Telegram profile music"
 license = "GPL-3.0-only"
 authors = ["SoundGrammy"]
