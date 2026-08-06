@@ -2,6 +2,7 @@
   "name": "soundgrammy",
   "version": "0.1.1",
   "author": "Rasten Remizov",
+  "license": "GPL-3.0-only",
   "type": "module",
   "private": true,
   "scripts": {
