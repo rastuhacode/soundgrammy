@@ -36,6 +36,8 @@ Use a `Release-As: 1.0.0` footer on a commit only when an explicit version overr
 
 If an artifact job fails, first rerun the failed jobs in that GitHub Actions run. To rebuild an existing draft later, manually run **Build release** and enter its tag, such as `v0.2.0`. The workflow checks out the tag, rejects mismatched application versions, and uploads to the matching draft release.
 
+For a historical release whose only mismatch is SoundGrammy's own version in `Cargo.lock`, enable **repair_cargo_lock** on the manual run. This runs a targeted `cargo update --package soundgrammy` in the build workspace before validation; it does not move the tag or modify the repository. Normal automated releases leave this disabled so a bad Release Please update still fails visibly.
+
 Do not create version tags by hand during the normal workflow. A manually created tag can get ahead of the source manifests and confuse the next release calculation.
 
 ## Local version check
@@ -52,4 +54,4 @@ For an expected tag:
 EXPECTED_VERSION=v0.2.0 bun run check:versions
 ```
 
-The current baseline is `0.1.1`, matching the newest existing release tag. The next Release Please pull request will calculate its bump from Conventional Commits after that tag.
+The manifest in `.release-please-manifest.json` records the current release baseline. The next Release Please pull request calculates its bump from Conventional Commits after the corresponding tag.

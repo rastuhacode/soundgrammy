@@ -11,6 +11,11 @@ on:
         description: Exact release commit; defaults to the tag for manual runs
         required: false
         type: string
+      repair_cargo_lock:
+        description: Repair only the app version stored in Cargo.lock
+        required: false
+        default: false
+        type: boolean
     secrets:
       TELEGRAM_API_ID:
         required: true
@@ -26,6 +31,11 @@ on:
         description: Exact release commit; leave empty to build the tag
         required: false
         type: string
+      repair_cargo_lock:
+        description: Repair a stale SoundGrammy version in Cargo.lock before validation
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: write
@@ -69,6 +79,10 @@ jobs:
         uses: swatinem/rust-cache@v2
         with:
           workspaces: "./src-tauri -> target"
+
+      - name: Repair Cargo lockfile version
+        if: ${{ inputs.repair_cargo_lock }}
+        run: cargo update --manifest-path src-tauri/Cargo.toml --package soundgrammy
 
       - name: Install frontend dependencies
         run: bun install --frozen-lockfile

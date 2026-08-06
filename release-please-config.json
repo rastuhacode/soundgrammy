@@ -22,7 +22,7 @@
         {
           "type": "toml",
           "path": "src-tauri/Cargo.lock",
-          "jsonpath": "$.package[?(@.name=='soundgrammy')].version"
+          "jsonpath": "$.package[?(@.name.value=='soundgrammy')].version"
         }
       ]
     }
