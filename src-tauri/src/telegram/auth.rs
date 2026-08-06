@@ -330,8 +330,12 @@ mod tests {
 
     #[test]
     fn detects_revoked_auth_markers() {
-        assert!(is_auth_revoked_message("telegram error: AUTH_KEY_UNREGISTERED"));
-        assert!(is_auth_revoked_message("RpcError { name: SESSION_REVOKED }"));
+        assert!(is_auth_revoked_message(
+            "telegram error: AUTH_KEY_UNREGISTERED"
+        ));
+        assert!(is_auth_revoked_message(
+            "RpcError { name: SESSION_REVOKED }"
+        ));
         assert!(is_auth_revoked_message("user_deactivated_ban"));
         assert!(!is_auth_revoked_message("telegram unreachable"));
         assert!(!is_auth_revoked_message("FLOOD_WAIT_30"));

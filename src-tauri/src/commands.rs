@@ -198,9 +198,7 @@ pub async fn read_stream_range(
         if start > last {
             return Err(AppError::msg("requested audio range is invalid"));
         }
-        let bytes = stream
-            .read_range(start, capped_end.min(last))
-            .await?;
+        let bytes = stream.read_range(start, capped_end.min(last)).await?;
         return Ok(tauri::ipc::Response::new(bytes));
     }
 
@@ -225,9 +223,7 @@ pub async fn read_stream_range(
     if start > last {
         return Err(AppError::msg("requested audio range is invalid"));
     }
-    let bytes = stream
-        .read_range(start, capped_end.min(last))
-        .await?;
+    let bytes = stream.read_range(start, capped_end.min(last)).await?;
     Ok(tauri::ipc::Response::new(bytes))
 }
 
@@ -330,9 +326,7 @@ pub async fn get_cache_status(state: State<'_, AppState>) -> AppResult<Vec<i64>>
 }
 
 #[tauri::command]
-pub async fn get_cache_settings(
-    state: State<'_, AppState>,
-) -> AppResult<cache::CacheSettings> {
+pub async fn get_cache_settings(state: State<'_, AppState>) -> AppResult<cache::CacheSettings> {
     cache::get_cache_settings(&state)
 }
 
@@ -652,10 +646,7 @@ pub async fn reorder_playlist_tracks(
 }
 
 #[tauri::command]
-pub async fn toggle_like(
-    state: State<'_, AppState>,
-    track_id: i64,
-) -> AppResult<LikedPlaylist> {
+pub async fn toggle_like(state: State<'_, AppState>, track_id: i64) -> AppResult<LikedPlaylist> {
     let uid = require_uid(&state)?;
     state.db.toggle_like(track_id, uid)
 }

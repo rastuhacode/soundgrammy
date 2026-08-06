@@ -1,7 +1,7 @@
 //! SoundGrammy desktop backend: Tauri builder, state, and command registration.
 
-mod cache;
 mod bounce_analysis;
+mod cache;
 mod commands;
 mod config;
 mod db;
@@ -45,31 +45,28 @@ pub fn run() {
             let proxy = proxy_settings::load(&db)?;
             let want_proxy = proxy.for_connect();
 
-            let (client, proxy_active, proxy_last_error) =
-                tauri::async_runtime::block_on(async {
-                    match telegram::client::build(&config, &data_dir, want_proxy).await {
-                        Ok((client, shutdown)) => (
-                            Some((client, shutdown)),
-                            want_proxy.is_some(),
-                            None,
-                        ),
-                        Err(err) if want_proxy.is_some() => {
-                            match telegram::client::build(&config, &data_dir, None).await {
-                                Ok((client, shutdown)) => {
-                                    (Some((client, shutdown)), false, Some(err.to_string()))
-                                }
-                                Err(direct_err) => (
-                                    None,
-                                    false,
-                                    Some(format!(
-                                        "proxy failed ({err}); direct also failed ({direct_err})"
-                                    )),
-                                ),
-                            }
-                        }
-                        Err(err) => (None, false, Some(err.to_string())),
+            let (client, proxy_active, proxy_last_error) = tauri::async_runtime::block_on(async {
+                match telegram::client::build(&config, &data_dir, want_proxy).await {
+                    Ok((client, shutdown)) => {
+                        (Some((client, shutdown)), want_proxy.is_some(), None)
                     }
-                });
+                    Err(err) if want_proxy.is_some() => {
+                        match telegram::client::build(&config, &data_dir, None).await {
+                            Ok((client, shutdown)) => {
+                                (Some((client, shutdown)), false, Some(err.to_string()))
+                            }
+                            Err(direct_err) => (
+                                None,
+                                false,
+                                Some(format!(
+                                    "proxy failed ({err}); direct also failed ({direct_err})"
+                                )),
+                            ),
+                        }
+                    }
+                    Err(err) => (None, false, Some(err.to_string())),
+                }
+            });
 
             app.manage(AppState::new(
                 config,

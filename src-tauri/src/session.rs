@@ -186,10 +186,8 @@ mod tests {
 
     #[test]
     fn exists_requires_non_trivial_session_file() {
-        let dir = std::env::temp_dir().join(format!(
-            "soundgrammy-session-exists-{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("soundgrammy-session-exists-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
 

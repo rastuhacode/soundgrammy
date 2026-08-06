@@ -18,9 +18,7 @@ fn main() {
                 println!("cargo:rustc-env={key}={value}");
             }
             _ => {
-                panic!(
-                    "{key} is not set. Add src-tauri/.env.local or export it (CI secrets)."
-                );
+                panic!("{key} is not set. Add src-tauri/.env.local or export it (CI secrets).");
             }
         }
     }

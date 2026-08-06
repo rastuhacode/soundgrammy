@@ -46,11 +46,8 @@ pub async fn build(
     }
 
     let connect = builder.connect();
-    let (client, shutdown) = match tokio::time::timeout(
-        std::time::Duration::from_secs(20),
-        connect,
-    )
-    .await
+    let (client, shutdown) = match tokio::time::timeout(std::time::Duration::from_secs(20), connect)
+        .await
     {
         Ok(Ok(pair)) => pair,
         Ok(Err(e)) => {

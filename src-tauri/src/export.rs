@@ -187,15 +187,11 @@ async fn copy_track_to_dir(
 }
 
 /// Export a single track into `Downloads/SoundGrammy/`.
-pub async fn export_track(
-    state: &AppState,
-    app: &AppHandle,
-    track_id: i64,
-) -> AppResult<String> {
+pub async fn export_track(state: &AppState, app: &AppHandle, track_id: i64) -> AppResult<String> {
     let root = soundgrammy_downloads_root(app)?;
-    tokio::fs::create_dir_all(&root).await.map_err(|e| {
-        AppError::msg(format!("Cannot create Downloads/SoundGrammy folder: {e}"))
-    })?;
+    tokio::fs::create_dir_all(&root)
+        .await
+        .map_err(|e| AppError::msg(format!("Cannot create Downloads/SoundGrammy folder: {e}")))?;
     let path = copy_track_to_dir(state, app, track_id, &root).await?;
     Ok(path.to_string_lossy().into_owned())
 }
@@ -211,9 +207,9 @@ pub async fn export_tracks(
         return Err(AppError::msg("No tracks to download"));
     }
     let root = soundgrammy_downloads_root(app)?;
-    tokio::fs::create_dir_all(&root).await.map_err(|e| {
-        AppError::msg(format!("Cannot create Downloads/SoundGrammy folder: {e}"))
-    })?;
+    tokio::fs::create_dir_all(&root)
+        .await
+        .map_err(|e| AppError::msg(format!("Cannot create Downloads/SoundGrammy folder: {e}")))?;
     let folder_name = format!("Export {}", local_date_ymd());
     let dest_dir = unique_dir(&root, &folder_name);
     tokio::fs::create_dir_all(&dest_dir).await.map_err(|e| {
@@ -289,9 +285,9 @@ pub async fn download_playlist(
     }
 
     let root = soundgrammy_downloads_root(app)?;
-    tokio::fs::create_dir_all(&root).await.map_err(|e| {
-        AppError::msg(format!("Cannot create Downloads/SoundGrammy folder: {e}"))
-    })?;
+    tokio::fs::create_dir_all(&root)
+        .await
+        .map_err(|e| AppError::msg(format!("Cannot create Downloads/SoundGrammy folder: {e}")))?;
 
     let folder_basename = playlist_folder_basename(&name);
     let dest_dir = unique_dir(&root, &folder_basename);
@@ -386,11 +382,7 @@ mod tests {
     use crate::db::Track;
     use std::fs;
 
-    fn sample_track(
-        id: i64,
-        title: Option<&str>,
-        performer: Option<&str>,
-    ) -> Track {
+    fn sample_track(id: i64, title: Option<&str>, performer: Option<&str>) -> Track {
         Track {
             id,
             tg_user_id: 1,
@@ -409,7 +401,10 @@ mod tests {
 
     #[test]
     fn sanitize_replaces_forbidden_filename_chars() {
-        assert_eq!(sanitize_filename_part("a/b:c*d?e\"f<g>h|i"), "a_b_c_d_e_f_g_h_i");
+        assert_eq!(
+            sanitize_filename_part("a/b:c*d?e\"f<g>h|i"),
+            "a_b_c_d_e_f_g_h_i"
+        );
         assert_eq!(sanitize_filename_part("  spaced  "), "spaced");
         assert_eq!(sanitize_filename_part("...dots..."), "dots");
         assert_eq!(sanitize_filename_part("   "), "");
@@ -435,10 +430,8 @@ mod tests {
 
     #[test]
     fn unique_path_appends_numeric_suffix_on_collision() {
-        let dir = std::env::temp_dir().join(format!(
-            "soundgrammy-export-path-{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("soundgrammy-export-path-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
 
@@ -458,20 +451,15 @@ mod tests {
 
     #[test]
     fn unique_dir_appends_numeric_suffix_on_collision() {
-        let parent = std::env::temp_dir().join(format!(
-            "soundgrammy-export-dir-{}",
-            std::process::id()
-        ));
+        let parent =
+            std::env::temp_dir().join(format!("soundgrammy-export-dir-{}", std::process::id()));
         let _ = fs::remove_dir_all(&parent);
         fs::create_dir_all(&parent).unwrap();
 
         let first = unique_dir(&parent, "Export 2026-07-22");
         fs::create_dir_all(&first).unwrap();
         let second = unique_dir(&parent, "Export 2026-07-22");
-        assert_eq!(
-            second.file_name().unwrap(),
-            "Export 2026-07-22 (2)"
-        );
+        assert_eq!(second.file_name().unwrap(), "Export 2026-07-22 (2)");
 
         let _ = fs::remove_dir_all(&parent);
     }
@@ -479,10 +467,7 @@ mod tests {
     #[test]
     fn local_date_ymd_is_iso_shaped() {
         let value = local_date_ymd();
-        assert!(
-            regex_is_ymd(&value),
-            "expected YYYY-MM-DD, got {value}"
-        );
+        assert!(regex_is_ymd(&value), "expected YYYY-MM-DD, got {value}");
     }
 
     fn regex_is_ymd(value: &str) -> bool {

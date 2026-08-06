@@ -566,10 +566,7 @@ impl StreamingManager {
     pub async fn protected_audio_paths(&self) -> Vec<PathBuf> {
         let mut streams = self.streams.lock().await;
         streams.retain(|_, stream| stream.strong_count() > 0);
-        let active: Vec<Arc<TrackStream>> = streams
-            .values()
-            .filter_map(Weak::upgrade)
-            .collect();
+        let active: Vec<Arc<TrackStream>> = streams.values().filter_map(Weak::upgrade).collect();
         drop(streams);
         let mut out = Vec::new();
         for stream in active {
@@ -857,10 +854,8 @@ mod tests {
 
     #[test]
     fn resolve_read_path_prefers_final_then_destination_then_partial() {
-        let dir = std::env::temp_dir().join(format!(
-            "soundgrammy-stream-path-{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("soundgrammy-stream-path-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let destination = dir.join("track.mp3");
@@ -889,10 +884,8 @@ mod tests {
 
     #[tokio::test]
     async fn read_file_range_succeeds_after_partial_renamed_to_destination() {
-        let dir = std::env::temp_dir().join(format!(
-            "soundgrammy-stream-rename-{}",
-            std::process::id()
-        ));
+        let dir =
+            std::env::temp_dir().join(format!("soundgrammy-stream-rename-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let destination = dir.join("track.mp3");

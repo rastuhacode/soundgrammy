@@ -221,12 +221,14 @@ async fn get_cdn_file_bytes(
         ))
     })?;
 
-    let key: [u8; 32] = redir.encryption_key.as_slice().try_into().map_err(|_| {
-        InvocationError::Deserialize("CDN encryption_key must be 32 bytes".into())
-    })?;
-    let iv: [u8; 16] = redir.encryption_iv.as_slice().try_into().map_err(|_| {
-        InvocationError::Deserialize("CDN encryption_iv must be 16 bytes".into())
-    })?;
+    let key: [u8; 32] =
+        redir.encryption_key.as_slice().try_into().map_err(|_| {
+            InvocationError::Deserialize("CDN encryption_key must be 32 bytes".into())
+        })?;
+    let iv: [u8; 16] =
+        redir.encryption_iv.as_slice().try_into().map_err(|_| {
+            InvocationError::Deserialize("CDN encryption_iv must be 16 bytes".into())
+        })?;
 
     // CDN part size is fixed at 128 KiB; clamp the request to that.
     let cdn_limit = if limit <= 0 || limit > CDN_CHUNK_SIZE {

@@ -88,8 +88,8 @@ impl ProxySettings {
 /// Preserves the original secret string from the query (not re-encoded bytes).
 pub fn from_proxy_link(url: &str) -> AppResult<ProxySettings> {
     let trimmed = url.trim();
-    let cfg = parse_proxy_link(trimmed)
-        .ok_or_else(|| AppError::msg("invalid MTProto proxy link"))?;
+    let cfg =
+        parse_proxy_link(trimmed).ok_or_else(|| AppError::msg("invalid MTProto proxy link"))?;
 
     let secret = extract_secret_param(trimmed).unwrap_or_else(|| {
         // Fallback: hex-encode parsed bytes if query parsing failed oddly.
@@ -112,9 +112,7 @@ fn extract_secret_param(url: &str) -> Option<String> {
         .strip_prefix("https://t.me/proxy?")
         .or_else(|| url.strip_prefix("tg://proxy?"))?;
     for kv in rest.split('&') {
-        let mut it = kv.splitn(2, '=');
-        let key = it.next()?;
-        let value = it.next()?;
+        let (key, value) = kv.split_once('=')?;
         if key == "secret" {
             return Some(value.to_string());
         }
@@ -129,16 +127,12 @@ pub fn load(db: &Db) -> AppResult<ProxySettings> {
             .map(str::trim),
         Some("1") | Some("true") | Some("TRUE") | Some("yes")
     );
-    let server = db
-        .get_setting(SETTING_PROXY_SERVER)?
-        .unwrap_or_default();
+    let server = db.get_setting(SETTING_PROXY_SERVER)?.unwrap_or_default();
     let port = db
         .get_setting(SETTING_PROXY_PORT)?
         .and_then(|p| p.parse::<u16>().ok())
         .unwrap_or(1443);
-    let secret = db
-        .get_setting(SETTING_PROXY_SECRET)?
-        .unwrap_or_default();
+    let secret = db.get_setting(SETTING_PROXY_SECRET)?.unwrap_or_default();
 
     Ok(ProxySettings {
         enabled,

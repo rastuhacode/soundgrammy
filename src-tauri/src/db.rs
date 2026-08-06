@@ -446,12 +446,7 @@ impl Db {
     }
 
     /// Corrects a track MIME after on-disk content sniffing disagrees with Telegram.
-    pub fn update_track_mime(
-        &self,
-        id: i64,
-        tg_user_id: i64,
-        mime_type: &str,
-    ) -> AppResult<()> {
+    pub fn update_track_mime(&self, id: i64, tg_user_id: i64, mime_type: &str) -> AppResult<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "UPDATE tracks SET mime_type = ?1 WHERE id = ?2 AND tg_user_id = ?3",
@@ -471,8 +466,7 @@ impl Db {
                 params![tg_user_id],
             )?
         } else {
-            let placeholders = std::iter::repeat("?")
-                .take(keep.len())
+            let placeholders = std::iter::repeat_n("?", keep.len())
                 .collect::<Vec<_>>()
                 .join(", ");
             let sql = format!(
@@ -861,13 +855,12 @@ impl Db {
         }
 
         let tx = conn.transaction()?;
-        let mut position = Self::next_position(&tx, playlist_id)?;
-        for track_id in track_ids {
+        let positions = Self::next_position(&tx, playlist_id)?..;
+        for (position, track_id) in positions.zip(track_ids.iter()) {
             tx.execute(
                 "INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (?1, ?2, ?3)",
                 params![playlist_id, track_id, position],
             )?;
-            position += 1;
         }
         let updated_at = Self::touch_playlist_updated_at(&tx, playlist_id)?;
         tx.commit()?;
@@ -1107,7 +1100,7 @@ impl Db {
              FROM track_listen_stats ORDER BY track_id",
         )?;
         let rows = stmt
-            .query_map([], |row| Self::map_stats_row(row))?
+            .query_map([], Self::map_stats_row)?
             .collect::<Result<Vec<_>, _>>()?;
         Ok(rows
             .into_iter()
@@ -1287,10 +1280,7 @@ impl Db {
         .map_err(Into::into)
     }
 
-    pub fn save_track_bounce_profile(
-        &self,
-        profile: &TrackBounceProfileRecord,
-    ) -> AppResult<()> {
+    pub fn save_track_bounce_profile(&self, profile: &TrackBounceProfileRecord) -> AppResult<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "INSERT INTO track_bounce_profiles
@@ -1482,12 +1472,7 @@ mod tests {
         let track_id = 42;
 
         db.record_attempt_start(track_id)?;
-        let end = db.record_attempt_end(
-            track_id,
-            120_000,
-            Some(180_000),
-            EndReason::Completed,
-        )?;
+        let end = db.record_attempt_end(track_id, 120_000, Some(180_000), EndReason::Completed)?;
         assert!(end.qualified);
         assert!(!end.early_skip);
         assert_eq!(end.stats.starts, 1);
@@ -1496,12 +1481,7 @@ mod tests {
         assert!(end.stats.likeness > 0.0);
 
         db.record_attempt_start(track_id)?;
-        let skip = db.record_attempt_end(
-            track_id,
-            5_000,
-            Some(180_000),
-            EndReason::Skipped,
-        )?;
+        let skip = db.record_attempt_end(track_id, 5_000, Some(180_000), EndReason::Skipped)?;
         assert!(!skip.qualified);
         assert!(skip.early_skip);
         assert_eq!(skip.stats.starts, 2);
@@ -1509,7 +1489,9 @@ mod tests {
 
         let before = db.track_listen_stats(track_id)?.expect("stats row");
         db.rebuild_listen_stats()?;
-        let after = db.track_listen_stats(track_id)?.expect("stats after rebuild");
+        let after = db
+            .track_listen_stats(track_id)?
+            .expect("stats after rebuild");
 
         assert_eq!(before.starts, after.starts);
         assert_eq!(before.qualified_plays, after.qualified_plays);

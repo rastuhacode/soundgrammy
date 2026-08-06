@@ -228,21 +228,22 @@ pub fn export_playlist_json(
     let dest = Path::new(&path);
     if let Some(parent) = dest.parent() {
         if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent).map_err(|e| {
-                AppError::msg(format!("Cannot create export folder: {e}"))
-            })?;
+            std::fs::create_dir_all(parent)
+                .map_err(|e| AppError::msg(format!("Cannot create export folder: {e}")))?;
         }
     }
     std::fs::write(dest, json.as_bytes()).map_err(|e| {
-        AppError::msg(format!("Cannot write playlist file ({}): {e}", dest.display()))
+        AppError::msg(format!(
+            "Cannot write playlist file ({}): {e}",
+            dest.display()
+        ))
     })?;
     Ok(())
 }
 
 fn parse_and_validate_recipe(raw: &str, uid: i64) -> AppResult<PlaylistRecipeDocument> {
-    let recipe: PlaylistRecipeDocument = serde_json::from_str(raw).map_err(|e| {
-        AppError::msg(format!("Invalid playlist file: {e}"))
-    })?;
+    let recipe: PlaylistRecipeDocument = serde_json::from_str(raw)
+        .map_err(|e| AppError::msg(format!("Invalid playlist file: {e}")))?;
     if recipe.format != RECIPE_FORMAT {
         return Err(AppError::msg(format!(
             "Unsupported playlist format (expected {RECIPE_FORMAT})"
@@ -275,7 +276,11 @@ fn match_recipe_tracks(
     state: &AppState,
     uid: i64,
     recipe: &PlaylistRecipeDocument,
-) -> AppResult<(Vec<i64>, Vec<PlaylistImportSucceeded>, Vec<PlaylistImportFailed>)> {
+) -> AppResult<(
+    Vec<i64>,
+    Vec<PlaylistImportSucceeded>,
+    Vec<PlaylistImportFailed>,
+)> {
     let unique_ids: Vec<String> = recipe
         .playlist
         .tracks
@@ -320,9 +325,8 @@ fn match_recipe_tracks(
 
 fn load_recipe_from_path(state: &AppState, path: &str) -> AppResult<(i64, PlaylistRecipeDocument)> {
     let uid = require_uid(state)?;
-    let raw = std::fs::read_to_string(path).map_err(|e| {
-        AppError::msg(format!("Cannot read playlist file: {e}"))
-    })?;
+    let raw = std::fs::read_to_string(path)
+        .map_err(|e| AppError::msg(format!("Cannot read playlist file: {e}")))?;
     let recipe = parse_and_validate_recipe(&raw, uid)?;
     Ok((uid, recipe))
 }
@@ -361,18 +365,15 @@ pub fn import_playlist_json(
         ));
     }
 
-    let thumb_owned = recipe.playlist.thumbnail.as_ref().map(|t| {
-        (
-            t.data_base64.trim().to_string(),
-            t.mime.trim().to_string(),
-        )
-    });
+    let thumb_owned = recipe
+        .playlist
+        .thumbnail
+        .as_ref()
+        .map(|t| (t.data_base64.trim().to_string(), t.mime.trim().to_string()));
     let created = state.db.create_playlist(
         uid,
         playlist_name,
-        thumb_owned
-            .as_ref()
-            .map(|(d, m)| (d.as_str(), m.as_str())),
+        thumb_owned.as_ref().map(|(d, m)| (d.as_str(), m.as_str())),
     )?;
     state
         .db

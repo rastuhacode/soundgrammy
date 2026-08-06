@@ -306,11 +306,9 @@ pub async fn enforce_ttl(state: &AppState, app: &AppHandle) -> AppResult<Vec<i64
             Ok(d) => d,
             Err(_) => continue,
         };
-        if age > ttl {
-            if fs::remove_file(&entry.path).await.is_ok() {
-                if let Some(id) = entry.track_id {
-                    removed_ids.push(id);
-                }
+        if age > ttl && fs::remove_file(&entry.path).await.is_ok() {
+            if let Some(id) = entry.track_id {
+                removed_ids.push(id);
             }
         }
     }
@@ -517,7 +515,9 @@ pub async fn cache_tracks(
                 "cache_tracks:progress",
                 CacheTracksProgress {
                     job_id: job_id.to_string(),
-                    current: already_present.saturating_add(index as u32).saturating_add(1),
+                    current: already_present
+                        .saturating_add(index as u32)
+                        .saturating_add(1),
                     total,
                     track_id: track.id,
                 },

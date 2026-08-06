@@ -136,11 +136,7 @@ pub fn is_qualified(listened_eff_ms: i64, duration_ms: Option<i64>) -> bool {
 }
 
 /// Early skip: abandonment + L_eff < 30s, and not qualified.
-pub fn is_early_skip(
-    end_reason: EndReason,
-    listened_eff_ms: i64,
-    qualified: bool,
-) -> bool {
+pub fn is_early_skip(end_reason: EndReason, listened_eff_ms: i64, qualified: bool) -> bool {
     if qualified || !end_reason.is_abandonment() {
         return false;
     }

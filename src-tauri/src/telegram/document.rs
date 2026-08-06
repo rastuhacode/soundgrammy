@@ -288,7 +288,11 @@ pub fn extension_for_mime(mime: &str) -> &'static str {
 /// Telegram metadata is sometimes wrong (e.g. Opus-in-WebM labeled `audio/mpeg`).
 /// Returning `None` means the header was too short or unrecognized.
 pub fn sniff_container_mime(header: &[u8]) -> Option<&'static str> {
-    if header.len() >= 4 && header[0] == 0x1a && header[1] == 0x45 && header[2] == 0xdf && header[3] == 0xa3
+    if header.len() >= 4
+        && header[0] == 0x1a
+        && header[1] == 0x45
+        && header[2] == 0xdf
+        && header[3] == 0xa3
     {
         return Some("audio/webm");
     }
