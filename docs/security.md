@@ -12,7 +12,6 @@ Agent-facing constraints for credentials and Telegram session material.
 
 - ferogram session (`PersistedSession`) is sealed with AES-256-GCM via a custom `SessionBackend` and written as `session.enc` under the app data dir (`session.rs`).
 - The 256-bit key lives in the OS keychain (`keyring`), service `com.soundgrammy.app`.
-- Legacy grammers-shaped JSON in `session.enc` is deleted on load (clean cut after the ferogram migration); users re-login once.
 - Never log session ciphertext, plaintext session snapshots, auth keys, or keyring secrets.
 - Treat edits to `session.rs`, `config.rs`, and `telegram/auth.rs` as high-risk: smallest possible diff, no drive-by refactors.
 

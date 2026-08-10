@@ -16,33 +16,6 @@ fn test_db() -> AppResult<Db> {
 }
 
 #[test]
-fn legacy_playlist_thumbnail_data_is_cleared() -> AppResult<()> {
-    let conn = Connection::open_in_memory()?;
-    conn.execute_batch(
-        "CREATE TABLE playlists (
-           id INTEGER PRIMARY KEY,
-           thumbnail_data TEXT,
-           thumbnail_mime TEXT
-         );
-         INSERT INTO playlists (id, thumbnail_data, thumbnail_mime)
-         VALUES (1, 'base64-data', 'image/jpeg');",
-    )?;
-
-    let thumbnail = conn.query_row(
-        "SELECT thumbnail_data, thumbnail_mime FROM playlists WHERE id = 1",
-        [],
-        |row| {
-            Ok((
-                row.get::<_, Option<String>>(0)?,
-                row.get::<_, Option<String>>(1)?,
-            ))
-        },
-    )?;
-    assert_eq!(thumbnail, (None, None));
-    Ok(())
-}
-
-#[test]
 fn load_profile_includes_phone() -> AppResult<()> {
     let db = test_db()?;
     db.save_profile(42, "Ada", Some("Lovelace"), Some("ada"), Some("+1555"))?;

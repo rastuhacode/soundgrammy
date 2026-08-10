@@ -351,26 +351,6 @@ mod tests {
     }
 
     #[test]
-    fn deserializes_legacy_document_without_thumbnail_candidates() {
-        let json = r#"{
-            "id": 1,
-            "accessHash": 2,
-            "fileReference": "",
-            "dcId": 4,
-            "mimeType": "audio/mpeg",
-            "size": "1234",
-            "thumbSize": "m",
-            "thumbFileSize": "50000",
-            "attributes": []
-        }"#;
-
-        let document: StoredDocument = serde_json::from_str(json).unwrap();
-
-        assert_eq!(document.thumb_size.as_deref(), Some("m"));
-        assert!(document.thumbnails.is_empty());
-    }
-
-    #[test]
     fn extension_for_mime_handles_webm() {
         assert_eq!(extension_for_mime("audio/webm"), "webm");
         assert_eq!(extension_for_mime("video/webm"), "webm");

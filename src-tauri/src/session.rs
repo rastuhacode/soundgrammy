@@ -4,9 +4,6 @@
 //! [`PersistedSession`]. We seal the native ferogram binary snapshot with
 //! AES-256-GCM and store it as `session.enc`. The 256-bit key lives in the OS
 //! keychain (via `keyring`).
-//!
-//! Legacy grammers-shaped JSON inside `session.enc` is deleted on load (clean
-//! cut) so users re-authenticate once after the library migration.
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -25,8 +22,6 @@ const KEYRING_SERVICE: &str = "com.soundgrammy.app";
 const KEYRING_USER: &str = "session-encryption-key";
 const SESSION_FILE: &str = "session.enc";
 const NONCE_LEN: usize = 12;
-/// Grammers-era JSON snapshots started with `{`; ferogram binary starts with a version byte.
-const LEGACY_JSON_PREFIX: u8 = b'{';
 
 fn session_path(data_dir: &Path) -> PathBuf {
     data_dir.join(SESSION_FILE)
@@ -133,12 +128,6 @@ impl SessionBackend for EncryptedSessionBackend {
                 return Ok(None);
             }
         };
-
-        // Clean cut: discard grammers-era JSON snapshots.
-        if plaintext.first() == Some(&LEGACY_JSON_PREFIX) {
-            let _ = std::fs::remove_file(&self.path);
-            return Ok(None);
-        }
 
         match PersistedSession::from_bytes(&plaintext) {
             Ok(session) => Ok(Some(session)),

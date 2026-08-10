@@ -1,10 +1,6 @@
 //! Downloading documents and thumbnails, with file-reference refresh.
 //!
-//! Chunk fetches go through [`Client::invoke_on_dc`] with `upload.getFile`, the
-//! same pattern grammers used. ferogram's `iter_download` opens a dedicated
-//! worker TCP connection per iterator; creating one iterator per 128 KiB chunk
-//! (as streaming does) caused multi-second reconnect overhead and hangs under
-//! concurrent range requests.
+//! Chunk fetches go through [`Client::invoke_on_dc`] with `upload.getFile`
 
 use std::path::Path;
 
