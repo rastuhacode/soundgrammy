@@ -222,7 +222,7 @@ export function PlaylistFormDialog({
           <Button
             type="button"
             variant="outline"
-            onClick={() => void handleSelectImportFile()}
+            onClick={handleSelectImportFile}
             disabled={importAnalyzing || isSubmitting}
           >
             <FileUp />
@@ -364,7 +364,7 @@ export function PlaylistFormDialog({
             : (
                 <Button
                   type="button"
-                  onClick={() => void handleImportCreate()}
+                  onClick={handleImportCreate}
                   disabled={
                     isSubmitting
                     || importAnalyzing

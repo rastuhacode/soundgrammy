@@ -1,5 +1,6 @@
-import { invoke, convertFileSrc } from '@tauri-apps/api/core'
+import { invoke as tauriInvoke, convertFileSrc } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
+import { appLogger } from '@/lib/app-logger'
 import type {
   AuthOutcome,
   AuthStatus,
@@ -45,6 +46,23 @@ export type TrackSource
       mimeType: string
       total: number
     }
+
+async function invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+  try {
+    return await tauriInvoke<T>(command, args)
+  }
+  catch (error) {
+    // Never include command arguments: auth and proxy commands can carry secrets.
+    appLogger.error({
+      source: 'backend',
+      title: 'Backend command failed',
+      description: `The ${command} command returned an error.`,
+      error,
+      context: { command },
+    })
+    throw error
+  }
+}
 
 // ---- auth ----------------------------------------------------------------
 

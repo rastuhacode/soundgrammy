@@ -116,7 +116,7 @@ export function SidebarProfile({ onLogout }: SidebarProfileProps) {
                   disabled={isSyncing}
                   aria-label={isSyncing ? 'Syncing Telegram music' : 'Sync Telegram music now'}
                   title={isSyncing ? 'Syncing…' : 'Sync now'}
-                  onClick={() => void requestSync()}
+                  onClick={requestSync}
                 >
                   <RadioTower className={isSyncing ? 'animate-pulse text-primary' : 'text-primary/80'} />
                 </Button>

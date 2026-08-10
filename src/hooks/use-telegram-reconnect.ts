@@ -65,7 +65,7 @@ export function useTelegramReconnect(options: {
     window.addEventListener('online', onBrowserOnline)
     window.addEventListener('offline', onBrowserOffline)
 
-    void runReconnectLoop({
+    runReconnectLoop({
       refreshAuth: () => api.refreshAuth(),
       getPhase: () => useConnectivityStore.getState().phase,
       setPhase: (phase) => {

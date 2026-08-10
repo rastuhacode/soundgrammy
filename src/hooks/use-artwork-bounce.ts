@@ -56,7 +56,7 @@ function createProvisionalSampler(audio: HTMLAudioElement): ProvisionalSampler |
     analyser.fftSize = 512
     analyser.smoothingTimeConstant = 0.35
     source.connect(analyser)
-    void context.resume().catch(() => {})
+    context.resume().catch(() => {})
 
     const timeData = new Float32Array(analyser.fftSize)
     const frequencyData = new Uint8Array(analyser.frequencyBinCount)
@@ -89,7 +89,7 @@ function createProvisionalSampler(audio: HTMLAudioElement): ProvisionalSampler |
       dispose: () => {
         source.disconnect()
         analyser.disconnect()
-        void context.close().catch(() => {})
+        context.close().catch(() => {})
       },
     }
   }
@@ -98,7 +98,7 @@ function createProvisionalSampler(audio: HTMLAudioElement): ProvisionalSampler |
   }
 }
 
-export function useArtworkBounce(options: ArtworkBounceOptions): void {
+export function useArtworkBounce(options: ArtworkBounceOptions) {
   const { trackId, elementRef, getAudioElement } = options
   const settings = useFullscreenStore(state => state.bounce)
   const isPlaying = usePlayerStore(state => state.isPlaying)
@@ -117,7 +117,7 @@ export function useArtworkBounce(options: ArtworkBounceOptions): void {
     if (!settings.enabled || reducedMotion) return
     let current = true
 
-    void api.getTrackBounceProfile(trackId).then((response) => {
+    api.getTrackBounceProfile(trackId).then((response) => {
       if (!current || response.status !== 'ready') return
       const loudness = decodeProfileLane(response.loudnessData)
       const onset = decodeProfileLane(response.onsetData)

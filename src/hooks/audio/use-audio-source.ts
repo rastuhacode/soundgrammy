@@ -18,6 +18,7 @@ import {
   resolveMpegPayloadStart,
 } from './mp3-frame-sync'
 import { attachMseSession, resolveMseMimeType, type MseSession } from './mse-session'
+import { appLogger } from '@/lib/app-logger'
 
 /** Bytes of MPEG payload to probe for Xing/VBRI / CBR duration. */
 const MPEG_DURATION_PROBE_BYTES = 8 * 1024
@@ -294,16 +295,22 @@ export function useAudioSource(options: UseAudioSourceOptions) {
               && loadGenerationRef.current === generation
             ) {
               sourceErrorRef.current = true
-              console.error('[audio] MSE session failed', {
-                trackId: track.id,
-                generation,
-                failure,
-                mediaSource: {
-                  currentSrc: audio.currentSrc,
-                  networkState: audio.networkState,
-                  readyState: audio.readyState,
-                  errorCode: audio.error?.code ?? null,
-                  errorMessage: audio.error?.message ?? null,
+              appLogger.error({
+                source: 'audio',
+                title: 'MSE session failed',
+                description: `Streaming failed during ${failure.stage}.`,
+                error: failure.cause,
+                context: {
+                  trackId: track.id,
+                  generation,
+                  stage: failure.stage,
+                  mediaSource: {
+                    currentSrc: audio.currentSrc,
+                    networkState: audio.networkState,
+                    readyState: audio.readyState,
+                    errorCode: audio.error?.code ?? null,
+                    errorMessage: audio.error?.message ?? null,
+                  },
                 },
               })
               setShowInitialLoading(false)
@@ -317,10 +324,15 @@ export function useAudioSource(options: UseAudioSourceOptions) {
       catch (error) {
         if (!disposed && loadGenerationRef.current === generation) {
           sourceErrorRef.current = true
-          console.error('[audio] source initialization failed', {
-            trackId: track.id,
-            generation,
+          appLogger.error({
+            source: 'audio',
+            title: 'Audio source initialization failed',
+            description: 'The player could not prepare the selected track source.',
             error,
+            context: {
+              trackId: track.id,
+              generation,
+            },
           })
           setShowInitialLoading(false)
           setPlaying(false)

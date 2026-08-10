@@ -212,7 +212,7 @@ export default function App() {
         // ignore; sync will populate
       }
       setStatus('ready')
-      void runSync()
+      runSync()
     },
     [setSession, runSync],
   )

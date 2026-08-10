@@ -6,6 +6,7 @@ import { useAudioSeek } from './use-audio-seek'
 import { useAudioSource } from './use-audio-source'
 import { useAudioVolume } from './use-audio-volume'
 import { useListenTracker } from './use-listen-tracker'
+import { appLogger } from '@/lib/app-logger'
 
 /**
  * WKWebView MSE advances `currentTime` as soon as buffered data exists, while
@@ -60,15 +61,20 @@ export function useAudioEngine() {
       .catch((error) => {
         if (loadGenerationRef.current === generation) {
           sourceErrorRef.current = true
-          console.error('[audio] play() failed', {
-            trackId: loadedTrackIdRef.current,
-            generation,
+          appLogger.error({
+            source: 'audio',
+            title: 'Audio playback failed',
+            description: 'The media element rejected the request to start playback.',
             error,
-            currentSrc: audio.currentSrc,
-            networkState: audio.networkState,
-            readyState: audio.readyState,
-            errorCode: audio.error?.code ?? null,
-            errorMessage: audio.error?.message ?? null,
+            context: {
+              trackId: loadedTrackIdRef.current,
+              generation,
+              currentSrc: audio.currentSrc,
+              networkState: audio.networkState,
+              readyState: audio.readyState,
+              errorCode: audio.error?.code ?? null,
+              errorMessage: audio.error?.message ?? null,
+            },
           })
           setPlaying(false)
         }
@@ -310,14 +316,18 @@ export function useAudioEngine() {
     if (loadedTrackIdRef.current !== track?.id) return
     const audio = audioRef.current
     sourceErrorRef.current = true
-    console.error('[audio] media element failed', {
-      trackId: track?.id ?? null,
-      generation: loadGenerationRef.current,
-      currentSrc: audio?.currentSrc ?? '',
-      networkState: audio?.networkState ?? null,
-      readyState: audio?.readyState ?? null,
-      errorCode: audio?.error?.code ?? null,
-      errorMessage: audio?.error?.message ?? null,
+    appLogger.error({
+      source: 'audio',
+      title: 'Media element failed',
+      description: audio?.error?.message || 'The browser reported an audio media error.',
+      context: {
+        trackId: track?.id ?? null,
+        generation: loadGenerationRef.current,
+        currentSrc: audio?.currentSrc ?? '',
+        networkState: audio?.networkState ?? null,
+        readyState: audio?.readyState ?? null,
+        errorCode: audio?.error?.code ?? null,
+      },
     })
     setShowInitialLoading(false)
     pendingSeekRef.current = null

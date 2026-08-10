@@ -52,7 +52,7 @@ export function loadBounceSettings(): BounceSettings {
   return parseBounceSettings(window.localStorage.getItem(BOUNCE_SETTINGS_KEY))
 }
 
-export function saveBounceSettings(settings: BounceSettings): void {
+export function saveBounceSettings(settings: BounceSettings) {
   if (typeof window === 'undefined') return
   window.localStorage.setItem(BOUNCE_SETTINGS_KEY, JSON.stringify(settings))
 }

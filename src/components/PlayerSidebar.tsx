@@ -147,7 +147,7 @@ export function PlayerSidebar(props: { onLogout: () => void }) {
                         const source: PlaylistRecipeSource = customPlaylist
                           ? { kind: 'custom', playlistId: customPlaylist.id }
                           : { kind: 'liked' }
-                        void handleExportPlaylist(source, item.name)
+                        handleExportPlaylist(source, item.name)
                       }
                     : undefined}
                   isDeleting={customPlaylist ? deletingId === customPlaylist.id : undefined}
