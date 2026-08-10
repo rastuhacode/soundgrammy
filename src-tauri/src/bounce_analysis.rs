@@ -21,6 +21,12 @@ use crate::cache;
 use crate::db::TrackBounceProfileRecord;
 use crate::state::AppState;
 
+mod normalization;
+#[cfg(test)]
+mod tests;
+
+use normalization::{normalize_loudness, normalize_onset, quantize};
+
 pub const ALGORITHM_VERSION: i64 = 1;
 pub const FRAME_MS: i64 = 50;
 const FFT_SIZE: usize = 2048;
@@ -433,154 +439,5 @@ impl FeatureExtractor {
             loudness: quantize(&loudness),
             onset: quantize(&onset),
         })
-    }
-}
-
-fn normalize_loudness(power: &[f32]) -> Vec<f32> {
-    let mut momentary = Vec::with_capacity(power.len());
-    let mut window = VecDeque::with_capacity(8);
-    let mut sum = 0.0_f32;
-    for value in power {
-        window.push_back(*value);
-        sum += *value;
-        if window.len() > 8 {
-            sum -= window.pop_front().unwrap_or(0.0);
-        }
-        momentary.push(sum / window.len() as f32);
-    }
-    let alpha = 1.0 - (-FRAME_MS as f32 / 2_000.0).exp();
-    let mut smoothed = Vec::with_capacity(momentary.len());
-    let mut current = 0.0;
-    for value in momentary {
-        current += (value - current) * alpha;
-        smoothed.push(if current > 1.0e-6 {
-            10.0 * current.log10()
-        } else {
-            -60.0
-        });
-    }
-    robust_normalize(&smoothed, -60.0, 0.10, 0.95)
-}
-
-fn normalize_onset(onset: &[f32], power: &[f32]) -> Vec<f32> {
-    let mut residual = vec![0.0; onset.len()];
-    for index in 0..onset.len() {
-        let start = index.saturating_sub(10);
-        let end = (index + 11).min(onset.len());
-        let mut local = onset[start..end].to_vec();
-        local.sort_by(f32::total_cmp);
-        let median = local.get(local.len() / 2).copied().unwrap_or(0.0);
-        residual[index] = (onset[index] - median).max(0.0);
-        if power.get(index).copied().unwrap_or(0.0) < 1.0e-7 {
-            residual[index] = 0.0;
-        }
-    }
-    robust_normalize(&residual, 0.0, 0.50, 0.98)
-}
-
-fn robust_normalize(values: &[f32], floor: f32, low_q: f32, high_q: f32) -> Vec<f32> {
-    let mut sorted: Vec<f32> = values
-        .iter()
-        .copied()
-        .filter(|value| value.is_finite() && *value > floor)
-        .collect();
-    if sorted.is_empty() {
-        return vec![0.0; values.len()];
-    }
-    sorted.sort_by(f32::total_cmp);
-    let at = |q: f32| {
-        let index = ((sorted.len() - 1) as f32 * q).round() as usize;
-        sorted[index]
-    };
-    let low = at(low_q);
-    let high = at(high_q);
-    let span = (high - low).max(1.0e-6);
-    values
-        .iter()
-        .map(|value| {
-            let normalized = ((*value - low) / span).clamp(0.0, 1.0);
-            normalized * normalized * (3.0 - 2.0 * normalized)
-        })
-        .collect()
-}
-
-fn quantize(values: &[f32]) -> Vec<u8> {
-    values
-        .iter()
-        .map(|value| (value.clamp(0.0, 1.0) * 255.0).round() as u8)
-        .collect()
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn sine(amplitude: f32, frequency: f32, seconds: f32) -> Vec<f32> {
-        let sample_rate = 48_000.0;
-        (0..(seconds * sample_rate) as usize)
-            .map(|index| {
-                amplitude
-                    * (2.0 * std::f32::consts::PI * frequency * index as f32 / sample_rate).sin()
-            })
-            .collect()
-    }
-
-    #[test]
-    fn loud_sustained_section_outweighs_quiet_intro() {
-        let mut extractor = FeatureExtractor::new(48_000, 1);
-        extractor.push_interleaved(&sine(0.04, 220.0, 3.0));
-        extractor.push_interleaved(&sine(0.75, 220.0, 3.0));
-        let profile = extractor.finish().unwrap();
-        let midpoint = profile.loudness.len() / 2;
-        let intro = profile.loudness[..midpoint]
-            .iter()
-            .map(|v| *v as f32)
-            .sum::<f32>()
-            / midpoint as f32;
-        let drop = profile.loudness[midpoint..]
-            .iter()
-            .map(|v| *v as f32)
-            .sum::<f32>()
-            / (profile.loudness.len() - midpoint) as f32;
-        assert!(drop > intro + 60.0, "intro={intro}, drop={drop}");
-    }
-
-    #[test]
-    fn anti_phase_stereo_retains_loudness() {
-        let mono = sine(0.5, 440.0, 1.0);
-        let mut stereo = Vec::with_capacity(mono.len() * 2);
-        for sample in mono {
-            stereo.extend([sample, -sample]);
-        }
-        let mut extractor = FeatureExtractor::new(48_000, 2);
-        extractor.push_interleaved(&stereo);
-        let profile = extractor.finish().unwrap();
-        assert!(profile.loudness.iter().any(|value| *value > 0));
-    }
-
-    #[test]
-    fn spectral_change_produces_onset_energy_at_constant_level() {
-        let mut samples = sine(0.4, 180.0, 1.5);
-        samples.extend(sine(0.4, 2_400.0, 1.5));
-        let mut extractor = FeatureExtractor::new(48_000, 1);
-        extractor.push_interleaved(&samples);
-        let profile = extractor.finish().unwrap();
-        assert!(profile.onset.iter().any(|value| *value > 128));
-        let active = profile.onset.iter().filter(|value| **value > 32).count();
-        assert!(active < profile.onset.len() / 2);
-    }
-
-    #[test]
-    fn silence_is_zero_and_short_input_is_safe() {
-        let mut extractor = FeatureExtractor::new(48_000, 1);
-        extractor.push_interleaved(&vec![0.0; 4_800]);
-        let profile = extractor.finish().unwrap();
-        assert!(profile.loudness.iter().all(|value| *value == 0));
-        assert!(profile.onset.iter().all(|value| *value == 0));
-    }
-
-    #[test]
-    fn quantization_stays_bounded() {
-        assert_eq!(quantize(&[-1.0, 0.5, 2.0]), vec![0, 128, 255]);
     }
 }
