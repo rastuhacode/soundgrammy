@@ -1,14 +1,21 @@
 import type { Track } from '@/lib/db'
-import type { ShuffleAlgorithm } from './model'
+import { shuffleEntriesByMode } from './modes'
+import type {
+  PlaylistQueueEntry,
+  ShuffleAlgorithm,
+  ShuffleContext,
+  ShuffleMode,
+} from './model'
 
-export type { ShuffleState, ShuffleAlgorithm } from './model'
-export { isShuffleState } from './model'
-
-/** Playlist membership paired with its library track (duplicates share track id). */
-export interface PlaylistQueueEntry {
-  track: Track
-  sourceIndex: number
-}
+export type {
+  PlaylistQueueEntry,
+  ShuffleAlgorithm,
+  ShuffleContext,
+  ShuffleMode,
+  ShuffleState,
+} from './model'
+export { isShuffleMode, isShuffleState } from './model'
+export { SHUFFLE_MODE_OPTIONS } from './modes'
 
 export function buildPlaylistEntries(tracks: Track[]): PlaylistQueueEntry[] {
   return tracks.map((track, sourceIndex) => ({ track, sourceIndex }))
@@ -52,6 +59,26 @@ export function shufflePlaylistEntries(
   if (entries.length <= 1) return entries
 
   const shuffled = algorithm(entries)
+  if (pinSourceIndex === undefined) return shuffled
+
+  const pinIndex = shuffled.findIndex(entry => entry.sourceIndex === pinSourceIndex)
+  if (pinIndex > 0) {
+    const next = [...shuffled]
+    const [pinned] = next.splice(pinIndex, 1)
+    return [pinned!, ...next]
+  }
+  return shuffled
+}
+
+export function shufflePlaylistEntriesByMode(
+  entries: PlaylistQueueEntry[],
+  mode: ShuffleMode,
+  context: ShuffleContext,
+  pinSourceIndex?: number,
+): PlaylistQueueEntry[] {
+  if (entries.length <= 1) return entries
+
+  const shuffled = shuffleEntriesByMode(entries, mode, context)
   if (pinSourceIndex === undefined) return shuffled
 
   const pinIndex = shuffled.findIndex(entry => entry.sourceIndex === pinSourceIndex)

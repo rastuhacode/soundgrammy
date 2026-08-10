@@ -1,51 +1,35 @@
 import { readLocalStorageValue } from '@mantine/hooks'
 import { create } from 'zustand'
-import type { Track } from '@/lib/db'
 
-import type { ShuffleState, ShuffleAlgorithm } from '@/lib/shuffle'
-import { defaultShuffle } from '@/lib/shuffle/default'
-import { applyAlgorithm, isShuffleState } from '@/lib/shuffle'
+import type { ShuffleMode, ShuffleState } from '@/lib/shuffle'
+import { isShuffleMode, isShuffleState } from '@/lib/shuffle'
 
 interface ShuffleStoreState {
   shuffle: ShuffleState
-  algorithm: ShuffleAlgorithm
+  mode: ShuffleMode
   setShuffle: (shuffle: ShuffleState) => void
-  setAlgorithm: (algorithm: ShuffleAlgorithm) => void
-  toggle: () => void
-  process: (
-    tracks: Track[],
-    pinTrackId?: number,
-    algorithm?: ShuffleAlgorithm,
-    shuffle?: ShuffleState,
-  ) => Track[]
+  setMode: (mode: ShuffleMode) => void
   hydrate: () => void
 }
 
-export const useShuffleStore = create<ShuffleStoreState>((set, get) => {
-  const { read, write } = useStorageShuffle()
+export const useShuffleStore = create<ShuffleStoreState>((set) => {
+  const storage = useStorageShuffle()
 
   return {
     shuffle: 'off',
-    algorithm: defaultShuffle,
+    mode: 'random',
     setShuffle: (shuffle) => {
-      write(shuffle)
+      storage.writeState(shuffle)
       set({ shuffle })
     },
-    setAlgorithm: algorithm => set({ algorithm }),
-    toggle: () => {
-      const { shuffle, setShuffle } = get()
-      setShuffle(shuffle === 'off' ? 'on' : 'off')
+    setMode: (mode) => {
+      storage.writeMode(mode)
+      set({ mode })
     },
-    process: (tracks, pinTrackId, algorithmOverride, shuffleOverride) => {
-      const { shuffle, algorithm } = get()
-      if ((shuffleOverride ?? shuffle) === 'off') return tracks
-      return applyAlgorithm(
-        tracks,
-        algorithmOverride ?? algorithm,
-        pinTrackId,
-      )
-    },
-    hydrate: () => set({ shuffle: read() }),
+    hydrate: () => set({
+      shuffle: storage.readState(),
+      mode: storage.readMode(),
+    }),
   }
 })
 
@@ -55,6 +39,7 @@ export const useShuffleStore = create<ShuffleStoreState>((set, get) => {
  */
 function useStorageShuffle() {
   const SHUFFLE_STORAGE_KEY = 'soundgrammy-shuffle'
+  const SHUFFLE_MODE_STORAGE_KEY = 'soundgrammy-shuffle-mode'
 
   function deserialize(stored: string | undefined): ShuffleState {
     if (stored === undefined) return 'off'
@@ -68,7 +53,7 @@ function useStorageShuffle() {
     return 'off'
   }
 
-  const read = (): ShuffleState => {
+  const readState = (): ShuffleState => {
     return readLocalStorageValue<ShuffleState>({
       key: SHUFFLE_STORAGE_KEY,
       defaultValue: 'off',
@@ -76,10 +61,33 @@ function useStorageShuffle() {
     })
   }
 
-  const write = (shuffle: ShuffleState) => {
+  const readMode = (): ShuffleMode => {
+    return readLocalStorageValue<ShuffleMode>({
+      key: SHUFFLE_MODE_STORAGE_KEY,
+      defaultValue: 'random',
+      deserialize: (stored) => {
+        if (stored === undefined) return 'random'
+        try {
+          const mode = JSON.parse(stored)
+          if (isShuffleMode(mode)) return mode
+        }
+        catch {
+          if (isShuffleMode(stored)) return stored
+        }
+        return 'random'
+      },
+    })
+  }
+
+  const writeState = (shuffle: ShuffleState) => {
     if (typeof window === 'undefined') return
     localStorage.setItem(SHUFFLE_STORAGE_KEY, JSON.stringify(shuffle))
   }
 
-  return { read, write }
+  const writeMode = (mode: ShuffleMode) => {
+    if (typeof window === 'undefined') return
+    localStorage.setItem(SHUFFLE_MODE_STORAGE_KEY, JSON.stringify(mode))
+  }
+
+  return { readState, readMode, writeState, writeMode }
 }

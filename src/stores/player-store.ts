@@ -16,12 +16,16 @@ import {
 } from '@/lib/queue'
 import { useRepeatStore } from '@/stores/repeat-store'
 import { useShuffleStore } from '@/stores/shuffle-store'
+import { useListenStatsStore } from '@/stores/listen-stats-store'
 import type { RepeatState } from '@/lib/repeat'
 import {
   buildPlaylistEntries,
   shufflePlaylistEntries,
+  shufflePlaylistEntriesByMode,
   type PlaylistQueueEntry,
   type ShuffleAlgorithm,
+  type ShuffleContext,
+  type ShuffleMode,
   type ShuffleState,
 } from '@/lib/shuffle'
 import type { PlaylistId, ResolvedSelectedPlaylist } from '@/stores/playlists-store'
@@ -104,8 +108,7 @@ interface PlayerState {
   pause: () => void
   setPlaying: (playing: boolean) => void
   setShuffle: (shuffle: ShuffleState) => void
-  setShuffleAlgorithm: (algorithm: ShuffleAlgorithm) => void
-  toggleShuffle: () => void
+  setShuffleMode: (mode: ShuffleMode) => void
   setRepeat: (repeat: RepeatState) => void
   toggleRepeat: () => void
   hydratePreferences: () => void
@@ -122,6 +125,15 @@ function normalizeCursor(tracks: Track[], cursor: number): number {
 function getCurrentTrack(queue: Queue): Track | null {
   if (queue.cursor < 0) return null
   return queue.tracks[queue.cursor] ?? null
+}
+
+function shuffleContext(): ShuffleContext {
+  const stats = useListenStatsStore.getState()
+  return {
+    statsByTrackId: stats.statsByTrackId,
+    statsEnabled: stats.enabled,
+    nowMs: Date.now(),
+  }
 }
 
 function resolveStartCursor(
@@ -239,11 +251,18 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
           : undefined
 
       const entries = shuffleState === 'on'
-        ? shufflePlaylistEntries(
-            baseEntries,
-            shuffleAlgorithm ?? shuffleStore.algorithm,
-            pinMembershipIndex,
-          )
+        ? shuffleAlgorithm
+          ? shufflePlaylistEntries(
+              baseEntries,
+              shuffleAlgorithm,
+              pinMembershipIndex,
+            )
+          : shufflePlaylistEntriesByMode(
+              baseEntries,
+              shuffleStore.mode,
+              shuffleContext(),
+              pinMembershipIndex,
+            )
         : baseEntries
 
       const tracks = entries.map(entry => entry.track)
@@ -494,15 +513,15 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
       // Edited queue (no source): shuffle on reshuffles current list; shuffle off keeps it.
       if (!queue.source) {
         if (shuffle === 'off') return
-        const nextTracks = shuffleStore.process(
-          queue.tracks,
-          currentTrack.id,
-          undefined,
-          shuffle,
+        const entries = shufflePlaylistEntriesByMode(
+          buildPlaylistEntries(queue.tracks),
+          shuffleStore.mode,
+          shuffleContext(),
+          queue.cursor,
         )
         const nextQueue = {
           ...queue,
-          tracks: nextTracks,
+          tracks: entries.map(entry => entry.track),
           cursor: 0,
           sourceIndices: null,
           baseEntries: null,
@@ -516,9 +535,10 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
         ?? buildPlaylistEntries(resolveSourceTracks(queue))
 
       if (shuffle === 'on') {
-        const entries = shufflePlaylistEntries(
+        const entries = shufflePlaylistEntriesByMode(
           baseEntries,
-          shuffleStore.algorithm,
+          shuffleStore.mode,
+          shuffleContext(),
           playingSourceIndex,
         )
         const nextQueue: Queue = {
@@ -539,10 +559,11 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
       )
       set({ queue: nextQueue, currentTrack: getCurrentTrack(nextQueue) })
     },
-    setShuffleAlgorithm: algorithm => useShuffleStore.getState().setAlgorithm(algorithm),
-    toggleShuffle: () => {
-      const { shuffle } = useShuffleStore.getState()
-      get().setShuffle(shuffle === 'off' ? 'on' : 'off')
+    setShuffleMode: (mode) => {
+      useShuffleStore.getState().setMode(mode)
+      // Reuse the existing path so changing modes reconstructs the queue and
+      // pins the currently playing membership at the beginning.
+      get().setShuffle('on')
     },
 
     setRepeat: repeat => useRepeatStore.getState().setRepeat(repeat),

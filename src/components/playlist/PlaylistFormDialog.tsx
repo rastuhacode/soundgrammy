@@ -330,10 +330,10 @@ export function PlaylistFormDialog({
                 className="gap-4"
               >
                 <TabsList className="w-full">
-                  <TabsTrigger value="new" className="flex-1">
+                  <TabsTrigger value="new" className="grow">
                     New
                   </TabsTrigger>
-                  <TabsTrigger value="import" className="flex-1">
+                  <TabsTrigger value="import" className="grow">
                     Import
                   </TabsTrigger>
                 </TabsList>

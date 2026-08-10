@@ -197,7 +197,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
           <DialogTitle>Settings</DialogTitle>
         </DialogHeader>
 
-        <div className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto px-4 py-4">
+        <div className="min-h-0 grow overflow-x-hidden overflow-y-auto px-4 py-4">
           <div className="flex min-w-0 flex-col gap-2">
             <Collapsible open={cacheOpen} onOpenChange={setCacheOpen}>
               <CollapsibleTrigger className="flex h-auto w-full items-center justify-between rounded-md px-2 py-2.5 text-sm font-medium hover:bg-muted/40">

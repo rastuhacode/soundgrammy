@@ -5,6 +5,7 @@ import {
   takePendingListenEndReason,
 } from '@/lib/listen-tracker'
 import { usePlayerStore } from './player-store'
+import { useShuffleStore } from './shuffle-store'
 
 function track(id: number): Track {
   return {
@@ -36,6 +37,7 @@ beforeEach(() => {
     isPlaying: false,
     listenAttemptEpoch: 0,
   })
+  useShuffleStore.setState({ shuffle: 'off', mode: 'random' })
 })
 
 describe('enqueueNext', () => {
@@ -91,5 +93,52 @@ describe('playQueue', () => {
 
     expect(takePendingListenEndReason('skipped')).toBe('replaced')
     expect(usePlayerStore.getState().listenAttemptEpoch).toBe(4)
+  })
+})
+
+describe('shuffle modes', () => {
+  it('reconstructs the queue and pins the current membership when the mode changes', () => {
+    const a = track(1)
+    const b = track(2)
+    const c = track(3)
+    const baseEntries = [a, b, c].map((item, sourceIndex) => ({
+      track: item,
+      sourceIndex,
+    }))
+    usePlayerStore.setState({
+      queue: {
+        source: {
+          type: 'playlist',
+          playlistId: 7,
+          name: 'Mix',
+          trackIds: [1, 2, 3],
+        },
+        tracks: [a, b, c],
+        cursor: 1,
+        sourceIndices: [0, 1, 2],
+        baseEntries,
+      },
+      currentTrack: b,
+      isPlaying: true,
+    })
+
+    usePlayerStore.getState().setShuffleMode('fresh')
+
+    const shuffled = usePlayerStore.getState()
+    expect(useShuffleStore.getState()).toMatchObject({
+      shuffle: 'on',
+      mode: 'fresh',
+    })
+    expect(shuffled.currentTrack).toBe(b)
+    expect(shuffled.queue.cursor).toBe(0)
+    expect(shuffled.queue.sourceIndices?.[0]).toBe(1)
+    expect(shuffled.queue.baseEntries).toBe(baseEntries)
+    expect(shuffled.queue.tracks.map(item => item.id).sort()).toEqual([1, 2, 3])
+
+    usePlayerStore.getState().setShuffle('off')
+    const restored = usePlayerStore.getState()
+    expect(restored.queue.tracks).toEqual([a, b, c])
+    expect(restored.queue.cursor).toBe(1)
+    expect(restored.currentTrack).toBe(b)
   })
 })

@@ -1,27 +1,133 @@
-import { Shuffle } from 'lucide-react'
+import { useState, type ReactNode } from 'react'
+import { Check, CircleHelp, Shuffle } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { SHUFFLE_MODE_OPTIONS, type ShuffleMode } from '@/lib/shuffle'
 import { usePlayerStore } from '@/stores/player-store'
 import { useShuffleStore } from '@/stores/shuffle-store'
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Separator } from '@/components/ui/separator'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 
-export function ShuffleButton() {
-  const shuffleState = useShuffleStore(state => state.shuffle)
-  const toggleShuffle = usePlayerStore(state => state.toggleShuffle)
+type ShufflePopoverItemProps = {
+  children?: ReactNode
+  isActive?: boolean
+  onClick?: () => void
+}
 
+function ShufflePopoverItem(props: ShufflePopoverItemProps) {
   return (
     <button
       type="button"
-      aria-label="Shuffle mode"
-      className={
-        cn(
-          'flex items-center justify-center transition-transform hover:scale-105 active:scale-95 [&>svg]:size-4',
-          shuffleState === 'on'
-            ? 'text-primary'
-            : 'text-muted-foreground',
-        )
-      }
-      onClick={toggleShuffle}
+      aria-pressed={props.isActive}
+      className={cn(
+        'flex w-full gap-1 items-center justify-between rounded-md px-2 py-2 text-left hover:bg-accent',
+        props.isActive && 'bg-accent text-accent-foreground',
+      )}
+      onClick={props.onClick}
     >
-      <Shuffle />
+      <span className="font-medium">{props.children}</span>
+      {props.isActive && <Check className="size-3 text-primary" />}
     </button>
+  )
+}
+
+export function ShuffleButton() {
+  const [open, setOpen] = useState(false)
+  const shuffleState = useShuffleStore(state => state.shuffle)
+  const shuffleMode = useShuffleStore(state => state.mode)
+  const setShuffle = usePlayerStore(state => state.setShuffle)
+  const setShuffleMode = usePlayerStore(state => state.setShuffleMode)
+  const activeLabel = SHUFFLE_MODE_OPTIONS.find(
+    option => option.id === shuffleMode,
+  )?.label ?? 'Random'
+
+  const selectMode = (mode: ShuffleMode) => {
+    setShuffleMode(mode)
+    setOpen(false)
+  }
+
+  return (
+    <Popover open={open} onOpenChange={setOpen}>
+      <PopoverTrigger
+        render={(
+          <button
+            type="button"
+            aria-label={
+              shuffleState === 'on'
+                ? `Shuffle: ${activeLabel}`
+                : 'Shuffle: Off'
+            }
+            className={cn(
+              'flex items-center justify-center transition-transform hover:scale-105 active:scale-95 [&>svg]:size-4',
+              shuffleState === 'on'
+                ? 'text-primary'
+                : 'text-muted-foreground',
+            )}
+          >
+            <Shuffle />
+          </button>
+        )}
+      />
+      <PopoverContent side="top" sideOffset={40} className="w-40 gap-1 p-1 text-xs">
+
+        <ShufflePopoverItem
+          isActive={shuffleState === 'off'}
+          onClick={() => {
+            setShuffle('off')
+            setOpen(false)
+          }}
+        >
+          Off
+        </ShufflePopoverItem>
+
+        <Separator />
+
+        <TooltipProvider>
+          <div className="flex flex-col gap-1 h-40 overflow-y-auto" role="list" aria-label="Shuffle algorithms">
+            {SHUFFLE_MODE_OPTIONS.map((option) => {
+              const selected = shuffleState === 'on' && shuffleMode === option.id
+              return (
+                <div
+                  key={option.id}
+                  role="listitem"
+                  className={cn(
+                    'flex items-center rounded-sm hover:bg-accent',
+                    selected && 'bg-accent text-accent-foreground',
+                  )}
+                >
+                  <ShufflePopoverItem
+                    isActive={selected}
+                    onClick={() => selectMode(option.id)}
+                  >
+                    {option.label}
+                  </ShufflePopoverItem>
+                  <Tooltip>
+                    <TooltipTrigger
+                      render={(
+                        <button
+                          type="button"
+                          aria-label={`About ${option.label}`}
+                          className="mr-1.5 flex size-7 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:text-foreground"
+                        >
+                          <CircleHelp className="size-3" />
+                        </button>
+                      )}
+                    />
+                    <TooltipContent side="right" className="max-w-64">
+                      {option.description}
+                    </TooltipContent>
+                  </Tooltip>
+                </div>
+              )
+            })}
+          </div>
+        </TooltipProvider>
+      </PopoverContent>
+    </Popover>
   )
 }
