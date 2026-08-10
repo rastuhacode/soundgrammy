@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.3.0](https://github.com/rastuhacode/soundgrammy/compare/v0.2.0...v0.3.0) (2026-08-10)
+
+
+### ⚠ BREAKING CHANGES
+
+* streamline playlist management by removing thumbnail handling and removed migration functions
+
+### Features
+
+* enhance shuffle functionality with new modes and UI components for improved user experience ([5f2255b](https://github.com/rastuhacode/soundgrammy/commit/5f2255bd220bc0d2f38f7ea40c885d038d27fa2c))
+* implement listening statistics setting with enable/disable and clear ([fde8740](https://github.com/rastuhacode/soundgrammy/commit/fde874097865d409d5fff9c2d6800f00af17cb4d))
+* implement logging system with diagnostic logs and error handling for improved debugging ([4e3bd51](https://github.com/rastuhacode/soundgrammy/commit/4e3bd5187fef290a6025e1dfc63b2ab95f727795))
+
+
+### Code Refactoring
+
+* streamline playlist management by removing thumbnail handling and removed migration functions ([a48a6cc](https://github.com/rastuhacode/soundgrammy/commit/a48a6ccf48f847a16a4960d0ad2515d3cae18e91))
+
 ## [0.2.0](https://github.com/rastuhacode/soundgrammy/compare/v0.1.1...v0.2.0) (2026-08-06)
 
 
