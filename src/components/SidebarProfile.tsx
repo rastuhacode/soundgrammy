@@ -6,7 +6,6 @@ import {
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
-  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
@@ -14,11 +13,7 @@ import { SyncStatusDot } from '@/components/SyncStatusDot'
 import { SettingsDialog } from '@/components/SettingsDialog'
 import { useProfileMusicSync } from '@/hooks/use-profile-music-sync'
 import { useUserAvatar } from '@/hooks/use-user-avatar'
-import {
-  formatDisplayName,
-  formatInitials,
-  useSessionStore,
-} from '@/stores/session-store'
+import { formatDisplayName, formatInitials, useSessionStore } from '@/stores/session-store'
 import { api } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 
@@ -114,8 +109,6 @@ export function SidebarProfile({ onLogout }: SidebarProfileProps) {
 
           <div className="p-1.5">
             <DropdownMenuGroup>
-              <DropdownMenuLabel>Telegram</DropdownMenuLabel>
-
               <div className="flex items-center gap-2.5 rounded-lg py-2">
                 <Button
                   variant="ghost"
