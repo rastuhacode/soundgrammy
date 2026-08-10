@@ -23,9 +23,11 @@
 
 ## Why SoundGrammy?
 
-Telegram can store music on your profile, but it does not provide the library management and playback experience of a dedicated music player. SoundGrammy bridges that gap: **Telegram remains the remote source of truth**, while your library, playlists, cache, and listening history stay on your device.
+Telegram can store music on your profile, but it does not provide the library management and playback experience of a dedicated music player.
 
-It was created to eliminate manual synchronization between a local player and music saved on Telegram—and to add the playback and organization tools that a music library needs.
+SoundGrammy was created to eliminate manual synchronization between a local player and music saved on Telegram, to add the playback and organization tools that a music library needs.
+
+You can read more about philosophy around SoundGrammy in my [article]().
 
 ## Features
 
