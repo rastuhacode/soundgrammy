@@ -78,17 +78,25 @@ export function smartPlaylistUpdatedAt(
 }
 
 interface ListenStatsState {
+  enabled: boolean
+  clearEpoch: number
   statsByTrackId: Map<number, TrackListenStats>
-  hydrate: (stats: TrackListenStats[]) => void
+  hydrate: (enabled: boolean, stats: TrackListenStats[]) => void
+  setEnabled: (enabled: boolean) => void
   upsert: (stats: TrackListenStats) => void
+  clear: () => void
 }
 
 export const useListenStatsStore = create<ListenStatsState>(set => ({
+  enabled: true,
+  clearEpoch: 0,
   statsByTrackId: new Map(),
 
-  hydrate: (stats) => {
-    set({ statsByTrackId: statsToMap(stats) })
+  hydrate: (enabled, stats) => {
+    set({ enabled, statsByTrackId: statsToMap(stats) })
   },
+
+  setEnabled: enabled => set({ enabled }),
 
   upsert: (stats) => {
     set((state) => {
@@ -97,4 +105,9 @@ export const useListenStatsStore = create<ListenStatsState>(set => ({
       return { statsByTrackId: next }
     })
   },
+
+  clear: () => set(state => ({
+    statsByTrackId: new Map(),
+    clearEpoch: state.clearEpoch + 1,
+  })),
 }))

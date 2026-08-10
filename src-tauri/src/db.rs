@@ -1169,6 +1169,15 @@ impl Db {
         Ok(())
     }
 
+    /// Permanently removes both raw listen history and derived aggregates.
+    pub fn clear_listen_stats(&self) -> AppResult<()> {
+        let conn = self.conn.lock().unwrap();
+        let tx = conn.unchecked_transaction()?;
+        tx.execute_batch("DELETE FROM listen_events; DELETE FROM track_listen_stats;")?;
+        tx.commit()?;
+        Ok(())
+    }
+
     fn load_aggregates(conn: &Connection, track_id: i64) -> AppResult<ListenAggregates> {
         Ok(conn
             .query_row(
@@ -1346,6 +1355,7 @@ pub const DEFAULT_CACHE_TTL_SECS: i64 = 2_592_000;
 
 pub const SETTING_CACHE_LIMIT_BYTES: &str = "cache_limit_bytes";
 pub const SETTING_CACHE_TTL_SECS: &str = "cache_ttl_secs";
+pub const SETTING_LISTEN_STATS_ENABLED: &str = "listen_stats_enabled";
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Profile {
@@ -1511,6 +1521,30 @@ mod tests {
         let end = db.record_attempt_end(999, 40_000, Some(60_000), EndReason::Stopped)?;
         assert!(end.qualified);
         assert!(db.track_listen_stats(999)?.is_some());
+        Ok(())
+    }
+
+    #[test]
+    fn clear_listen_stats_removes_events_and_aggregates() -> AppResult<()> {
+        use crate::listen_stats::EndReason;
+
+        let db = test_db()?;
+        db.record_attempt_start(42)?;
+        db.record_attempt_end(42, 60_000, Some(60_000), EndReason::Completed)?;
+        assert!(db.track_listen_stats(42)?.is_some());
+
+        db.clear_listen_stats()?;
+        assert!(db.all_listen_stats()?.is_empty());
+
+        // Clearing raw events too means a rebuild cannot restore the history.
+        db.rebuild_listen_stats()?;
+        assert!(db.all_listen_stats()?.is_empty());
+        let event_count: i64 =
+            db.conn
+                .lock()
+                .unwrap()
+                .query_row("SELECT COUNT(*) FROM listen_events", [], |row| row.get(0))?;
+        assert_eq!(event_count, 0);
         Ok(())
     }
 

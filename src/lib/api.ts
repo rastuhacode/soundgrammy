@@ -201,16 +201,21 @@ export const api = {
     durationMs?: number | null
     endReason: ListenEndReason
   }) =>
-    invoke<ListenEndResult>('record_listen_end', {
+    invoke<ListenEndResult | null>('record_listen_end', {
       trackId: input.trackId,
       listenedMs: input.listenedMs,
       durationMs: input.durationMs ?? null,
       endReason: input.endReason,
     }),
+  getListenStatisticsEnabled: () =>
+    invoke<boolean>('get_listen_statistics_enabled'),
+  setListenStatisticsEnabled: (enabled: boolean) =>
+    invoke<void>('set_listen_statistics_enabled', { enabled }),
   getTrackListenStats: (trackId: number) =>
     invoke<TrackListenStats | null>('get_track_listen_stats', { trackId }),
   listListenStats: () => invoke<TrackListenStats[]>('list_listen_stats'),
   rebuildListenStats: () => invoke<void>('rebuild_listen_stats'),
+  clearListenStatistics: () => invoke<void>('clear_listen_statistics'),
 }
 
 /** Turns an absolute cache path into an `asset:` URL for `<audio>`/`<img>`. */

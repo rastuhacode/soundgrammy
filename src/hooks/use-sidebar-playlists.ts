@@ -65,6 +65,7 @@ export function useSidebarPlaylists() {
   const library = useLibraryStore(state => state.library)
   const libraryTrackCount = library.length
   const statsByTrackId = useListenStatsStore(state => state.statsByTrackId)
+  const statisticsEnabled = useListenStatsStore(state => state.enabled)
   const playlistsData = usePlaylistsStore(state => state.data)
   const selectedPlaylistId = usePlaylistsStore(
     state => state.selectedPlaylistId,
@@ -99,8 +100,36 @@ export function useSidebarPlaylists() {
     writeCustomOrder(customOrder)
   }, [customOrder])
 
+  useEffect(() => {
+    if (
+      !statisticsEnabled
+      && (selectedPlaylistId === POPULAR_PLAYLIST_ID
+        || selectedPlaylistId === RECENT_PLAYLIST_ID)
+    ) {
+      setSelectedPlaylist(ALL_TRACKS_PLAYLIST_ID)
+    }
+  }, [statisticsEnabled, selectedPlaylistId, setSelectedPlaylist])
+
   const smartCount = smartPlaylistTrackCount(library, statsByTrackId)
   const smartUpdatedAt = smartPlaylistUpdatedAt(library, statsByTrackId)
+  const smartPlaylistItems: SidebarPlaylistListItem[] = statisticsEnabled
+    ? [
+        {
+          id: POPULAR_PLAYLIST_ID,
+          name: 'Popular',
+          count: smartCount,
+          updatedAt: smartUpdatedAt,
+          thumbnailVariant: POPULAR_PLAYLIST_ID,
+        },
+        {
+          id: RECENT_PLAYLIST_ID,
+          name: 'Recent',
+          count: smartCount,
+          updatedAt: smartUpdatedAt,
+          thumbnailVariant: RECENT_PLAYLIST_ID,
+        },
+      ]
+    : []
 
   const playlistItems: SidebarPlaylistListItem[] = [
     {
@@ -121,20 +150,7 @@ export function useSidebarPlaylists() {
           } satisfies SidebarPlaylistListItem,
         ]
       : []),
-    {
-      id: POPULAR_PLAYLIST_ID,
-      name: 'Popular',
-      count: smartCount,
-      updatedAt: smartUpdatedAt,
-      thumbnailVariant: POPULAR_PLAYLIST_ID,
-    },
-    {
-      id: RECENT_PLAYLIST_ID,
-      name: 'Recent',
-      count: smartCount,
-      updatedAt: smartUpdatedAt,
-      thumbnailVariant: RECENT_PLAYLIST_ID,
-    },
+    ...smartPlaylistItems,
     ...(playlistsData
       ? playlistsData.custom.map(playlist => ({
           id: playlist.id,
@@ -164,13 +180,17 @@ export function useSidebarPlaylists() {
   const hiddenEntries = useMemo(() => {
     const entries: Array<{ id: HideablePlaylistId, name: string }> = []
     for (const id of hiddenPlaylists) {
+      if (
+        !statisticsEnabled
+        && (id === POPULAR_PLAYLIST_ID || id === RECENT_PLAYLIST_ID)
+      ) continue
       entries.push({ id, name: HIDEABLE_PLAYLIST_LABELS[id] })
     }
     entries.sort((a, b) => a.name.localeCompare(b.name, undefined, {
       sensitivity: 'base',
     }))
     return entries
-  }, [hiddenPlaylists])
+  }, [hiddenPlaylists, statisticsEnabled])
 
   const canReorder = sortMode === 'custom' && search.length === 0
 

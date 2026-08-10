@@ -10,7 +10,9 @@ Append-only listen history + per-track aggregates + likeness score.
 | FE `listen-stats-store` | Hydrated aggregates for smart playlists + live upserts after ends |
 | BE `listen_stats` + `db` | Events, aggregates, likeness, rebuild |
 
-IPC: `record_listen_start` / `record_listen_end` / `get_track_listen_stats` / `list_listen_stats` / `rebuild_listen_stats` via [`src/lib/api.ts`](../src/lib/api.ts).
+IPC: `record_listen_start` / `record_listen_end` / `get_track_listen_stats` / `list_listen_stats` / `rebuild_listen_stats` / `clear_listen_statistics` via [`src/lib/api.ts`](../src/lib/api.ts).
+
+Collection is enabled by default and persisted in `app_settings` under `listen_stats_enabled`. When disabled, the backend ignores listen attempts and the UI hides Popular and Recent without deleting existing history. Clearing statistics deletes both raw events and aggregates; the active frontend attempt clock restarts so listening before the clear boundary is not re-added later.
 
 ## UI consumers
 

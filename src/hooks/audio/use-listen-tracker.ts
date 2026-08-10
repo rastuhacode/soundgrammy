@@ -25,6 +25,8 @@ export function useListenTracker(options: {
 }): { notifyCompleted: (restartSameTrack?: boolean) => void } {
   const { trackId, durationSeconds, isPlaying } = options
   const listenAttemptEpoch = usePlayerStore(state => state.listenAttemptEpoch)
+  const statisticsEnabled = useListenStatsStore(state => state.enabled)
+  const statisticsClearEpoch = useListenStatsStore(state => state.clearEpoch)
 
   const attemptTrackIdRef = useRef<number | null>(null)
   const attemptDurationSecRef = useRef<number | null | undefined>(null)
@@ -32,6 +34,8 @@ export function useListenTracker(options: {
   const isPlayingRef = useRef(isPlaying)
   const trackIdRef = useRef(trackId)
   const listenAttemptEpochRef = useRef(listenAttemptEpoch)
+  const statisticsClearEpochRef = useRef(statisticsClearEpoch)
+  const statisticsEnabledRef = useRef(statisticsEnabled)
 
   useEffect(() => {
     isPlayingRef.current = isPlaying
@@ -41,12 +45,17 @@ export function useListenTracker(options: {
     trackIdRef.current = trackId
   }, [trackId])
 
+  useEffect(() => {
+    statisticsEnabledRef.current = statisticsEnabled
+  }, [statisticsEnabled])
+
   const persistEnd = (
     id: number,
     endReason: ListenEndReason,
     listenedMs: number,
     durationSec: number | null | undefined,
   ) => {
+    if (!statisticsEnabledRef.current) return
     const durationMs = trackDurationMs(durationSec)
     api.recordListenEnd({
       trackId: id,
@@ -54,7 +63,7 @@ export function useListenTracker(options: {
       durationMs,
       endReason,
     }).then((result) => {
-      useListenStatsStore.getState().upsert(result.stats)
+      if (result) useListenStatsStore.getState().upsert(result.stats)
     }).catch(() => {
       // Best-effort; do not interrupt playback.
     })
@@ -78,6 +87,7 @@ export function useListenTracker(options: {
   }
 
   const startAttempt = (id: number, durationSec: number | null | undefined) => {
+    if (!statisticsEnabledRef.current) return
     clearPendingListenEndReason()
     attemptTrackIdRef.current = id
     attemptDurationSecRef.current = durationSec
@@ -89,6 +99,33 @@ export function useListenTracker(options: {
       // Best-effort; do not interrupt playback.
     })
   }
+
+  // Disabling drops the in-progress attempt without recording it. Re-enabling
+  // starts a fresh attempt for the currently loaded track.
+  useEffect(() => {
+    if (!statisticsEnabled) {
+      closeAttemptLocally()
+      clearPendingListenEndReason()
+      return
+    }
+    if (trackId != null && attemptTrackIdRef.current == null) {
+      startAttempt(trackId, durationSeconds)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statisticsEnabled])
+
+  // A clear operation is a hard history boundary. Drop any time accumulated
+  // before it and start a fresh attempt if playback remains active.
+  useEffect(() => {
+    if (statisticsClearEpochRef.current === statisticsClearEpoch) return
+    statisticsClearEpochRef.current = statisticsClearEpoch
+    closeAttemptLocally()
+    clearPendingListenEndReason()
+    if (statisticsEnabled && trackId != null) {
+      startAttempt(trackId, durationSeconds)
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [statisticsClearEpoch])
 
   // Track identity changes: end previous attempt, start new when track present.
   useEffect(() => {

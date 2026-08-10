@@ -33,15 +33,16 @@ type AppStatus = 'loading' | 'login' | 'ready'
 
 /** Refreshes the library + playlists from the backend into the stores. */
 async function loadLibrary(firstLoad: boolean) {
-  const [library, playlists, listenStats] = await Promise.all([
+  const [library, playlists, listenStatsEnabled, listenStats] = await Promise.all([
     api.listTracks(),
     api.listPlaylists(),
+    api.getListenStatisticsEnabled(),
     api.listListenStats(),
   ])
 
   useLibraryStore.getState().setLibrary(library)
   usePlayerStore.getState().refreshQueueTracks(library)
-  useListenStatsStore.getState().hydrate(listenStats)
+  useListenStatsStore.getState().hydrate(listenStatsEnabled, listenStats)
   await useCacheStore.getState().hydrate()
 
   // Keep the current track reference fresh (mirrors PlayerTracksHydrator).

@@ -5,6 +5,7 @@ import {
   resolveSmartPlaylistTracks,
   smartPlaylistTrackCount,
   smartPlaylistUpdatedAt,
+  useListenStatsStore,
 } from './listen-stats-store'
 
 function track(id: number, overrides: Partial<Track> = {}): Track {
@@ -106,5 +107,18 @@ describe('smartPlaylistTrackCount / smartPlaylistUpdatedAt', () => {
     const library = [track(1)]
     const byId = new Map([[1, stats(1)]])
     expect(smartPlaylistUpdatedAt(library, byId)).toBe('')
+  })
+})
+
+describe('listen statistics preferences', () => {
+  it('hydrates the enabled setting and clears all smart-playlist data', () => {
+    useListenStatsStore.getState().hydrate(false, [stats(1)])
+    const beforeClearEpoch = useListenStatsStore.getState().clearEpoch
+    expect(useListenStatsStore.getState().enabled).toBe(false)
+    expect(useListenStatsStore.getState().statsByTrackId.has(1)).toBe(true)
+
+    useListenStatsStore.getState().clear()
+    expect(useListenStatsStore.getState().statsByTrackId.size).toBe(0)
+    expect(useListenStatsStore.getState().clearEpoch).toBe(beforeClearEpoch + 1)
   })
 })

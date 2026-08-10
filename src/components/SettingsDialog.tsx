@@ -4,6 +4,7 @@ import { api } from '@/lib/api'
 import type { CacheSettings, CacheUsage } from '@/types'
 import { useCacheStore } from '@/stores/cache-store'
 import { useFullscreenStore } from '@/stores/fullscreen-store'
+import { useListenStatsStore } from '@/stores/listen-stats-store'
 import { ProxySettingsFields } from '@/components/proxy/ProxySettingsFields'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -44,10 +45,14 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const [ttlDays, setTtlDays] = useState('30')
   const [busy, setBusy] = useState(false)
   const [confirmClear, setConfirmClear] = useState(false)
+  const [confirmClearStatistics, setConfirmClearStatistics] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [cacheOpen, setCacheOpen] = useState(false)
   const [proxyOpen, setProxyOpen] = useState(false)
   const [bounceOpen, setBounceOpen] = useState(false)
+  const [statisticsOpen, setStatisticsOpen] = useState(false)
+  const statisticsEnabled = useListenStatsStore(state => state.enabled)
+  const setStatisticsEnabled = useListenStatsStore(state => state.setEnabled)
   const bounce = useFullscreenStore(state => state.bounce)
   const setBounceSettings = useFullscreenStore(state => state.setBounceSettings)
   const resetBounceSettings = useFullscreenStore(state => state.resetBounceSettings)
@@ -58,9 +63,10 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     let cancelled = false
     ;(async () => {
       try {
-        const [nextSettings, nextUsage] = await Promise.all([
+        const [nextSettings, nextUsage, nextStatisticsEnabled] = await Promise.all([
           api.getCacheSettings(),
           api.getCacheUsage(),
+          api.getListenStatisticsEnabled(),
         ])
         if (cancelled) return
         setSettings(nextSettings)
@@ -68,10 +74,13 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
         setLimitGb(String(Math.round((nextSettings.limitBytes / GIB) * 100) / 100))
         setTtlDays(String(Math.round(nextSettings.ttlSecs / 86_400)))
         setConfirmClear(false)
+        setConfirmClearStatistics(false)
+        setStatisticsEnabled(nextStatisticsEnabled)
         setError(null)
         setCacheOpen(false)
         setProxyOpen(false)
         setBounceOpen(false)
+        setStatisticsOpen(false)
       }
       catch (err) {
         if (!cancelled) setError(errorMessage(err))
@@ -81,15 +90,17 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
     return () => {
       cancelled = true
     }
-  }, [open])
+  }, [open, setStatisticsEnabled])
 
   const handleOpenChange = (next: boolean) => {
     if (!next) {
       setConfirmClear(false)
+      setConfirmClearStatistics(false)
       setError(null)
       setCacheOpen(false)
       setProxyOpen(false)
       setBounceOpen(false)
+      setStatisticsOpen(false)
     }
     onOpenChange(next)
   }
@@ -135,6 +146,37 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       const nextUsage = await api.getCacheUsage()
       setUsage(nextUsage)
       setConfirmClear(false)
+    }
+    catch (err) {
+      setError(errorMessage(err))
+    }
+    finally {
+      setBusy(false)
+    }
+  }
+
+  const handleStatisticsEnabledChange = async (enabled: boolean) => {
+    setBusy(true)
+    setError(null)
+    try {
+      await api.setListenStatisticsEnabled(enabled)
+      setStatisticsEnabled(enabled)
+    }
+    catch (err) {
+      setError(errorMessage(err))
+    }
+    finally {
+      setBusy(false)
+    }
+  }
+
+  const handleClearStatistics = async () => {
+    setBusy(true)
+    setError(null)
+    try {
+      await api.clearListenStatistics()
+      useListenStatsStore.getState().clear()
+      setConfirmClearStatistics(false)
     }
     catch (err) {
       setError(errorMessage(err))
@@ -238,7 +280,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                           disabled={busy}
                           onClick={() => setConfirmClear(true)}
                         >
-                          Clear cache…
+                          Clear cache
                         </Button>
                       )
                     : (
@@ -255,6 +297,60 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                   ? (
                       <p className="text-xs text-muted-foreground">
                         This removes app-cached audio only.
+                      </p>
+                    )
+                  : null}
+              </CollapsibleContent>
+            </Collapsible>
+
+            <Collapsible open={statisticsOpen} onOpenChange={setStatisticsOpen}>
+              <CollapsibleTrigger className="flex h-auto w-full items-center justify-between rounded-md px-2 py-2.5 text-sm font-medium hover:bg-muted/40">
+                <span>Listening statistics</span>
+                <ChevronDown
+                  className={`size-4 text-muted-foreground transition-transform ${statisticsOpen ? 'rotate-180' : ''}`}
+                />
+              </CollapsibleTrigger>
+              <CollapsibleContent className="mt-1 flex flex-col gap-3 px-2 pb-3">
+                <p className="text-xs text-muted-foreground">
+                  Track your listening activity to build the Popular and Recent playlists. Turning this off keeps existing history but hides those playlists.
+                </p>
+
+                <label className="flex items-center gap-2 text-sm">
+                  <Checkbox
+                    checked={statisticsEnabled}
+                    disabled={busy}
+                    onCheckedChange={checked => void handleStatisticsEnabledChange(checked === true)}
+                  />
+                  <span>Collect listening statistics</span>
+                </label>
+
+                <div>
+                  {!confirmClearStatistics
+                    ? (
+                        <Button
+                          variant="outline"
+                          size="sm"
+                          disabled={busy}
+                          onClick={() => setConfirmClearStatistics(true)}
+                        >
+                          Clear statistics
+                        </Button>
+                      )
+                    : (
+                        <Button
+                          variant="destructive"
+                          size="sm"
+                          disabled={busy}
+                          onClick={handleClearStatistics}
+                        >
+                          Confirm clear statistics
+                        </Button>
+                      )}
+                </div>
+                {confirmClearStatistics
+                  ? (
+                      <p className="text-xs text-muted-foreground">
+                        This permanently removes all listening history from this device. Popular and Recent will be emptied.
                       </p>
                     )
                   : null}
