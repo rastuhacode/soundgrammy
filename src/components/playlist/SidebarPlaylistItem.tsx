@@ -19,8 +19,7 @@ export interface SidebarPlaylistItemProps {
   count: number
   isActive: boolean
   thumbnailVariant: SidebarPlaylistThumbnailVariant
-  playlistId?: number
-  hasThumbnail?: boolean
+  trackIds?: number[]
   onSelect: () => void
   onEdit?: () => void
   onDelete?: () => void
@@ -36,8 +35,7 @@ export function SidebarPlaylistItem({
   count,
   isActive,
   thumbnailVariant,
-  playlistId,
-  hasThumbnail,
+  trackIds,
   onSelect,
   onEdit,
   onDelete,
@@ -103,8 +101,7 @@ export function SidebarPlaylistItem({
       >
         <SidebarPlaylistThumbnail
           variant={thumbnailVariant}
-          playlistId={playlistId}
-          hasThumbnail={hasThumbnail}
+          trackIds={trackIds}
           name={name}
         />
 

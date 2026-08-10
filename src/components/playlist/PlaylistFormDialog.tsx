@@ -1,5 +1,5 @@
-import { useEffect, useId, useRef, useState } from 'react'
-import { FileUp, ImagePlus, Trash2 } from 'lucide-react'
+import { useEffect, useId, useState } from 'react'
+import { FileUp } from 'lucide-react'
 import { open as openFileDialog } from '@tauri-apps/plugin-dialog'
 import { Button } from '@/components/ui/button'
 import {
@@ -21,12 +21,6 @@ import { Input } from '@/components/ui/input'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { PlaylistImportMatchLists } from '@/components/playlist/PlaylistImportMatchLists'
 import type { CustomPlaylistSummary } from '@/lib/db'
-import { usePlaylistThumbnail } from '@/hooks/use-playlist-thumbnail'
-import {
-  createThumbnailPreviewUrl,
-  readPlaylistThumbnailFile,
-  revokeThumbnailPreviewUrl,
-} from '@/lib/playlist-thumbnail'
 import { fileBasename, validatePlaylistName } from '@/lib/playlist-form'
 import { formatInvokeError } from '@/lib/playlist-recipe-io'
 import { usePlaylistsStore } from '@/stores/playlists-store'
@@ -50,24 +44,16 @@ export function PlaylistFormDialog({
   playlist,
 }: PlaylistFormDialogProps) {
   const formId = useId()
-  const fileInputRef = useRef<HTMLInputElement>(null)
   const data = usePlaylistsStore(state => state.data)
   const setData = usePlaylistsStore(state => state.setData)
   const setSelectedPlaylist = usePlaylistsStore(state => state.setSelectedPlaylist)
 
   const isEdit = mode === 'edit'
-  const existingThumbnail = usePlaylistThumbnail(
-    isEdit ? playlist?.id : undefined,
-    Boolean(playlist?.hasThumbnail),
-  )
 
   const [createTab, setCreateTab] = useState<CreateTab>('new')
   const [name, setName] = useState(playlist?.name ?? '')
   const [nameError, setNameError] = useState<string | null>(null)
-  const [thumbnailFile, setThumbnailFile] = useState<File | null>(null)
-  const [thumbnailPreview, setThumbnailPreview] = useState<string | null>(null)
-  const [removeThumbnail, setRemoveThumbnail] = useState(false)
-  const [thumbnailError, setThumbnailError] = useState<string | null>(null)
+  const [saveError, setSaveError] = useState<string | null>(null)
   const [isSubmitting, setIsSubmitting] = useState(false)
 
   const [importPath, setImportPath] = useState<string | null>(null)
@@ -82,51 +68,13 @@ export function PlaylistFormDialog({
     setCreateTab('new')
     setName(playlist?.name ?? '')
     setNameError(null)
-    setThumbnailFile(null)
-    setThumbnailPreview(null)
-    setRemoveThumbnail(false)
-    setThumbnailError(null)
+    setSaveError(null)
     setImportPath(null)
     setImportPreview(null)
     setImportError(null)
     setImportAnalyzing(false)
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [open, playlist])
-
-  useEffect(() => {
-    return () => {
-      revokeThumbnailPreviewUrl(thumbnailPreview)
-    }
-  }, [thumbnailPreview])
-
-  const previewSrc
-    = thumbnailPreview ?? (!removeThumbnail ? existingThumbnail : null)
-
-  const handleThumbnailChange = (file: File | null) => {
-    setThumbnailError(null)
-    setRemoveThumbnail(false)
-    revokeThumbnailPreviewUrl(thumbnailPreview)
-
-    if (!file) {
-      setThumbnailFile(null)
-      setThumbnailPreview(null)
-      return
-    }
-
-    setThumbnailFile(file)
-    setThumbnailPreview(createThumbnailPreviewUrl(file))
-  }
-
-  const handleRemoveThumbnail = () => {
-    setThumbnailError(null)
-    setThumbnailFile(null)
-    setRemoveThumbnail(true)
-    revokeThumbnailPreviewUrl(thumbnailPreview)
-    setThumbnailPreview(null)
-    if (fileInputRef.current) {
-      fileInputRef.current.value = ''
-    }
-  }
 
   const handleSelectImportFile = async () => {
     if (importAnalyzing || isSubmitting) return
@@ -180,34 +128,13 @@ export function PlaylistFormDialog({
     setNameError(null)
     const trimmed = name.trim()
 
-    let thumbnailPayload:
-      | { data: string, mime: 'image/jpeg' | 'image/png' | 'image/webp' }
-      | null
-      | undefined
-
-    try {
-      if (thumbnailFile) {
-        thumbnailPayload = await readPlaylistThumbnailFile(thumbnailFile)
-      }
-      else if (removeThumbnail) {
-        thumbnailPayload = null
-      }
-    }
-    catch (err) {
-      return setThumbnailError(
-        err instanceof Error ? err.message : 'Invalid thumbnail',
-      )
-    }
-
+    setSaveError(null)
     setIsSubmitting(true)
     try {
       if (isEdit && playlist) {
         const updated = await api.updatePlaylist({
           playlistId: playlist.id,
           name: trimmed,
-          thumbnailData: thumbnailPayload?.data ?? null,
-          thumbnailMime: thumbnailPayload?.mime ?? null,
-          clearThumbnail: thumbnailPayload === null,
         })
         setData({
           ...data,
@@ -217,17 +144,13 @@ export function PlaylistFormDialog({
         })
       }
       else {
-        const created = await api.createPlaylist({
-          name: trimmed,
-          thumbnailData: thumbnailPayload?.data ?? null,
-          thumbnailMime: thumbnailPayload?.mime ?? null,
-        })
+        const created = await api.createPlaylist({ name: trimmed })
         setData({ ...data, custom: [...data.custom, created] })
       }
       onOpenChange(false)
     }
     catch (err) {
-      setThumbnailError(
+      setSaveError(
         err instanceof Error ? err.message : 'Failed to save playlist',
       )
     }
@@ -273,6 +196,7 @@ export function PlaylistFormDialog({
             value={name}
             onChange={(event) => {
               setNameError(null)
+              setSaveError(null)
               setName(event.target.value)
             }}
             aria-invalid={nameError ? true : undefined}
@@ -285,67 +209,8 @@ export function PlaylistFormDialog({
           <FieldError>{nameError}</FieldError>
         </Field>
 
-        <Field data-invalid={thumbnailError ? true : undefined}>
-          <FieldLabel htmlFor={`${formId}-thumbnail`}>Cover image</FieldLabel>
-          <div className="flex items-start gap-4">
-            <div className="relative size-24 shrink-0 overflow-hidden rounded-lg bg-muted shadow-sm ring-1 ring-border/60">
-              {previewSrc
-                ? (
-                    <img
-                      src={previewSrc}
-                      alt="Playlist cover preview"
-                      className="size-full object-cover"
-                    />
-                  )
-                : (
-                    <div className="flex size-full items-center justify-center bg-linear-to-br from-slate-600 to-slate-800 text-white/80">
-                      <ImagePlus className="size-8" />
-                    </div>
-                  )}
-            </div>
-
-            <div className="flex min-w-0 grow flex-col gap-2">
-              <input
-                ref={fileInputRef}
-                id={`${formId}-thumbnail`}
-                type="file"
-                accept="image/jpeg,image/png,image/webp"
-                className="sr-only"
-                onChange={event =>
-                  handleThumbnailChange(event.target.files?.[0] ?? null)}
-              />
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                className="w-fit"
-                onClick={() => fileInputRef.current?.click()}
-              >
-                <ImagePlus />
-                {thumbnailFile ? 'Change image' : 'Choose image'}
-              </Button>
-              <FieldDescription className="text-xs">
-                JPEG, PNG, or WebP up to 512KB.
-              </FieldDescription>
-              {previewSrc
-                ? (
-                    <Button
-                      type="button"
-                      variant="outline"
-                      size="sm"
-                      onClick={handleRemoveThumbnail}
-                      className="w-fit"
-                    >
-                      <Trash2 />
-                      Remove image
-                    </Button>
-                  )
-                : null}
-              <FieldError>{thumbnailError}</FieldError>
-            </div>
-          </div>
-        </Field>
       </FieldGroup>
+      <FieldError>{saveError}</FieldError>
     </form>
   )
 
@@ -441,7 +306,7 @@ export function PlaylistFormDialog({
       : 'Create playlist'
 
   const dialogDescription = isEdit
-    ? 'Update the playlist name or cover image.'
+    ? 'Update the playlist name.'
     : createTab === 'import'
       ? 'Import playlist from file. Keep in mind that it is not cross-user operation.'
       : 'Create a playlist from scratch.'

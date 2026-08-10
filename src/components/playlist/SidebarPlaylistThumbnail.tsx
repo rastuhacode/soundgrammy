@@ -1,5 +1,5 @@
 import { Clock, Heart, ListMusic, Music, TrendingUp } from 'lucide-react'
-import { usePlaylistThumbnail } from '@/hooks/use-playlist-thumbnail'
+import { useCachedThumbnail } from '@/hooks/use-cached-thumbnail'
 import {
   ALL_TRACKS_PLAYLIST_ID,
   LIKED_PLAYLIST_ID,
@@ -17,8 +17,7 @@ export type SidebarPlaylistThumbnailVariant
 
 interface SidebarPlaylistThumbnailProps {
   variant: SidebarPlaylistThumbnailVariant
-  playlistId?: number
-  hasThumbnail?: boolean
+  trackIds?: number[]
   name: string
 }
 
@@ -55,36 +54,79 @@ const variantStyles: Record<
 
 export function SidebarPlaylistThumbnail({
   variant,
-  playlistId,
-  hasThumbnail = false,
+  trackIds = [],
   name,
 }: SidebarPlaylistThumbnailProps) {
-  const coverUrl = usePlaylistThumbnail(
-    variant === 'custom' ? playlistId : undefined,
-    hasThumbnail,
-  )
-  const showImage = variant === 'custom' && hasThumbnail && Boolean(coverUrl)
   const style = variantStyles[variant]
+  const coverTrackIds = variant === 'custom' ? trackIds.slice(0, 4) : []
 
   return (
     <div
+      role="img"
+      aria-label={`${name} cover`}
       className={cn(
         'relative size-12 shrink-0 overflow-hidden rounded-sm shadow-sm',
-        !showImage && style.className,
+        coverTrackIds.length === 0 && style.className,
       )}
     >
-      {!showImage
+      {coverTrackIds.length === 0
         ? (
             <div className="flex size-full items-center justify-center">
               {style.icon}
             </div>
           )
         : (
+            <div
+              className={cn(
+                'grid size-full gap-px bg-border',
+                coverTrackIds.length === 1 && 'grid-cols-1',
+                coverTrackIds.length >= 2 && 'grid-cols-2',
+                coverTrackIds.length >= 3 && 'grid-rows-2',
+              )}
+            >
+              {coverTrackIds.map((trackId, index) => (
+                <PlaylistCoverTile
+                  key={`${trackId}:${index}`}
+                  trackId={trackId}
+                  className={coverTrackIds.length === 3 && index === 0
+                    ? 'row-span-2'
+                    : undefined}
+                />
+              ))}
+            </div>
+          )}
+    </div>
+  )
+}
+
+function PlaylistCoverTile({
+  trackId,
+  className,
+}: {
+  trackId: number
+  className?: string
+}) {
+  const thumbnail = useCachedThumbnail(trackId)
+
+  return (
+    <div
+      className={cn(
+        'relative min-h-0 min-w-0 overflow-hidden bg-linear-to-br from-slate-500 to-slate-800',
+        className,
+      )}
+    >
+      {thumbnail.url
+        ? (
             <img
-              src={coverUrl ?? undefined}
-              alt={`${name} cover`}
+              src={thumbnail.url}
+              alt=""
               className="size-full object-cover"
             />
+          )
+        : (
+            <div className="flex size-full items-center justify-center text-white/70">
+              <Music className="size-3" strokeWidth={2.25} />
+            </div>
           )}
     </div>
   )

@@ -549,15 +549,9 @@ pub async fn list_playlists(state: State<'_, AppState>) -> AppResult<PlaylistsBu
 pub async fn create_playlist(
     state: State<'_, AppState>,
     name: String,
-    thumbnail_data: Option<String>,
-    thumbnail_mime: Option<String>,
 ) -> AppResult<CustomPlaylistSummary> {
     let uid = require_uid(&state)?;
-    let thumb = match (thumbnail_data.as_deref(), thumbnail_mime.as_deref()) {
-        (Some(d), Some(m)) => Some((d, m)),
-        _ => None,
-    };
-    state.db.create_playlist(uid, &name, thumb)
+    state.db.create_playlist(uid, &name)
 }
 
 #[tauri::command]
@@ -565,38 +559,15 @@ pub async fn update_playlist(
     state: State<'_, AppState>,
     playlist_id: i64,
     name: Option<String>,
-    thumbnail_data: Option<String>,
-    thumbnail_mime: Option<String>,
-    clear_thumbnail: Option<bool>,
 ) -> AppResult<CustomPlaylistSummary> {
     let uid = require_uid(&state)?;
-    let thumbnail = if clear_thumbnail.unwrap_or(false) {
-        Some(None)
-    } else {
-        match (thumbnail_data.as_deref(), thumbnail_mime.as_deref()) {
-            (Some(d), Some(m)) => Some(Some((d, m))),
-            _ => None,
-        }
-    };
-    state
-        .db
-        .update_playlist(playlist_id, uid, name.as_deref(), thumbnail)
+    state.db.update_playlist(playlist_id, uid, name.as_deref())
 }
 
 #[tauri::command]
 pub async fn delete_playlist(state: State<'_, AppState>, playlist_id: i64) -> AppResult<()> {
     let uid = require_uid(&state)?;
     state.db.delete_playlist(playlist_id, uid)
-}
-
-#[tauri::command]
-pub async fn get_playlist_thumbnail(
-    state: State<'_, AppState>,
-    playlist_id: i64,
-) -> AppResult<Option<String>> {
-    let uid = require_uid(&state)?;
-    let thumb = state.db.playlist_thumbnail(playlist_id, uid)?;
-    Ok(thumb.map(|(data, mime)| format!("data:{mime};base64,{data}")))
 }
 
 #[tauri::command]

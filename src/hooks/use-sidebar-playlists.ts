@@ -56,8 +56,7 @@ export interface SidebarPlaylistListItem {
   count: number
   updatedAt: string
   thumbnailVariant: SidebarPlaylistThumbnailVariant
-  playlistId?: number
-  hasThumbnail?: boolean
+  trackIds?: number[]
   playlist?: CustomPlaylistSummary
 }
 
@@ -158,8 +157,7 @@ export function useSidebarPlaylists() {
           count: playlist.trackIds.length,
           updatedAt: playlist.updatedAt,
           thumbnailVariant: 'custom' as const,
-          playlistId: playlist.id,
-          hasThumbnail: playlist.hasThumbnail,
+          trackIds: playlist.trackIds,
           playlist,
         }))
       : []),

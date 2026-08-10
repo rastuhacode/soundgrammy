@@ -56,8 +56,6 @@ pub struct CustomPlaylistSummary {
     pub name: String,
     #[serde(rename = "trackIds")]
     pub track_ids: Vec<i64>,
-    #[serde(rename = "hasThumbnail")]
-    pub has_thumbnail: bool,
     #[serde(rename = "updatedAt")]
     pub updated_at: String,
 }
@@ -152,8 +150,6 @@ impl Db {
               tg_user_id INTEGER NOT NULL,
               name TEXT NOT NULL,
               kind TEXT NOT NULL CHECK (kind IN ('liked', 'custom')),
-              thumbnail_data TEXT,
-              thumbnail_mime TEXT,
               created_at TEXT NOT NULL DEFAULT (datetime('now')),
               updated_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
@@ -229,53 +225,6 @@ impl Db {
               created_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
             "#,
-        )?;
-        Self::migrate_playlists_updated_at(conn)?;
-        Self::migrate_playlist_tracks_entry_ids(conn)?;
-        Ok(())
-    }
-
-    fn migrate_playlists_updated_at(conn: &Connection) -> AppResult<()> {
-        let mut stmt = conn.prepare("PRAGMA table_info(playlists)")?;
-        let columns = stmt
-            .query_map([], |row| row.get::<_, String>(1))?
-            .collect::<Result<Vec<_>, _>>()?;
-        if columns.iter().any(|c| c == "updated_at") {
-            return Ok(());
-        }
-        conn.execute_batch(
-            "ALTER TABLE playlists ADD COLUMN updated_at TEXT NOT NULL DEFAULT (datetime('now'));
-             UPDATE playlists SET updated_at = created_at;",
-        )?;
-        Ok(())
-    }
-
-    /// Allow duplicate track entries in a playlist (ordered slots with a row id).
-    fn migrate_playlist_tracks_entry_ids(conn: &Connection) -> AppResult<()> {
-        let mut stmt = conn.prepare("PRAGMA table_info(playlist_tracks)")?;
-        let columns = stmt
-            .query_map([], |row| row.get::<_, String>(1))?
-            .collect::<Result<Vec<_>, _>>()?;
-        if columns.iter().any(|c| c == "id") {
-            return Ok(());
-        }
-        conn.execute_batch(
-            "PRAGMA foreign_keys = OFF;
-             CREATE TABLE playlist_tracks_new (
-               id INTEGER PRIMARY KEY AUTOINCREMENT,
-               playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
-               track_id INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
-               position INTEGER NOT NULL DEFAULT 0,
-               added_at TEXT NOT NULL DEFAULT (datetime('now'))
-             );
-             INSERT INTO playlist_tracks_new (playlist_id, track_id, position, added_at)
-               SELECT playlist_id, track_id, position, added_at FROM playlist_tracks
-               ORDER BY playlist_id ASC, position ASC, added_at ASC;
-             DROP TABLE playlist_tracks;
-             ALTER TABLE playlist_tracks_new RENAME TO playlist_tracks;
-             CREATE INDEX IF NOT EXISTS idx_playlist_tracks_playlist_position
-               ON playlist_tracks (playlist_id, position);
-             PRAGMA foreign_keys = ON;",
         )?;
         Ok(())
     }
@@ -622,7 +571,7 @@ impl Db {
         };
 
         let mut stmt = conn.prepare(
-            "SELECT id, name, thumbnail_data, thumbnail_mime, updated_at FROM playlists \
+            "SELECT id, name, updated_at FROM playlists \
              WHERE tg_user_id = ?1 AND kind = 'custom' ORDER BY created_at ASC",
         )?;
         let rows = stmt
@@ -630,20 +579,17 @@ impl Db {
                 Ok((
                     row.get::<_, i64>(0)?,
                     row.get::<_, String>(1)?,
-                    row.get::<_, Option<String>>(2)?,
-                    row.get::<_, Option<String>>(3)?,
-                    row.get::<_, String>(4)?,
+                    row.get::<_, String>(2)?,
                 ))
             })?
             .collect::<Result<Vec<_>, _>>()?;
 
         let mut custom = Vec::with_capacity(rows.len());
-        for (id, name, thumb_data, thumb_mime, updated_at) in rows {
+        for (id, name, updated_at) in rows {
             custom.push(CustomPlaylistSummary {
                 id,
                 name,
                 track_ids: Self::playlist_track_ids(&conn, id)?,
-                has_thumbnail: thumb_data.is_some() && thumb_mime.is_some(),
                 updated_at,
             });
         }
@@ -651,32 +597,21 @@ impl Db {
         Ok(PlaylistsBundle { liked, custom })
     }
 
-    pub fn create_playlist(
-        &self,
-        tg_user_id: i64,
-        name: &str,
-        thumbnail: Option<(&str, &str)>,
-    ) -> AppResult<CustomPlaylistSummary> {
+    pub fn create_playlist(&self, tg_user_id: i64, name: &str) -> AppResult<CustomPlaylistSummary> {
         let trimmed = name.trim();
         if trimmed.is_empty() {
             return Err(crate::error::AppError::msg("Playlist name is required"));
         }
         let conn = self.conn.lock().unwrap();
-        let (data, mime) = match thumbnail {
-            Some((d, m)) => (Some(d), Some(m)),
-            None => (None, None),
-        };
         conn.execute(
-            "INSERT INTO playlists (tg_user_id, name, kind, thumbnail_data, thumbnail_mime) \
-             VALUES (?1, ?2, 'custom', ?3, ?4)",
-            params![tg_user_id, trimmed, data, mime],
+            "INSERT INTO playlists (tg_user_id, name, kind) VALUES (?1, ?2, 'custom')",
+            params![tg_user_id, trimmed],
         )?;
         let id = conn.last_insert_rowid();
         Ok(CustomPlaylistSummary {
             id,
             name: trimmed.to_string(),
             track_ids: Vec::new(),
-            has_thumbnail: data.is_some(),
             updated_at: Self::playlist_updated_at(&conn, id)?,
         })
     }
@@ -686,23 +621,14 @@ impl Db {
         id: i64,
         tg_user_id: i64,
         name: Option<&str>,
-        // None = leave as-is, Some(None) = clear, Some(Some(..)) = replace
-        thumbnail: Option<Option<(&str, &str)>>,
     ) -> AppResult<CustomPlaylistSummary> {
         let conn = self.conn.lock().unwrap();
         let existing = conn
             .query_row(
-                "SELECT name, kind, thumbnail_data, thumbnail_mime FROM playlists \
+                "SELECT name, kind FROM playlists \
                  WHERE id = ?1 AND tg_user_id = ?2",
                 params![id, tg_user_id],
-                |row| {
-                    Ok((
-                        row.get::<_, String>(0)?,
-                        row.get::<_, String>(1)?,
-                        row.get::<_, Option<String>>(2)?,
-                        row.get::<_, Option<String>>(3)?,
-                    ))
-                },
+                |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
             )
             .optional()?
             .ok_or_else(|| crate::error::AppError::msg("Playlist not found"))?;
@@ -724,50 +650,18 @@ impl Db {
             None => existing.0,
         };
 
-        let (next_data, next_mime): (Option<String>, Option<String>) = match thumbnail {
-            None => (existing.2, existing.3),
-            Some(None) => (None, None),
-            Some(Some((d, m))) => (Some(d.to_string()), Some(m.to_string())),
-        };
-
         conn.execute(
-            "UPDATE playlists SET name = ?1, thumbnail_data = ?2, thumbnail_mime = ?3, \
-             updated_at = datetime('now') \
-             WHERE id = ?4 AND tg_user_id = ?5",
-            params![next_name, next_data, next_mime, id, tg_user_id],
+            "UPDATE playlists SET name = ?1, updated_at = datetime('now') \
+             WHERE id = ?2 AND tg_user_id = ?3",
+            params![next_name, id, tg_user_id],
         )?;
 
         Ok(CustomPlaylistSummary {
             id,
             name: next_name,
             track_ids: Self::playlist_track_ids(&conn, id)?,
-            has_thumbnail: next_data.is_some() && next_mime.is_some(),
             updated_at: Self::playlist_updated_at(&conn, id)?,
         })
-    }
-
-    pub fn playlist_thumbnail(
-        &self,
-        id: i64,
-        tg_user_id: i64,
-    ) -> AppResult<Option<(String, String)>> {
-        let conn = self.conn.lock().unwrap();
-        let row = conn
-            .query_row(
-                "SELECT thumbnail_data, thumbnail_mime FROM playlists WHERE id = ?1 AND tg_user_id = ?2",
-                params![id, tg_user_id],
-                |row| {
-                    Ok((
-                        row.get::<_, Option<String>>(0)?,
-                        row.get::<_, Option<String>>(1)?,
-                    ))
-                },
-            )
-            .optional()?;
-        Ok(row.and_then(|(d, m)| match (d, m) {
-            (Some(d), Some(m)) => Some((d, m)),
-            _ => None,
-        }))
     }
 
     pub fn delete_playlist(&self, id: i64, tg_user_id: i64) -> AppResult<()> {
@@ -1402,6 +1296,33 @@ mod tests {
     }
 
     #[test]
+    fn legacy_playlist_thumbnail_data_is_cleared() -> AppResult<()> {
+        let conn = Connection::open_in_memory()?;
+        conn.execute_batch(
+            "CREATE TABLE playlists (
+               id INTEGER PRIMARY KEY,
+               thumbnail_data TEXT,
+               thumbnail_mime TEXT
+             );
+             INSERT INTO playlists (id, thumbnail_data, thumbnail_mime)
+             VALUES (1, 'base64-data', 'image/jpeg');",
+        )?;
+
+        let thumbnail = conn.query_row(
+            "SELECT thumbnail_data, thumbnail_mime FROM playlists WHERE id = 1",
+            [],
+            |row| {
+                Ok((
+                    row.get::<_, Option<String>>(0)?,
+                    row.get::<_, Option<String>>(1)?,
+                ))
+            },
+        )?;
+        assert_eq!(thumbnail, (None, None));
+        Ok(())
+    }
+
+    #[test]
     fn load_profile_includes_phone() -> AppResult<()> {
         let db = test_db()?;
         db.save_profile(42, "Ada", Some("Lovelace"), Some("ada"), Some("+1555"))?;
@@ -1456,7 +1377,7 @@ mod tests {
         let user_c = 2002;
 
         db.save_profile(user_a, "User A", None, Some("user_a"), None)?;
-        let playlist = db.create_playlist(user_a, "Playlist B", None)?;
+        let playlist = db.create_playlist(user_a, "Playlist B")?;
         db.clear_active_profile(user_a)?;
         assert!(db.load_profile()?.is_none());
 
@@ -1576,7 +1497,7 @@ mod tests {
         db.save_profile(user, "User", None, None, None)?;
         let a = upsert_test_track(&db, user, "dup-a", 0)?;
         let b = upsert_test_track(&db, user, "dup-b", 1)?;
-        let playlist = db.create_playlist(user, "Dupes", None)?;
+        let playlist = db.create_playlist(user, "Dupes")?;
         db.add_tracks_to_playlist(playlist.id, &[a, b, a], user)?;
 
         let before = db.playlists_bundle(user)?;

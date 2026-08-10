@@ -24,7 +24,6 @@ export interface CustomPlaylistSummary {
   id: number
   name: string
   trackIds: number[]
-  hasThumbnail: boolean
   updatedAt: string
 }
 

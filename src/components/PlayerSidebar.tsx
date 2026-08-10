@@ -132,8 +132,7 @@ export function PlayerSidebar(props: { onLogout: () => void }) {
                   count={item.count}
                   isActive={selectedPlaylistId === item.id}
                   thumbnailVariant={item.thumbnailVariant}
-                  playlistId={item.playlistId}
-                  hasThumbnail={item.hasThumbnail}
+                  trackIds={item.trackIds}
                   sortable={canReorder}
                   onSelect={() => setSelectedPlaylist(item.id)}
                   onEdit={customPlaylist

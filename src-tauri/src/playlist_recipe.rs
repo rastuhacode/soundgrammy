@@ -4,7 +4,6 @@
 
 use std::path::Path;
 
-use base64::Engine;
 use serde::{Deserialize, Serialize};
 
 use crate::db::Track;
@@ -13,8 +12,6 @@ use crate::state::AppState;
 
 const RECIPE_FORMAT: &str = "soundgrammy.playlist";
 const RECIPE_VERSION: u32 = 1;
-const MAX_THUMBNAIL_BYTES: usize = 512 * 1024;
-const ALLOWED_THUMB_MIMES: &[&str] = &["image/jpeg", "image/png", "image/webp"];
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
@@ -24,13 +21,6 @@ pub enum PlaylistRecipeSource {
         #[serde(alias = "playlistId")]
         playlist_id: i64,
     },
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct PlaylistRecipeThumbnail {
-    pub mime: String,
-    pub data_base64: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -50,8 +40,6 @@ pub struct PlaylistRecipeTrack {
 pub struct PlaylistRecipeBody {
     pub name: String,
     pub kind: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub thumbnail: Option<PlaylistRecipeThumbnail>,
     pub tracks: Vec<PlaylistRecipeTrack>,
 }
 
@@ -147,36 +135,15 @@ fn iso_now() -> String {
     format!("{y:04}-{month:02}-{d:02}T{h:02}:{m:02}:{s:02}Z")
 }
 
-fn validate_thumbnail(thumb: &PlaylistRecipeThumbnail) -> AppResult<()> {
-    let mime = thumb.mime.trim();
-    if !ALLOWED_THUMB_MIMES.contains(&mime) {
-        return Err(AppError::msg(
-            "Playlist thumbnail must be JPEG, PNG, or WebP",
-        ));
-    }
-    let decoded = base64::engine::general_purpose::STANDARD
-        .decode(thumb.data_base64.trim())
-        .map_err(|_| AppError::msg("Playlist thumbnail data is not valid base64"))?;
-    if decoded.is_empty() {
-        return Err(AppError::msg("Playlist thumbnail is empty"));
-    }
-    if decoded.len() > MAX_THUMBNAIL_BYTES {
-        return Err(AppError::msg(
-            "Playlist thumbnail must be smaller than 512KB",
-        ));
-    }
-    Ok(())
-}
-
 fn build_recipe(
     state: &AppState,
     uid: i64,
     source: &PlaylistRecipeSource,
 ) -> AppResult<PlaylistRecipeDocument> {
-    let (name, kind, playlist_id, thumbnail) = match source {
+    let (name, kind, playlist_id) = match source {
         PlaylistRecipeSource::Liked => {
             let id = state.db.liked_playlist_id(uid)?;
-            ("Liked".to_string(), "liked".to_string(), id, None)
+            ("Liked".to_string(), "liked".to_string(), id)
         }
         PlaylistRecipeSource::Custom { playlist_id } => {
             let (name, kind) = state.db.custom_playlist_name_and_kind(*playlist_id, uid)?;
@@ -185,14 +152,7 @@ fn build_recipe(
                     "Only Liked and custom playlists can be exported as JSON",
                 ));
             }
-            let thumb = state
-                .db
-                .playlist_thumbnail(*playlist_id, uid)?
-                .map(|(data, mime)| PlaylistRecipeThumbnail {
-                    mime,
-                    data_base64: data,
-                });
-            (name, kind, *playlist_id, thumb)
+            (name, kind, *playlist_id)
         }
     };
 
@@ -208,12 +168,7 @@ fn build_recipe(
         version: RECIPE_VERSION,
         exported_at: iso_now(),
         exporter: PlaylistRecipeExporter { tg_user_id: uid },
-        playlist: PlaylistRecipeBody {
-            name,
-            kind,
-            thumbnail,
-            tracks,
-        },
+        playlist: PlaylistRecipeBody { name, kind, tracks },
     })
 }
 
@@ -262,9 +217,6 @@ fn parse_and_validate_recipe(raw: &str, uid: i64) -> AppResult<PlaylistRecipeDoc
     let name = recipe.playlist.name.trim();
     if name.is_empty() {
         return Err(AppError::msg("Playlist name is required"));
-    }
-    if let Some(ref thumb) = recipe.playlist.thumbnail {
-        validate_thumbnail(thumb)?;
     }
     if recipe.playlist.tracks.is_empty() {
         return Err(AppError::msg("Playlist file contains no tracks"));
@@ -365,16 +317,7 @@ pub fn import_playlist_json(
         ));
     }
 
-    let thumb_owned = recipe
-        .playlist
-        .thumbnail
-        .as_ref()
-        .map(|t| (t.data_base64.trim().to_string(), t.mime.trim().to_string()));
-    let created = state.db.create_playlist(
-        uid,
-        playlist_name,
-        thumb_owned.as_ref().map(|(d, m)| (d.as_str(), m.as_str())),
-    )?;
+    let created = state.db.create_playlist(uid, playlist_name)?;
     state
         .db
         .add_tracks_to_playlist(created.id, &matched_ids, uid)?;
@@ -400,10 +343,6 @@ mod tests {
             playlist: PlaylistRecipeBody {
                 name: "Gym".into(),
                 kind: "custom".into(),
-                thumbnail: Some(PlaylistRecipeThumbnail {
-                    mime: "image/jpeg".into(),
-                    data_base64: base64::engine::general_purpose::STANDARD.encode(b"fake-jpeg"),
-                }),
                 tracks: vec![PlaylistRecipeTrack {
                     file_unique_id: "doc1".into(),
                     title: Some("Bangarang".into()),
@@ -415,14 +354,13 @@ mod tests {
     }
 
     #[test]
-    fn recipe_round_trips_json_with_thumbnail() {
+    fn recipe_round_trips_json() {
         let recipe = sample_recipe(42);
         let json = serde_json::to_string(&recipe).unwrap();
         let parsed: PlaylistRecipeDocument = serde_json::from_str(&json).unwrap();
         assert_eq!(parsed.format, RECIPE_FORMAT);
         assert_eq!(parsed.exporter.tg_user_id, 42);
         assert_eq!(parsed.playlist.name, "Gym");
-        assert!(parsed.playlist.thumbnail.is_some());
         assert_eq!(parsed.playlist.tracks[0].file_unique_id, "doc1");
     }
 
@@ -432,18 +370,6 @@ mod tests {
         let json = serde_json::to_string(&recipe).unwrap();
         let err = parse_and_validate_recipe(&json, 2).unwrap_err();
         assert!(err.to_string().contains("another Telegram account"));
-    }
-
-    #[test]
-    fn validate_rejects_bad_mime() {
-        let mut recipe = sample_recipe(1);
-        recipe.playlist.thumbnail = Some(PlaylistRecipeThumbnail {
-            mime: "image/gif".into(),
-            data_base64: base64::engine::general_purpose::STANDARD.encode(b"x"),
-        });
-        let json = serde_json::to_string(&recipe).unwrap();
-        let err = parse_and_validate_recipe(&json, 1).unwrap_err();
-        assert!(err.to_string().contains("JPEG"));
     }
 
     #[test]

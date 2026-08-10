@@ -145,34 +145,20 @@ export const api = {
 
   // ---- playlists --------------------------------------------------------
   listPlaylists: () => invoke<PlaylistsBundle>('list_playlists'),
-  createPlaylist: (input: {
-    name: string
-    thumbnailData?: string | null
-    thumbnailMime?: string | null
-  }) =>
+  createPlaylist: (input: { name: string }) =>
     invoke<CustomPlaylistSummary>('create_playlist', {
       name: input.name,
-      thumbnailData: input.thumbnailData ?? null,
-      thumbnailMime: input.thumbnailMime ?? null,
     }),
   updatePlaylist: (input: {
     playlistId: number
     name?: string | null
-    thumbnailData?: string | null
-    thumbnailMime?: string | null
-    clearThumbnail?: boolean
   }) =>
     invoke<CustomPlaylistSummary>('update_playlist', {
       playlistId: input.playlistId,
       name: input.name ?? null,
-      thumbnailData: input.thumbnailData ?? null,
-      thumbnailMime: input.thumbnailMime ?? null,
-      clearThumbnail: input.clearThumbnail ?? null,
     }),
   deletePlaylist: (playlistId: number) =>
     invoke<void>('delete_playlist', { playlistId }),
-  getPlaylistThumbnail: (playlistId: number) =>
-    invoke<string | null>('get_playlist_thumbnail', { playlistId }),
   addTrackToPlaylist: (playlistId: number, trackId: number) =>
     invoke<string>('add_track_to_playlist', { playlistId, trackId }),
   addTracksToPlaylist: (playlistId: number, trackIds: number[]) =>
