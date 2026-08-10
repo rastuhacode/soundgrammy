@@ -8,14 +8,12 @@
 
 <p align="center">
   <a href="https://github.com/rastuhacode/soundgrammy/releases"><img src="https://img.shields.io/github/v/release/rastuhacode/soundgrammy?display_name=tag&amp;sort=semver" alt="Latest release"></a>
-  <a href="https://github.com/rastuhacode/soundgrammy/actions/workflows/ci.yml"><img src="https://github.com/rastuhacode/soundgrammy/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPL--3.0--only-blue.svg" alt="License: GPL v3"></a>
 </p>
 
 <p align="center">
   <a href="https://github.com/rastuhacode/soundgrammy/releases">Download</a> ·
-  <a href="https://github.com/rastuhacode/soundgrammy/issues/new">Report a bug</a> ·
-  <a href="https://github.com/rastuhacode/soundgrammy/issues/new">Request a feature</a>
+  <a href="https://github.com/rastuhacode/soundgrammy/issues/new">Report a bug</a>
 </p>
 
 > [!IMPORTANT]
