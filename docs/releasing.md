@@ -32,7 +32,7 @@ Release Please derives SemVer changes from commit messages:
 
 Use a `Release-As: 1.0.0` footer on a commit only when an explicit version override is required. Prefer squash merging pull requests so the final pull request title becomes the single release-note-worthy commit on `main`.
 
-To override the next version without adding a commit, manually run **Release Please** and enter a SemVer value such as `1.0.0` in **release_as**. Leave the input empty for normal Conventional Commit version calculation. The manual run creates or updates the release pull request; it does not publish the release until that pull request is merged.
+To override the next version without adding a commit, manually run **Release Please** and enter a SemVer value such as `1.0.0` in **release_as**. Leave the input empty for normal Conventional Commit version calculation. The override path uses Release Please's manifest-aware CLI so the package and every configured extra version file remain synchronized. The manual run creates or updates the release pull request; it does not publish the release until that pull request is merged.
 
 ## Retrying a build
 

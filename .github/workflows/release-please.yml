@@ -25,9 +25,25 @@ jobs:
     steps:
       - name: Create or update release pull request
         id: release
+        if: ${{ github.event_name != 'workflow_dispatch' || inputs.release_as == '' }}
         uses: googleapis/release-please-action@v4
-        with:
-          release-as: ${{ inputs.release_as }}
+
+      - name: Create or update release pull request with version override
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.release_as != '' }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RELEASE_AS: ${{ inputs.release_as }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          if [[ ! "$RELEASE_AS" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Invalid SemVer version: $RELEASE_AS"
+            exit 1
+          fi
+
+          npx --yes release-please@17.6.1 release-pr \
+            --repo-url="$REPOSITORY" \
+            --token="$GITHUB_TOKEN" \
+            --release-as="$RELEASE_AS"
 
   build_release:
     needs: release_please
