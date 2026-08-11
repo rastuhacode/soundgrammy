@@ -29,20 +29,20 @@ You can read more about philosophy around SoundGrammy in my [article]().
 
 ## Features
 
-- **Automatic library sync** — add a track to your Telegram profile and it appears in SoundGrammy after sync.
-- **Full playback controls** — stream, cache, download, shuffle, and repeat tracks.
-- **Local playlists** — create, rename, reorder, delete, and cache playlists; export them for basic cross-device transfer.
-- **Private listening statistics** — use the **Popular** and **Recent** smart playlists generated from local listening history.
-- **Editable queue** — play next, add to the end, reorder tracks, and save the queue as a playlist.
-- **Downloads and exports** — download individual tracks or complete playlists, including an `M3U8` playlist file.
-- **Bulk actions** — add, cache, download, or manage many selected tracks at once.
-- **Thoughtful extras** — fullscreen playback (with artwork bounce), drag and drop, configurable caching, MTProto proxy support, and more.
+- 🔄**Automatic library sync** — add a track to your Telegram profile and it appears in SoundGrammy.
+- 🎵**Full playback controls** — stream, cache, download, shuffle, and repeat tracks.
+- 💿**Local playlists** — create, rename, reorder, delete, and cache playlists; export them for basic cross-device transfer.
+- 🔐**Private listening statistics** — use the **Popular** and **Recent** smart playlists generated from local listening history.
+- ✏️**Editable queue** — play next, add to the end, reorder tracks, and save the queue as a playlist.
+- 💾**Downloads and exports** — download individual tracks or complete playlists, including an `M3U8` playlist file.
+- 📝**Bulk actions** — add, cache, download, or manage many selected tracks at once.
+- ✨**Thoughtful extras** — fullscreen playback (with artwork bounce), drag and drop, configurable caching, MTProto proxy support, smart shuffle and more.
 
 ### What SoundGrammy is NOT
 
-- **Not a music streaming service.** It does not provide recommendations or a music catalog; it only displays tracks that you have added to your Telegram profile.
-- **Not a replacement for the Telegram client.** SoundGrammy focuses on music playback and organization. Profile music is read-only in the app, so use an official Telegram client to change it.
-- **Not a cloud service.** SoundGrammy does not collect your personal information. This improves privacy, but means multi-device synchronization is intentionally limited to playlist import and export.
+- ❌**Not a music streaming service.** It does not provide recommendations or a music catalog; it only displays tracks that you have added to your Telegram profile.
+- ❌**Not a replacement for the Telegram client.** SoundGrammy focuses on music playback and organization. Profile music is read-only in the app, so use an official Telegram client to change it.
+- ❌**Not a cloud service.** SoundGrammy does not collect your personal information. This improves privacy, but means multi-device synchronization is intentionally limited to playlist import and export.
 
 ## Supported platforms
 
@@ -70,8 +70,8 @@ For implementation details and the security review checklist, read the [security
 
 ### Prerequisites
 
-- [Rust](https://www.rust-lang.org/learn/get-started)
-- [Bun](https://bun.com/docs/installation) 1.3 or newer
+- Install [Rust](https://www.rust-lang.org/learn/get-started)
+- Install [Bun](https://bun.com/docs/installation)
 - The [Tauri 2 system prerequisites](https://v2.tauri.app/start/prerequisites/) for your operating system
 - Telegram requires third-party clients to use their own application API credentials. You can get yours `api_id` and `api_hash` from [my.telegram.org/apps](https://my.telegram.org/apps)
 
@@ -100,7 +100,7 @@ bun tauri:dev
 ```bash
 bun lint
 bun typecheck
-bun test
+bun run test
 cd src-tauri && cargo check
 ```
 
