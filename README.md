@@ -53,18 +53,22 @@ You can read more about philosophy around SoundGrammy in my [article]().
 
 Linux, iOS, and Android are not officially supported. Tauri supports these platforms at a framework level, but SoundGrammy has not been tested or packaged for them. Contributions that add support for other platforms are welcome.
 
-## Installation
+## How to use
 
-Download the latest installer from [**GitHub Releases**](https://github.com/rastuhacode/soundgrammy/releases). Only install artifacts published by this repository, and verify the release tag before installing.
+1. Download the latest installer from [**GitHub Releases**](https://github.com/rastuhacode/soundgrammy/releases). Only install artifacts published by this repository, and verify the release tag before installing.
+2. Install app and log in to your Telegram account.
+3. Add music to your profile:
+  - Desktop: hover track -> right click -> Save to... -> Profile.
+  - Mobile: play track -> Add to Profile.
+4. Sync "All tracks" by refreshing or avatar -> Radio Tower button.
+5. Enjoy your music!
 
-## Privacy and security
+## FAQ
 
-SoundGrammy is local-first. Your Telegram session, local library, playlists, cache metadata, and listening history remain on your device. MTProto session data is encrypted with AES-256-GCM, while the encryption key is kept in your operating system's keychain. The session is used only to authenticate with Telegram and access your saved music.
-
-For implementation details and the security review checklist, read the [security documentation](docs/security.md).
-
-> [!WARNING]
-> Never include phone numbers, login codes, two-step verification passwords, API hashes, session files, database files, or private media in a public bug report.
+- **Why does app asks for my device password on initial launch on macOS?** - SoundGrammy uses keychain to cipher your session and macOS needs password for this operation.
+- **Why some of my tracks play only when they fully cached, while others streams fine?** - SoundGrammy uses MSE streaming for uncached tracks playthrough. MSE works correctly with `mp3`, but can't properly work with `m4a`, `FLAC`. In this case you need to either manually cache it before playing or just wait a bit longer for song to fully cache.
+- **How can I use this app if Telegram is blocked in my country?** - you can use VPN or connect to MTProto proxy (for ex. [tg-ws-proxy](https://github.com/Flowseal/tg-ws-proxy)).
+- **I found a bug, how can I report it?** - enable logs in the settings and reproduce the problem. Copy logs if they exist and open an issue.
 
 ## Local development
 
