@@ -115,12 +115,18 @@ export function openContextMenuFromPointerEvent(
   const el = target instanceof Element ? target : null
   const trigger = el?.closest('[data-slot="context-menu-trigger"]')
   if (!trigger) return
+  const targetRect = el?.getBoundingClientRect()
+  const fromKeyboard = event.detail === 0
   trigger.dispatchEvent(
     new MouseEvent('contextmenu', {
       bubbles: true,
       cancelable: true,
-      clientX: event.clientX,
-      clientY: event.clientY,
+      clientX: fromKeyboard && targetRect
+        ? targetRect.left + targetRect.width / 2
+        : event.clientX,
+      clientY: fromKeyboard && targetRect
+        ? targetRect.bottom
+        : event.clientY,
       view: window,
     }),
   )

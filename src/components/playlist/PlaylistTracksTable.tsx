@@ -169,6 +169,12 @@ export function PlaylistTracksTable({
             desc: false,
           }),
       },
+      {
+        id: 'actions',
+        header: () => <span className="sr-only">Track options</span>,
+        cell: () => null,
+        enableSorting: false,
+      },
     )
 
     return defs
@@ -342,6 +348,7 @@ export function PlaylistTracksTable({
 
                 return (
                   <PlaylistTrackContextMenu
+                    disabled={selectionMode}
                     key={sortableId}
                     track={track}
                     sourceIndex={sourceIndex}
@@ -377,9 +384,6 @@ export function PlaylistTracksTable({
                       }}
                       onToggleSelected={(selected) => {
                         row.toggleSelected(selected)
-                      }}
-                      onPlayFromThumb={() => {
-                        onTrackPlay(track, sourceIndex)
                       }}
                     />
                   </PlaylistTrackContextMenu>

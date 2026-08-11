@@ -39,6 +39,7 @@ export interface PlaylistTrackContextMenuProps {
   currentPlaylist: ResolvedSelectedPlaylist
   customPlaylists: CustomPlaylistRef[]
   children: React.ReactNode
+  disabled?: boolean
   onSelect: (sourceIndex: number) => void
   onToggleLike: (trackId: number) => void
   onAddToPlaylist: (playlistId: number, trackId: number) => void
@@ -58,6 +59,7 @@ export function PlaylistTrackContextMenu({
   currentPlaylist,
   customPlaylists,
   children,
+  disabled,
   onSelect,
   onToggleLike,
   onAddToPlaylist,
@@ -75,7 +77,7 @@ export function PlaylistTrackContextMenu({
   const isBusy = useCacheStore(state => state.busyIds.has(track.id))
 
   return (
-    <ContextMenu>
+    <ContextMenu disabled={disabled}>
       <ContextMenuTrigger className="contents">
         {children}
       </ContextMenuTrigger>

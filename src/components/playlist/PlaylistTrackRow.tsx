@@ -2,8 +2,10 @@ import type { Track } from '@/lib/db'
 import { cn } from '@/lib/utils'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { Play } from 'lucide-react'
+import { Ellipsis, Play } from 'lucide-react'
+import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
+import { openContextMenuFromPointerEvent } from './SidebarPlaylistContextMenu'
 import { TrackThumbnail } from './PlaylistTrackThumbnail'
 import { formatTrackDuration } from './track-actions'
 
@@ -12,7 +14,8 @@ export const TRACK_ROW_HEIGHT = 70
 export const TRACK_ROW_GAP = 8
 export const TRACK_ROW_STRIDE = TRACK_ROW_HEIGHT + TRACK_ROW_GAP
 export const TRACK_SELECT_COL = '2.25rem'
-export const TRACK_GRID_COLS = `minmax(0, 1.4fr) minmax(0, 1fr) 4.5rem`
+export const TRACK_ACTIONS_COL = '2.25rem'
+export const TRACK_GRID_COLS = `minmax(0, 1.4fr) minmax(0, 1fr) 4.5rem ${TRACK_ACTIONS_COL}`
 export const TRACK_GRID_COLS_SELECT = `${TRACK_SELECT_COL} ${TRACK_GRID_COLS}`
 
 export interface PlaylistTrackRowViewProps {
@@ -25,7 +28,6 @@ export interface PlaylistTrackRowViewProps {
   style?: React.CSSProperties
   onRowClick?: () => void
   onToggleSelected?: (selected: boolean) => void
-  onPlayFromThumb?: () => void
 }
 
 /** Presentational track row. */
@@ -39,7 +41,6 @@ export function PlaylistTrackRowView({
   style,
   onRowClick,
   onToggleSelected,
-  onPlayFromThumb,
 }: PlaylistTrackRowViewProps) {
   const showEqualizer = isActive && isPlaying
 
@@ -101,16 +102,11 @@ export function PlaylistTrackRowView({
             trackId={track.id}
             fileUniqueId={track.file_unique_id}
           />
-          <button
-            type="button"
-            aria-label={showEqualizer ? 'Now playing' : 'Play track'}
-            onClick={(event) => {
-              event.stopPropagation()
-              onPlayFromThumb?.()
-            }}
+          <div
             className={cn(
               'absolute inset-0 flex items-center justify-center rounded-sm bg-background/65 backdrop-blur-[1px] transition-opacity duration-200',
-              isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-100',
+              isActive ? 'opacity-100' : 'opacity-0',
+              !selectionMode && 'group-hover:opacity-100',
             )}
           >
             {showEqualizer
@@ -131,7 +127,7 @@ export function PlaylistTrackRowView({
                     )}
                   />
                 )}
-          </button>
+          </div>
         </div>
 
         <span
@@ -155,6 +151,26 @@ export function PlaylistTrackRowView({
           {formatTrackDuration(track.duration)}
         </span>
       </div>
+
+      <div role="cell" className="flex justify-center">
+        <Button
+          type="button"
+          variant="ghost"
+          size="icon-xs"
+          aria-label={`${track.title ?? 'Track'} options`}
+          aria-haspopup="menu"
+          className={cn(
+            'text-muted-foreground opacity-0 transition-opacity',
+            !selectionMode && 'group-hover:opacity-100 focus-visible:opacity-100',
+          )}
+          onClick={(event) => {
+            openContextMenuFromPointerEvent(event, event.currentTarget)
+          }}
+          onPointerDown={event => event.stopPropagation()}
+        >
+          <Ellipsis className="size-4" />
+        </Button>
+      </div>
     </div>
   )
 }
@@ -171,7 +187,6 @@ export interface PlaylistTrackRowProps {
   className?: string
   onRowClick: () => void
   onToggleSelected: (selected: boolean) => void
-  onPlayFromThumb: () => void
 }
 
 export function PlaylistTrackRow({
@@ -186,7 +201,6 @@ export function PlaylistTrackRow({
   className,
   onRowClick,
   onToggleSelected,
-  onPlayFromThumb,
 }: PlaylistTrackRowProps) {
   const {
     attributes,
@@ -229,7 +243,6 @@ export function PlaylistTrackRow({
         )}
         onRowClick={onRowClick}
         onToggleSelected={onToggleSelected}
-        onPlayFromThumb={onPlayFromThumb}
       />
     </div>
   )
