@@ -32,6 +32,8 @@ Release Please derives SemVer changes from commit messages:
 
 Use a `Release-As: 1.0.0` footer on a commit only when an explicit version override is required. Prefer squash merging pull requests so the final pull request title becomes the single release-note-worthy commit on `main`.
 
+To override the next version without adding a commit, manually run **Release Please** and enter a SemVer value such as `1.0.0` in **release_as**. Leave the input empty for normal Conventional Commit version calculation. The manual run creates or updates the release pull request; it does not publish the release until that pull request is merged.
+
 ## Retrying a build
 
 If an artifact job fails, first rerun the failed jobs in that GitHub Actions run. To rebuild an existing draft later, manually run **Build release** and enter its tag, such as `v0.2.0`. The workflow checks out the tag, rejects mismatched application versions, and uploads to the matching draft release.

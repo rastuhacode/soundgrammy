@@ -5,6 +5,11 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      release_as:
+        description: Optional version override, for example 1.0.0
+        required: false
+        type: string
 
 permissions:
   contents: write
@@ -21,6 +26,8 @@ jobs:
       - name: Create or update release pull request
         id: release
         uses: googleapis/release-please-action@v4
+        with:
+          release-as: ${{ inputs.release_as }}
 
   build_release:
     needs: release_please
