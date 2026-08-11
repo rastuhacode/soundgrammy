@@ -8,7 +8,6 @@ import {
 } from './mse-session.mocks'
 import {
   MSE_APPEND_CHUNK,
-  MSE_FORWARD_BUFFER_HIGH_SECONDS,
   attachMseSession,
   isMseTypeSupported,
   resolveMseMimeType,
@@ -252,44 +251,6 @@ describe('attachMseSession', () => {
   it('uses segments mode for non-mpeg mime types', async () => {
     const { mediaSource } = await attach({ mimeType: 'audio/webm; codecs="opus"' })
     expect(mediaSource.sourceBuffers[0]!.mode).toBe('segments')
-  })
-
-  it('bounds forward buffering until playback reaches the low-water mark', async () => {
-    const total = MSE_APPEND_CHUNK * 8
-    const duration = 200
-    const { session: active, mediaSource } = await attach({ total, duration })
-
-    active.notifyProgress(progress({
-      ranges: [{ start: 0, end: total }],
-      received: total,
-      total,
-      complete: true,
-    }))
-    await waitFor(() => active.getAppendedOffset() > 0)
-    await flushMicrotasks(24)
-
-    const pausedOffset = active.getAppendedOffset()
-    const buffer = mediaSource.sourceBuffers[0]!
-    const bufferedEnd = buffer.buffered.end(buffer.buffered.length - 1)
-    const oneChunkSeconds = duration / 8
-
-    expect(pausedOffset).toBeLessThan(total)
-    expect(bufferedEnd).toBeLessThanOrEqual(
-      MSE_FORWARD_BUFFER_HIGH_SECONDS + oneChunkSeconds,
-    )
-
-    // Completed download notifications do not bypass the high-water pause.
-    active.notifyProgress(progress({
-      ranges: [{ start: 0, end: total }],
-      received: total,
-      total,
-      complete: true,
-    }))
-    await flushMicrotasks(16)
-    expect(active.getAppendedOffset()).toBe(pausedOffset)
-
-    audio.tickTime(30)
-    await waitFor(() => active.getAppendedOffset() > pausedOffset)
   })
 
   it('calls endOfStream only after the full file is appended and complete', async () => {

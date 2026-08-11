@@ -17,9 +17,6 @@ import {
 /** Matches Rust streaming::CHUNK_SIZE — keep append IPC payloads bounded. */
 export const MSE_APPEND_CHUNK = 128 * 1024
 
-/** Keep MSE memory bounded; the complete download still continues on disk. */
-export const MSE_FORWARD_BUFFER_HIGH_SECONDS = 45
-export const MSE_FORWARD_BUFFER_LOW_SECONDS = 20
 export const MSE_BACK_BUFFER_SECONDS = 15
 const MSE_BACK_BUFFER_EVICT_MIN_SECONDS = 5
 const MSE_QUOTA_RETRY_ADVANCE_SECONDS = 5
@@ -176,15 +173,6 @@ function bufferCoversTime(buffer: SourceBuffer, time: number): boolean {
   return false
 }
 
-function bufferedSecondsAhead(buffer: SourceBuffer, time: number): number {
-  for (const range of readBufferedRanges(buffer)) {
-    if (time >= range.start - 0.05 && time < range.end) {
-      return Math.max(0, range.end - Math.max(time, range.start))
-    }
-  }
-  return 0
-}
-
 function snapTimeIntoBuffer(
   buffer: SourceBuffer,
   time: number,
@@ -262,7 +250,6 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
   let pumpQueued = false
   let seekGeneration = 0
   let discontinuityPending = false
-  let forwardBufferPaused = false
   let quotaBlocked = false
   let quotaRetryAfterTime = 0
   // Skip ID3v2 (often multi‑MB album art) before the first MPEG frame.
@@ -400,17 +387,11 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
     if (disposed) return
     tryEndOfStream()
 
-    const buffer = sourceBuffer
-    if (!buffer || ended || discontinuityPending) return
+    if (!sourceBuffer || ended || discontinuityPending) return
     const current = Number.isFinite(audio.currentTime)
       ? Math.max(0, audio.currentTime)
       : 0
-    const ahead = bufferedSecondsAhead(buffer, current)
-    if (
-      (quotaBlocked && current >= quotaRetryAfterTime)
-      || (forwardBufferPaused && ahead <= MSE_FORWARD_BUFFER_LOW_SECONDS)
-      || (!quotaBlocked && !forwardBufferPaused && ahead < MSE_FORWARD_BUFFER_HIGH_SECONDS)
-    ) {
+    if (quotaBlocked && current >= quotaRetryAfterTime) {
       schedulePump()
     }
   }
@@ -868,7 +849,6 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
         await waitForSourceBufferIdle(sourceBuffer)
         if (!disposed && !discontinuityPending) {
           quotaBlocked = false
-          forwardBufferPaused = false
         }
       }
       catch {
@@ -882,15 +862,6 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
       return
     }
 
-    const ahead = bufferedSecondsAhead(sourceBuffer, currentPlaybackTime)
-    if (forwardBufferPaused) {
-      if (ahead > MSE_FORWARD_BUFFER_LOW_SECONDS) return
-      forwardBufferPaused = false
-    }
-    if (ahead >= MSE_FORWARD_BUFFER_HIGH_SECONDS) {
-      forwardBufferPaused = true
-      return
-    }
     if (quotaBlocked) {
       if (currentPlaybackTime < quotaRetryAfterTime) return
       quotaBlocked = false
@@ -1013,7 +984,6 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
     const seekDuration = resolveDuration()
     if (disposed || !(seekDuration > 0) || !(total > 0)) return
     const clampedTime = Math.max(0, Math.min(seekDuration, time))
-    forwardBufferPaused = false
     quotaBlocked = false
 
     // Trust SourceBuffer, not HTMLMediaElement.buffered (stale after remove).
@@ -1154,7 +1124,6 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
       disposed = true
       seekGeneration += 1
       discontinuityPending = false
-      forwardBufferPaused = false
       quotaBlocked = false
       audio.removeEventListener('timeupdate', onAudioTimeUpdate)
       mediaSource.removeEventListener('sourceopen', onSourceOpen)
