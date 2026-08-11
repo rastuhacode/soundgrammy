@@ -18,6 +18,15 @@ import { appLogger } from '@/lib/app-logger'
  */
 const MSE_COLD_START_PRIME_MS = 400
 
+export function isExpectedPlayInterruption(error: unknown): boolean {
+  return Boolean(
+    error
+    && typeof error === 'object'
+    && 'name' in error
+    && error.name === 'AbortError',
+  )
+}
+
 export function useAudioEngine() {
   const track = usePlayerStore(state => state.currentTrack)
   const isPlaying = usePlayerStore(state => state.isPlaying)
@@ -59,25 +68,29 @@ export function useAudioEngine() {
         }
       })
       .catch((error) => {
-        if (loadGenerationRef.current === generation) {
-          sourceErrorRef.current = true
-          appLogger.error({
-            source: 'audio',
-            title: 'Audio playback failed',
-            description: 'The media element rejected the request to start playback.',
-            error,
-            context: {
-              trackId: loadedTrackIdRef.current,
-              generation,
-              currentSrc: audio.currentSrc,
-              networkState: audio.networkState,
-              readyState: audio.readyState,
-              errorCode: audio.error?.code ?? null,
-              errorMessage: audio.error?.message ?? null,
-            },
-          })
-          setPlaying(false)
-        }
+        if (loadGenerationRef.current !== generation) return
+        // pause(), load(), source replacement, and discontinuous seeks can all
+        // reject an in-flight play() with AbortError. Those are expected player
+        // control flow and must not poison/rebuild an otherwise healthy source.
+        if (isExpectedPlayInterruption(error)) return
+
+        sourceErrorRef.current = true
+        appLogger.error({
+          source: 'audio',
+          title: 'Audio playback failed',
+          description: 'The media element rejected the request to start playback.',
+          error,
+          context: {
+            trackId: loadedTrackIdRef.current,
+            generation,
+            currentSrc: audio.currentSrc,
+            networkState: audio.networkState,
+            readyState: audio.readyState,
+            errorCode: audio.error?.code ?? null,
+            errorMessage: audio.error?.message ?? null,
+          },
+        })
+        setPlaying(false)
       })
   }
 

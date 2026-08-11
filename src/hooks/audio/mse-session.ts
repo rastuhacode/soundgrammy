@@ -17,6 +17,13 @@ import {
 /** Matches Rust streaming::CHUNK_SIZE — keep append IPC payloads bounded. */
 export const MSE_APPEND_CHUNK = 128 * 1024
 
+/** Keep MSE memory bounded; the complete download still continues on disk. */
+export const MSE_FORWARD_BUFFER_HIGH_SECONDS = 45
+export const MSE_FORWARD_BUFFER_LOW_SECONDS = 20
+export const MSE_BACK_BUFFER_SECONDS = 15
+const MSE_BACK_BUFFER_EVICT_MIN_SECONDS = 5
+const MSE_QUOTA_RETRY_ADVANCE_SECONDS = 5
+
 /** Bytes before the seek target to search for a frame sync. */
 const SEEK_PROBE_BACK = 4 * 1024
 
@@ -73,6 +80,15 @@ function mseMimeCandidates(mimeType: string): string[] {
 function isMpegMseMime(mimeType: string): boolean {
   const base = mimeType.split(';')[0]?.trim().toLowerCase() || ''
   return base === 'audio/mpeg' || base === 'audio/mp3'
+}
+
+function isQuotaExceededError(error: unknown): boolean {
+  return Boolean(
+    error
+    && typeof error === 'object'
+    && 'name' in error
+    && error.name === 'QuotaExceededError',
+  )
 }
 
 /** Raw MPEG has no timestamps; WebM/MP4 do — use segments for the latter. */
@@ -160,6 +176,15 @@ function bufferCoversTime(buffer: SourceBuffer, time: number): boolean {
   return false
 }
 
+function bufferedSecondsAhead(buffer: SourceBuffer, time: number): number {
+  for (const range of readBufferedRanges(buffer)) {
+    if (time >= range.start - 0.05 && time < range.end) {
+      return Math.max(0, range.end - Math.max(time, range.start))
+    }
+  }
+  return 0
+}
+
 function snapTimeIntoBuffer(
   buffer: SourceBuffer,
   time: number,
@@ -237,6 +262,9 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
   let pumpQueued = false
   let seekGeneration = 0
   let discontinuityPending = false
+  let forwardBufferPaused = false
+  let quotaBlocked = false
+  let quotaRetryAfterTime = 0
   // Skip ID3v2 (often multi‑MB album art) before the first MPEG frame.
   let mpegPayloadStart = 0
   let mpegStartResolved = !isMpegMseMime(mimeType)
@@ -369,7 +397,22 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
   }
 
   const onAudioTimeUpdate = () => {
-    if (!disposed) tryEndOfStream()
+    if (disposed) return
+    tryEndOfStream()
+
+    const buffer = sourceBuffer
+    if (!buffer || ended || discontinuityPending) return
+    const current = Number.isFinite(audio.currentTime)
+      ? Math.max(0, audio.currentTime)
+      : 0
+    const ahead = bufferedSecondsAhead(buffer, current)
+    if (
+      (quotaBlocked && current >= quotaRetryAfterTime)
+      || (forwardBufferPaused && ahead <= MSE_FORWARD_BUFFER_LOW_SECONDS)
+      || (!quotaBlocked && !forwardBufferPaused && ahead < MSE_FORWARD_BUFFER_HIGH_SECONDS)
+    ) {
+      schedulePump()
+    }
   }
 
   const onSourceBufferUpdateEnd = () => {
@@ -377,6 +420,10 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
     onBufferedChanged?.()
     tryEndOfStream()
     schedulePump()
+  }
+
+  const onSourceBufferError = (event: Event) => {
+    fail('source-buffer', event)
   }
 
   const configureSourceBuffer = (buffer: SourceBuffer) => {
@@ -395,7 +442,24 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
       }
     }
     buffer.addEventListener('updateend', onSourceBufferUpdateEnd)
-    buffer.addEventListener('error', event => fail('source-buffer', event))
+    buffer.addEventListener('error', onSourceBufferError)
+  }
+
+  const backBufferRemovalEnd = (
+    buffer: SourceBuffer,
+    currentTime: number,
+  ): number | null => {
+    // WebKit can close WebM/MP4 MediaSource after remove()+re-append. Raw MPEG
+    // sequence buffers support this rolling back-buffer safely.
+    if (!isMpegMseMime(mimeType)) return null
+    const removeEnd = currentTime - MSE_BACK_BUFFER_SECONDS
+    if (!(removeEnd > 0)) return null
+    const ranges = readBufferedRanges(buffer)
+    const oldest = ranges.find(range => range.start < removeEnd)
+    if (!oldest || removeEnd - oldest.start < MSE_BACK_BUFFER_EVICT_MIN_SECONDS) {
+      return null
+    }
+    return removeEnd
   }
 
   /** Clears buffered media. Returns false if remove failed — callers must abort the seek. */
@@ -556,6 +620,11 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
     generation: number,
   ): Promise<void> => {
     const previousUrl = objectUrl
+    const previousMediaSource = mediaSource
+    sourceBuffer?.removeEventListener('updateend', onSourceBufferUpdateEnd)
+    sourceBuffer?.removeEventListener('error', onSourceBufferError)
+    previousMediaSource.removeEventListener('sourceopen', onSourceOpen)
+    previousMediaSource.removeEventListener('error', onMediaSourceError)
     mediaSource = new MediaSource()
     objectUrl = URL.createObjectURL(mediaSource)
     sourceBuffer = null
@@ -563,12 +632,20 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
     ended = false
 
     const opened = new Promise<boolean>((resolve) => {
-      const onOpen = () => {
+      const cleanup = () => {
         mediaSource.removeEventListener('sourceopen', onOpen)
+        mediaSource.removeEventListener('error', onOpenError)
+      }
+      const onOpen = () => {
+        cleanup()
         resolve(true)
       }
+      const onOpenError = () => {
+        cleanup()
+        resolve(false)
+      }
       mediaSource.addEventListener('sourceopen', onOpen)
-      mediaSource.addEventListener('error', () => resolve(false), { once: true })
+      mediaSource.addEventListener('error', onOpenError)
     })
     audio.src = objectUrl
     try {
@@ -582,6 +659,7 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
       fail('reattach-media-source')
       return
     }
+    mediaSource.addEventListener('error', onMediaSourceError)
     try {
       sourceBuffer = mediaSource.addSourceBuffer(mimeType)
       configureSourceBuffer(sourceBuffer)
@@ -775,6 +853,49 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
       return
     }
 
+    const currentPlaybackTime = Number.isFinite(audio.currentTime)
+      ? Math.max(0, audio.currentTime)
+      : 0
+    if (nextAppendOffset >= total) {
+      tryEndOfStream()
+      return
+    }
+    const removeEnd = backBufferRemovalEnd(sourceBuffer, currentPlaybackTime)
+    if (removeEnd !== null) {
+      appendInFlight = true
+      try {
+        sourceBuffer.remove(0, removeEnd)
+        await waitForSourceBufferIdle(sourceBuffer)
+        if (!disposed && !discontinuityPending) {
+          quotaBlocked = false
+          forwardBufferPaused = false
+        }
+      }
+      catch {
+        // A concurrent seek/update can make remove invalid. The next playback
+        // or update event will retry without turning buffer pressure fatal.
+      }
+      finally {
+        appendInFlight = false
+        if (!disposed && !discontinuityPending) schedulePump()
+      }
+      return
+    }
+
+    const ahead = bufferedSecondsAhead(sourceBuffer, currentPlaybackTime)
+    if (forwardBufferPaused) {
+      if (ahead > MSE_FORWARD_BUFFER_LOW_SECONDS) return
+      forwardBufferPaused = false
+    }
+    if (ahead >= MSE_FORWARD_BUFFER_HIGH_SECONDS) {
+      forwardBufferPaused = true
+      return
+    }
+    if (quotaBlocked) {
+      if (currentPlaybackTime < quotaRetryAfterTime) return
+      quotaBlocked = false
+    }
+
     const ledgerPrefix = leadingPrefixEnd(latestRanges)
     // Grow forward from the current append cursor (prefix or seek island).
     const rangeContainingCursor = latestRanges.find(
@@ -858,7 +979,17 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
       emitAppended()
     }
     catch (error) {
-      fail('append-pump', error)
+      if (isQuotaExceededError(error)) {
+        // Chromium/WebView2 reports quota pressure synchronously. Preserve the
+        // cursor and let playback create removable back-buffer space before a
+        // controlled retry; this is not a media/session failure.
+        quotaBlocked = true
+        quotaRetryAfterTime
+          = currentPlaybackTime + MSE_QUOTA_RETRY_ADVANCE_SECONDS
+      }
+      else {
+        fail('append-pump', error)
+      }
       reschedule = false
     }
     finally {
@@ -882,10 +1013,13 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
     const seekDuration = resolveDuration()
     if (disposed || !(seekDuration > 0) || !(total > 0)) return
     const clampedTime = Math.max(0, Math.min(seekDuration, time))
+    forwardBufferPaused = false
+    quotaBlocked = false
 
     // Trust SourceBuffer, not HTMLMediaElement.buffered (stale after remove).
     if (sourceBuffer && snapTimeIntoBuffer(sourceBuffer, clampedTime) !== null) {
       setAudioTimeInBuffer(sourceBuffer, clampedTime)
+      schedulePump()
       return
     }
 
@@ -988,8 +1122,12 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
     }
   }
 
+  const onMediaSourceError = (event: Event) => {
+    fail('media-source', event)
+  }
+
   mediaSource.addEventListener('sourceopen', onSourceOpen, { once: true })
-  mediaSource.addEventListener('error', event => fail('media-source', event))
+  mediaSource.addEventListener('error', onMediaSourceError)
   audio.addEventListener('timeupdate', onAudioTimeUpdate)
   audio.src = objectUrl
 
@@ -1016,11 +1154,20 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
       disposed = true
       seekGeneration += 1
       discontinuityPending = false
+      forwardBufferPaused = false
+      quotaBlocked = false
       audio.removeEventListener('timeupdate', onAudioTimeUpdate)
+      mediaSource.removeEventListener('sourceopen', onSourceOpen)
+      mediaSource.removeEventListener('error', onMediaSourceError)
       try {
-        if (sourceBuffer && mediaSource.readyState === 'open') {
-          if (sourceBuffer.updating) {
-            sourceBuffer.abort()
+        if (sourceBuffer) {
+          sourceBuffer.removeEventListener('updateend', onSourceBufferUpdateEnd)
+          sourceBuffer.removeEventListener('error', onSourceBufferError)
+          if (mediaSource.readyState === 'open') {
+            if (sourceBuffer.updating) {
+              sourceBuffer.abort()
+            }
+            mediaSource.removeSourceBuffer(sourceBuffer)
           }
         }
       }
@@ -1036,6 +1183,7 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
         // ignore teardown races
       }
       audio.removeAttribute('src')
+      audio.load()
       URL.revokeObjectURL(objectUrl)
     },
   }

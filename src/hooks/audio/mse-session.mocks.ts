@@ -66,9 +66,13 @@ export class FakeSourceBuffer extends EventTarget {
   holdAppends = false
   /** When true, successful appends do not extend buffered time (stagnant growth). */
   freezeBuffered = false
+  /** Simulates Chromium/WebView2 rejecting appends once its MSE quota is full. */
+  maxBufferedBytes = Number.POSITIVE_INFINITY
+  quotaExceededCalls = 0
   /** When true, the next remove() throws once. */
   failNextRemove = false
   private pendingComplete: (() => void) | null = null
+  private retainedBufferedBytes = 0
 
   constructor(
     readonly totalBytes: number,
@@ -84,7 +88,7 @@ export class FakeSourceBuffer extends EventTarget {
     if (this.alwaysFailAppend) {
       this.alwaysFailAppend = false
       this.holdAppends = true
-      throw new DOMException('QuotaExceededError')
+      throw new DOMException('Synthetic append failure', 'OperationError')
     }
     if (this.failNextAppend) {
       this.failNextAppend = false
@@ -92,7 +96,15 @@ export class FakeSourceBuffer extends EventTarget {
     }
 
     const bytes = toUint8Array(data)
+    if (this.retainedBufferedBytes + bytes.byteLength > this.maxBufferedBytes) {
+      this.quotaExceededCalls += 1
+      throw new DOMException(
+        'The SourceBuffer is full, and cannot free space to append additional buffers.',
+        'QuotaExceededError',
+      )
+    }
     this.appendHistory.push(bytes)
+    this.retainedBufferedBytes += bytes.byteLength
     this.updating = true
 
     const finish = () => {
@@ -149,6 +161,7 @@ export class FakeSourceBuffer extends EventTarget {
     this.updating = true
     queueMicrotask(() => {
       this.buffered.clear()
+      this.retainedBufferedBytes = 0
       this.timestampOffset = 0
       this.updating = false
       this.dispatchEvent(new Event('updateend'))
@@ -175,6 +188,7 @@ export class FakeMediaSource extends EventTarget {
   sourceBufferInit: {
     alwaysFailAppend?: boolean
     holdAppends?: boolean
+    maxBufferedBytes?: number
   } = {}
 
   /** Configure proportional time mapping before sourceopen. */
@@ -191,8 +205,16 @@ export class FakeMediaSource extends EventTarget {
     const buffer = new FakeSourceBuffer(this.totalBytes, this.mediaDuration)
     if (this.sourceBufferInit.alwaysFailAppend) buffer.alwaysFailAppend = true
     if (this.sourceBufferInit.holdAppends) buffer.holdAppends = true
+    if (this.sourceBufferInit.maxBufferedBytes != null) {
+      buffer.maxBufferedBytes = this.sourceBufferInit.maxBufferedBytes
+    }
     this.sourceBuffers.push(buffer)
     return buffer
+  }
+
+  removeSourceBuffer(buffer: FakeSourceBuffer) {
+    const index = this.sourceBuffers.indexOf(buffer)
+    if (index >= 0) this.sourceBuffers.splice(index, 1)
   }
 
   endOfStream() {
@@ -213,6 +235,7 @@ export class FakeMediaSource extends EventTarget {
 export class FakeAudioElement extends EventTarget {
   currentTime = 0
   duration = Number.NaN
+  loadCalls = 0
   private _src = ''
   private readonly objectUrls: Map<string, FakeMediaSource>
 
@@ -238,6 +261,10 @@ export class FakeAudioElement extends EventTarget {
 
   removeAttribute(name: string) {
     if (name === 'src') this._src = ''
+  }
+
+  load() {
+    this.loadCalls += 1
   }
 
   /** Test helper: advance the playhead and fire timeupdate (MSE EOS deferral). */

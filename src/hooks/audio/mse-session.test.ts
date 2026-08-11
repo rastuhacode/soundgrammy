@@ -8,6 +8,7 @@ import {
 } from './mse-session.mocks'
 import {
   MSE_APPEND_CHUNK,
+  MSE_FORWARD_BUFFER_HIGH_SECONDS,
   attachMseSession,
   isMseTypeSupported,
   resolveMseMimeType,
@@ -173,6 +174,7 @@ describe('attachMseSession', () => {
     total?: number
     alwaysFailAppend?: boolean
     holdAppends?: boolean
+    maxBufferedBytes?: number
     onAppendedOffset?: (offset: number) => void
     onBufferedChanged?: () => void
     onError?: (failure: MseFailure) => void
@@ -188,6 +190,7 @@ describe('attachMseSession', () => {
       sourceBufferInit: {
         alwaysFailAppend: options?.alwaysFailAppend,
         holdAppends: options?.holdAppends,
+        maxBufferedBytes: options?.maxBufferedBytes,
       },
     })
 
@@ -236,7 +239,7 @@ describe('attachMseSession', () => {
 
     await pumpPrefix(active, MSE_APPEND_CHUNK * 2)
 
-    expect(active.getAppendedOffset()).toBeGreaterThanOrEqual(MSE_APPEND_CHUNK)
+    expect(active.getAppendedOffset()).toBeGreaterThan(0)
     expect(appended.at(-1)).toBe(active.getAppendedOffset())
     expect(readStreamRange).toHaveBeenCalled()
     // MPEG cold start resolves ID3 / Xing before the first append window.
@@ -249,6 +252,44 @@ describe('attachMseSession', () => {
   it('uses segments mode for non-mpeg mime types', async () => {
     const { mediaSource } = await attach({ mimeType: 'audio/webm; codecs="opus"' })
     expect(mediaSource.sourceBuffers[0]!.mode).toBe('segments')
+  })
+
+  it('bounds forward buffering until playback reaches the low-water mark', async () => {
+    const total = MSE_APPEND_CHUNK * 8
+    const duration = 200
+    const { session: active, mediaSource } = await attach({ total, duration })
+
+    active.notifyProgress(progress({
+      ranges: [{ start: 0, end: total }],
+      received: total,
+      total,
+      complete: true,
+    }))
+    await waitFor(() => active.getAppendedOffset() > 0)
+    await flushMicrotasks(24)
+
+    const pausedOffset = active.getAppendedOffset()
+    const buffer = mediaSource.sourceBuffers[0]!
+    const bufferedEnd = buffer.buffered.end(buffer.buffered.length - 1)
+    const oneChunkSeconds = duration / 8
+
+    expect(pausedOffset).toBeLessThan(total)
+    expect(bufferedEnd).toBeLessThanOrEqual(
+      MSE_FORWARD_BUFFER_HIGH_SECONDS + oneChunkSeconds,
+    )
+
+    // Completed download notifications do not bypass the high-water pause.
+    active.notifyProgress(progress({
+      ranges: [{ start: 0, end: total }],
+      received: total,
+      total,
+      complete: true,
+    }))
+    await flushMicrotasks(16)
+    expect(active.getAppendedOffset()).toBe(pausedOffset)
+
+    audio.tickTime(30)
+    await waitFor(() => active.getAppendedOffset() > pausedOffset)
   })
 
   it('calls endOfStream only after the full file is appended and complete', async () => {
@@ -377,6 +418,45 @@ describe('attachMseSession', () => {
       stage: 'append-pump',
       cause: expect.anything(),
     }))
+  })
+
+  it('recovers Windows quota pressure without reporting a fatal session error', async () => {
+    const onError = vi.fn()
+    const total = MSE_APPEND_CHUNK * 8
+    const { session: active, mediaSource } = await attach({
+      total,
+      maxBufferedBytes: MSE_APPEND_CHUNK,
+      onError,
+    })
+    const buffer = mediaSource.sourceBuffers[0]!
+
+    await waitFor(() => buffer.quotaExceededCalls === 1)
+    const stalledOffset = active.getAppendedOffset()
+
+    expect(stalledOffset).toBeGreaterThan(0)
+    expect(stalledOffset).toBeLessThan(total)
+    expect(onError).not.toHaveBeenCalled()
+    expect(buffer.removeCalls).toHaveLength(0)
+
+    // More download progress must not spin on the same full buffer.
+    active.notifyProgress(progress({
+      ranges: [{ start: 0, end: total }],
+      received: total,
+      total,
+      complete: true,
+    }))
+    await flushMicrotasks(16)
+
+    expect(buffer.quotaExceededCalls).toBe(1)
+    expect(active.getAppendedOffset()).toBe(stalledOffset)
+
+    // Playback creates safe back-buffer space. The session evicts it and
+    // resumes from the same append cursor instead of pausing the player.
+    audio.tickTime(20)
+    await waitFor(() => active.getAppendedOffset() > stalledOffset)
+
+    expect(buffer.removeCalls.length).toBeGreaterThan(0)
+    expect(onError).not.toHaveBeenCalled()
   })
 
   it('snaps and lands onto SourceBuffer ranges (not element buffered)', async () => {
@@ -576,12 +656,13 @@ describe('attachMseSession', () => {
   it('dispose cancels further pumps and revokes the object URL', async () => {
     const { session: active, mediaSource } = await attach({ holdAppends: true })
     await flushMicrotasks(8)
+    const buffer = mediaSource.sourceBuffers[0]!
     const url = active.objectUrl
     const offsetAtDispose = active.getAppendedOffset()
     active.dispose()
 
-    mediaSource.sourceBuffers[0]!.holdAppends = false
-    mediaSource.sourceBuffers[0]!.completeAppend()
+    buffer.holdAppends = false
+    buffer.completeAppend()
     active.notifyProgress(progress({
       ranges: [{ start: 0, end: TOTAL }],
       complete: true,
@@ -591,6 +672,8 @@ describe('attachMseSession', () => {
     expect(active.getAppendedOffset()).toBe(offsetAtDispose)
     expect(objectUrls.has(url)).toBe(false)
     expect(audio.src).toBe('')
+    expect(audio.loadCalls).toBe(1)
+    expect(mediaSource.sourceBuffers).toHaveLength(0)
     expect(active.snapToBufferedTime(0)).toBeNull()
   })
 
