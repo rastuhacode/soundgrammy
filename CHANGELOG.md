@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.0.0](https://github.com/rastuhacode/soundgrammy/compare/v0.4.0...v1.0.0) (2026-08-11)
+
+
+### Features
+
+* add context menu button to PlaylistTrackRow for track options and update table structure to include actions column ([1477ec9](https://github.com/rastuhacode/soundgrammy/commit/1477ec978735c1d8db39abbef161182839c57af0))
+
+
+### Bug Fixes
+
+* (experement) remove forward buffering logic from MSE session management to simplify playback handling ([7f15a18](https://github.com/rastuhacode/soundgrammy/commit/7f15a1836f3aea09bfadfb828e72b0de07fdd128))
+
 ## [0.4.0](https://github.com/rastuhacode/soundgrammy/compare/v0.3.0...v0.4.0) (2026-08-11)
 
 
