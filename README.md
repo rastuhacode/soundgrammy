@@ -23,13 +23,13 @@
 
 Telegram can store music on your profile, but it does not provide the library management and playback experience of a dedicated music player.
 
-SoundGrammy was created to eliminate manual synchronization between a local player and music saved on Telegram, to add the playback and organization tools that a music library needs.
+SoundGrammy was created to add the playback and organization tools that a music library needs and to eliminate manual synchronization between a local player and music saved on Telegram.
 
 You can read more about philosophy around SoundGrammy in my [article]().
 
 ## Features
 
-- **Automatic library sync** — add a track to your Telegram profile and it appears in SoundGrammy.
+- **Automatic library sync** — add a track to your Telegram profile and it appears in SoundGrammy after sync.
 - **Full playback controls** — stream, cache, download, shuffle, and repeat tracks.
 - **Local playlists** — create, rename, reorder, delete, and cache playlists; export them for basic cross-device transfer.
 - **Private listening statistics** — use the **Popular** and **Recent** smart playlists generated from local listening history.
@@ -38,7 +38,7 @@ You can read more about philosophy around SoundGrammy in my [article]().
 - **Bulk actions** — add, cache, download, or manage many selected tracks at once.
 - **Thoughtful extras** — fullscreen playback (with artwork bounce), drag and drop, configurable caching, MTProto proxy support, and more.
 
-### What SoundGrammy is not
+### What SoundGrammy is NOT
 
 - **Not a music streaming service.** It does not provide recommendations or a music catalog; it only displays tracks that you have added to your Telegram profile.
 - **Not a replacement for the Telegram client.** SoundGrammy focuses on music playback and organization. Profile music is read-only in the app, so use an official Telegram client to change it.
@@ -68,16 +68,12 @@ For implementation details and the security review checklist, read the [security
 
 ## Local development
 
-SoundGrammy uses [React](https://react.dev/), [TypeScript](https://www.typescriptlang.org/), [Tauri 2](https://v2.tauri.app/), [Rust](https://www.rust-lang.org/), and [SQLite](https://www.sqlite.org/). Telegram connectivity is provided through MTProto.
-
 ### Prerequisites
 
 - [Rust](https://www.rust-lang.org/learn/get-started)
 - [Bun](https://bun.com/docs/installation) 1.3 or newer
 - The [Tauri 2 system prerequisites](https://v2.tauri.app/start/prerequisites/) for your operating system
-- A Telegram account and your own application `api_id` and `api_hash` from [my.telegram.org/apps](https://my.telegram.org/apps)
-
-Telegram requires third-party clients to use their own application API credentials. **Never commit** your `api_hash`, local environment files, or Telegram session data.
+- Telegram requires third-party clients to use their own application API credentials. You can get yours `api_id` and `api_hash` from [my.telegram.org/apps](https://my.telegram.org/apps)
 
 ### Setup
 
@@ -99,8 +95,6 @@ Start the desktop app:
 bun tauri:dev
 ```
 
-Release builds embed the application credentials supplied through `TELEGRAM_API_ID` and `TELEGRAM_API_HASH`, either from `src-tauri/.env.local` or the build environment. CI stores them as GitHub Actions secrets. These are the **application's API credentials**, not an end user's login session.
-
 ### Quality checks
 
 ```bash
@@ -118,21 +112,9 @@ bun generate-icons
 
 ### Production build
 
-After completing the development setup, run:
-
 ```bash
 bun tauri:build
 ```
-
-## Architecture and documentation
-
-The frontend communicates with the Rust backend exclusively through Tauri commands and events. The backend owns Telegram access, session security, SQLite persistence, and media streaming.
-
-- [Architecture and data flow](docs/architecture.md)
-- [Streaming transport](docs/streaming.md)
-- [Listening statistics](docs/listen-statistics.md)
-- [Security model](docs/security.md)
-- [Release process](docs/releasing.md)
 
 ## Contributing and support
 
