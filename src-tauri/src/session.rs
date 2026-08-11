@@ -9,8 +9,8 @@ use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use aes_gcm::aead::{Aead, KeyInit, OsRng};
-use aes_gcm::{AeadCore, Aes256Gcm, Key, Nonce};
+use aes_gcm::aead::{Aead, Generate, Key, KeyInit};
+use aes_gcm::{Aes256Gcm, Nonce};
 use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine;
 use ferogram::session_backend::PersistedSession;
@@ -44,7 +44,7 @@ fn load_or_create_key() -> AppResult<[u8; 32]> {
             Ok(arr)
         }
         Err(keyring::Error::NoEntry) => {
-            let key = Aes256Gcm::generate_key(OsRng);
+            let key = Key::<Aes256Gcm>::generate();
             entry
                 .set_password(&B64.encode(key.as_slice()))
                 .map_err(|e| AppError::msg(format!("failed to persist session key: {e}")))?;
@@ -57,8 +57,9 @@ fn load_or_create_key() -> AppResult<[u8; 32]> {
 
 fn cipher() -> AppResult<Aes256Gcm> {
     let key_bytes = load_or_create_key()?;
-    let key = Key::<Aes256Gcm>::from_slice(&key_bytes);
-    Ok(Aes256Gcm::new(key))
+    let key = Key::<Aes256Gcm>::try_from(key_bytes.as_slice())
+        .map_err(|_| AppError::msg("session key has unexpected length"))?;
+    Ok(Aes256Gcm::new(&key))
 }
 
 fn io_err(err: impl std::fmt::Display) -> io::Error {
@@ -90,7 +91,7 @@ impl SessionBackend for EncryptedSessionBackend {
 
         let plaintext = session.to_bytes();
         let cipher = cipher().map_err(io_err)?;
-        let nonce = Aes256Gcm::generate_nonce(OsRng);
+        let nonce = Nonce::generate();
         let ciphertext = cipher
             .encrypt(&nonce, plaintext.as_slice())
             .map_err(|_| io_err("failed to encrypt session"))?;
@@ -121,7 +122,14 @@ impl SessionBackend for EncryptedSessionBackend {
                 return Ok(None);
             }
         };
-        let plaintext = match cipher.decrypt(Nonce::from_slice(nonce_bytes), ciphertext) {
+        let nonce = match Nonce::try_from(nonce_bytes) {
+            Ok(nonce) => nonce,
+            Err(_) => {
+                let _ = std::fs::remove_file(&self.path);
+                return Ok(None);
+            }
+        };
+        let plaintext = match cipher.decrypt(&nonce, ciphertext) {
             Ok(p) => p,
             Err(_) => {
                 let _ = std::fs::remove_file(&self.path);

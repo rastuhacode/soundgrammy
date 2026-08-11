@@ -256,14 +256,14 @@ export function formatTrackDuration(seconds: number | null): string {
 
 export function selectionModeAfterPlaylistChange(): {
   selectionMode: false
-  rowSelection: Record<string, boolean>
+  rowSelection: Record<string, true>
 } {
   return { selectionMode: false, rowSelection: {} }
 }
 
 export function enterSelectionWithTrack(rowId: number): {
   selectionMode: true
-  rowSelection: Record<string, boolean>
+  rowSelection: Record<string, true>
 } {
   return {
     selectionMode: true,

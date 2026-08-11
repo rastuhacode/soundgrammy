@@ -14,10 +14,13 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import {
+  columnSizingFeature,
+  createSortedRowModel,
   flexRender,
-  getCoreRowModel,
-  getSortedRowModel,
-  useReactTable,
+  rowSelectionFeature,
+  rowSortingFeature,
+  tableFeatures,
+  useTable,
   type ColumnDef,
   type OnChangeFn,
   type RowSelectionState,
@@ -43,6 +46,13 @@ import {
   reorderByIndex,
   type CustomPlaylistRef,
 } from './track-actions'
+
+const playlistTableFeatures = tableFeatures({
+  columnSizingFeature,
+  rowSelectionFeature,
+  rowSortingFeature,
+  sortedRowModel: createSortedRowModel(),
+})
 
 const restrictToVerticalAxis: Modifier = ({ transform }) => ({
   ...transform,
@@ -116,8 +126,8 @@ export function PlaylistTracksTable({
 }: PlaylistTracksTableProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
 
-  const columns = useMemo<ColumnDef<Track>[]>(() => {
-    const defs: ColumnDef<Track>[] = []
+  const columns = useMemo<ColumnDef<typeof playlistTableFeatures, Track>[]>(() => {
+    const defs: ColumnDef<typeof playlistTableFeatures, Track>[] = []
 
     if (selectionMode) {
       defs.push({
@@ -143,7 +153,7 @@ export function PlaylistTracksTable({
         accessorKey: 'title',
         header: 'Title',
         cell: () => null,
-        sortingFn: (rowA, rowB) =>
+        sortFn: (rowA, rowB) =>
           compareTracks(rowA.original, rowB.original, {
             id: 'title',
             desc: false,
@@ -153,7 +163,7 @@ export function PlaylistTracksTable({
         accessorKey: 'performer',
         header: 'Artist',
         cell: () => null,
-        sortingFn: (rowA, rowB) =>
+        sortFn: (rowA, rowB) =>
           compareTracks(rowA.original, rowB.original, {
             id: 'performer',
             desc: false,
@@ -163,7 +173,7 @@ export function PlaylistTracksTable({
         accessorKey: 'duration',
         header: 'Time',
         cell: () => null,
-        sortingFn: (rowA, rowB) =>
+        sortFn: (rowA, rowB) =>
           compareTracks(rowA.original, rowB.original, {
             id: 'duration',
             desc: false,
@@ -180,9 +190,8 @@ export function PlaylistTracksTable({
     return defs
   }, [selectionMode])
 
-  // TanStack Table / Virtual intentionally return live functions
-  // eslint-disable-next-line react-hooks/incompatible-library
-  const table = useReactTable({
+  const table = useTable({
+    features: playlistTableFeatures,
     data: tracks,
     columns,
     state: {
@@ -193,8 +202,6 @@ export function PlaylistTracksTable({
     enableRowSelection: selectionMode,
     onSortingChange,
     onRowSelectionChange,
-    getCoreRowModel: getCoreRowModel(),
-    getSortedRowModel: getSortedRowModel(),
   })
 
   const rows = table.getRowModel().rows
@@ -213,6 +220,8 @@ export function PlaylistTracksTable({
     }),
   )
 
+  // TanStack Virtual intentionally returns live functions
+  // eslint-disable-next-line react-hooks/incompatible-library
   const virtualizer = useVirtualizer({
     count: rows.length,
     getScrollElement: () => scrollRef.current,
