@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/rastuhacode/soundgrammy/compare/v0.3.0...v0.4.0) (2026-08-11)
+
+
+### Features
+
+* enhance MSE session management with quota handling and forward buffering logic ([c05a824](https://github.com/rastuhacode/soundgrammy/commit/c05a824bc0695e6de34f4c25c21c65165601767a))
+
 ## [0.3.0](https://github.com/rastuhacode/soundgrammy/compare/v0.2.0...v0.3.0) (2026-08-10)
 
 
