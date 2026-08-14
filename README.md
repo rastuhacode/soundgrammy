@@ -25,7 +25,7 @@ Telegram can store music on your profile, but it does not provide the library ma
 
 SoundGrammy was created to add the playback and organization tools that a music library needs and to eliminate manual synchronization between a local player and music saved on Telegram.
 
-You can read more about philosophy around SoundGrammy in my [article]().
+You can read more about philosophy around SoundGrammy in [Why I don’t use music streaming services](https://rastuharem.netlify.app/posts/why-i-cant-use-music-services/).
 
 ## Features
 
