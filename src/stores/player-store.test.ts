@@ -97,6 +97,22 @@ describe('playQueue', () => {
 })
 
 describe('shuffle modes', () => {
+  it('keeps the shared shuffle state in sync with an explicit playlist action', () => {
+    const tracks = [track(1), track(2), track(3)]
+
+    usePlayerStore.getState().playPlaylist({
+      id: 7,
+      name: 'Mix',
+      trackIds: tracks.map(item => item.id),
+      tracks,
+      isCustom: true,
+    }, { shuffle: 'on' })
+
+    expect(useShuffleStore.getState().shuffle).toBe('on')
+    expect(usePlayerStore.getState().queue.baseEntries).toHaveLength(3)
+    expect(usePlayerStore.getState().queue.cursor).toBe(0)
+  })
+
   it('reconstructs the queue and pins the current membership when the mode changes', () => {
     const a = track(1)
     const b = track(2)
