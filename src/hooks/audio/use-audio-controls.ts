@@ -7,6 +7,61 @@ import { usePlayerStore } from '@/stores/player-store'
 
 type TrackMediaSessionAction = 'nexttrack' | 'previoustrack'
 
+export type PlaybackShortcut = 'toggle' | 'next' | 'previous'
+
+type PlaybackShortcutEvent = Pick<
+  KeyboardEvent,
+  | 'altKey'
+  | 'code'
+  | 'ctrlKey'
+  | 'defaultPrevented'
+  | 'metaKey'
+  | 'repeat'
+  | 'shiftKey'
+  | 'target'
+>
+
+const EDITABLE_SELECTOR
+  = 'input, textarea, select, [contenteditable]:not([contenteditable="false"])'
+const SPACE_INTERACTIVE_SELECTOR
+  = `${EDITABLE_SELECTOR}, button, a[href], [role="button"], [role="checkbox"], [role="radio"], [role="switch"], [role="slider"], [role="menuitem"], [role="option"], [role="tab"]`
+
+function targetMatchesClosest(
+  target: EventTarget | null,
+  selector: string,
+): boolean {
+  if (!target || typeof (target as Element).closest !== 'function') return false
+  return (target as Element).closest(selector) !== null
+}
+
+/** Resolve exact, global playback shortcuts without hijacking focused controls. */
+export function resolvePlaybackShortcut(
+  event: PlaybackShortcutEvent,
+): PlaybackShortcut | null {
+  if (
+    event.defaultPrevented
+    || event.repeat
+    || targetMatchesClosest(event.target, EDITABLE_SELECTOR)
+  ) {
+    return null
+  }
+
+  const noModifiers
+    = !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey
+  if (event.code === 'Space' && noModifiers) {
+    return targetMatchesClosest(event.target, SPACE_INTERACTIVE_SELECTOR)
+      ? null
+      : 'toggle'
+  }
+
+  const onePrimaryModifier = event.ctrlKey !== event.metaKey
+  if (event.altKey || event.shiftKey || !onePrimaryModifier) return null
+
+  if (event.code === 'ArrowRight') return 'next'
+  if (event.code === 'ArrowLeft') return 'previous'
+  return null
+}
+
 interface TrackMediaSession {
   setActionHandler: (
     action: TrackMediaSessionAction,
@@ -71,6 +126,30 @@ export function useAudioControls({
         handleSeekRef.current(time)
       },
     })
+  }, [])
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      const shortcut = resolvePlaybackShortcut(event)
+      if (!shortcut) return
+
+      const player = usePlayerStore.getState()
+      if (!player.currentTrack) return
+
+      event.preventDefault()
+      if (shortcut === 'toggle') {
+        player.setPlaying(!player.isPlaying)
+      }
+      else if (shortcut === 'next') {
+        player.playNext()
+      }
+      else {
+        previousOrRestart()
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
   }, [])
 
   useEffect(() => {
