@@ -7,7 +7,8 @@ import { usePlayerStore } from '@/stores/player-store'
 
 type TrackMediaSessionAction = 'nexttrack' | 'previoustrack'
 
-export type PlaybackShortcut = 'toggle' | 'next' | 'previous'
+export type PlaybackShortcut
+  = 'toggle' | 'next' | 'previous' | 'seekForward' | 'seekBackward'
 
 type PlaybackShortcutEvent = Pick<
   KeyboardEvent,
@@ -23,8 +24,9 @@ type PlaybackShortcutEvent = Pick<
 
 const EDITABLE_SELECTOR
   = 'input, textarea, select, [contenteditable]:not([contenteditable="false"])'
-const SPACE_INTERACTIVE_SELECTOR
+const INTERACTIVE_SELECTOR
   = `${EDITABLE_SELECTOR}, button, a[href], [role="button"], [role="checkbox"], [role="radio"], [role="switch"], [role="slider"], [role="menuitem"], [role="option"], [role="tab"]`
+const KEYBOARD_SEEK_SECONDS = 5
 
 function targetMatchesClosest(
   target: EventTarget | null,
@@ -49,9 +51,18 @@ export function resolvePlaybackShortcut(
   const noModifiers
     = !event.altKey && !event.ctrlKey && !event.metaKey && !event.shiftKey
   if (event.code === 'Space' && noModifiers) {
-    return targetMatchesClosest(event.target, SPACE_INTERACTIVE_SELECTOR)
+    return targetMatchesClosest(event.target, INTERACTIVE_SELECTOR)
       ? null
       : 'toggle'
+  }
+
+  if (noModifiers) {
+    if (targetMatchesClosest(event.target, INTERACTIVE_SELECTOR)) {
+      return null
+    }
+    if (event.code === 'ArrowRight') return 'seekForward'
+    if (event.code === 'ArrowLeft') return 'seekBackward'
+    return null
   }
 
   const onePrimaryModifier = event.ctrlKey !== event.metaKey
@@ -60,6 +71,18 @@ export function resolvePlaybackShortcut(
   if (event.code === 'ArrowRight') return 'next'
   if (event.code === 'ArrowLeft') return 'previous'
   return null
+}
+
+export function seekTargetByOffset(
+  currentTime: number,
+  duration: number,
+  offset: number,
+): number {
+  const safeCurrentTime = Number.isFinite(currentTime) ? currentTime : 0
+  if (!Number.isFinite(duration) || duration <= 0) {
+    return Math.max(safeCurrentTime, 0)
+  }
+  return Math.min(Math.max(safeCurrentTime + offset, 0), duration)
 }
 
 interface TrackMediaSession {
@@ -100,20 +123,27 @@ export function registerMediaSessionTrackActions(
 
 interface UseAudioControlsOptions {
   currentTime: number
+  duration: number
   handleSeek: (time: number) => void
 }
 
 /** Connect app playback commands and OS media-session queue controls. */
 export function useAudioControls({
   currentTime,
+  duration,
   handleSeek,
 }: UseAudioControlsOptions) {
   const currentTimeRef = useRef(0)
+  const durationRef = useRef(0)
   const handleSeekRef = useRef(handleSeek)
 
   useEffect(() => {
     currentTimeRef.current = currentTime
   }, [currentTime])
+
+  useEffect(() => {
+    durationRef.current = duration
+  }, [duration])
 
   useEffect(() => {
     handleSeekRef.current = handleSeek
@@ -143,8 +173,22 @@ export function useAudioControls({
       else if (shortcut === 'next') {
         player.playNext()
       }
-      else {
+      else if (shortcut === 'previous') {
         previousOrRestart()
+      }
+      else {
+        const offset = shortcut === 'seekForward'
+          ? KEYBOARD_SEEK_SECONDS
+          : -KEYBOARD_SEEK_SECONDS
+        const target = seekTargetByOffset(
+          currentTimeRef.current,
+          durationRef.current,
+          offset,
+        )
+        if (target !== currentTimeRef.current) {
+          currentTimeRef.current = target
+          handleSeekRef.current(target)
+        }
       }
     }
 

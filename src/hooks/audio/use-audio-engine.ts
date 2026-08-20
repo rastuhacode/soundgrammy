@@ -114,7 +114,7 @@ export function useAudioEngine() {
     isPlaying,
   })
 
-  useAudioControls({ currentTime, handleSeek })
+  useAudioControls({ currentTime, duration, handleSeek })
 
   const msePrimeRef = useMseColdStartPrime({
     audioRef,

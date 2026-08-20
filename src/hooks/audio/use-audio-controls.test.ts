@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { resolvePlaybackShortcut } from './use-audio-controls'
+import {
+  resolvePlaybackShortcut,
+  seekTargetByOffset,
+} from './use-audio-controls'
 
 function keyboardEvent(
   overrides: Partial<Parameters<typeof resolvePlaybackShortcut>[0]> = {},
@@ -42,10 +45,14 @@ describe('resolvePlaybackShortcut', () => {
     }))).toBe('previous')
   })
 
+  it('maps unmodified arrows to five-second seeking', () => {
+    expect(resolvePlaybackShortcut(keyboardEvent({ code: 'ArrowRight' })))
+      .toBe('seekForward')
+    expect(resolvePlaybackShortcut(keyboardEvent({ code: 'ArrowLeft' })))
+      .toBe('seekBackward')
+  })
+
   it('requires exact shortcuts and ignores key repeat', () => {
-    expect(resolvePlaybackShortcut(keyboardEvent({
-      code: 'ArrowRight',
-    }))).toBeNull()
     expect(resolvePlaybackShortcut(keyboardEvent({
       code: 'ArrowRight',
       ctrlKey: true,
@@ -67,6 +74,10 @@ describe('resolvePlaybackShortcut', () => {
       code: 'Space',
       target: targetClosestTo(selector => selector.includes('button')),
     }))).toBeNull()
+    expect(resolvePlaybackShortcut(keyboardEvent({
+      code: 'ArrowRight',
+      target: targetClosestTo(selector => selector.includes('[role="slider"]')),
+    }))).toBeNull()
   })
 
   it('respects keyboard events handled by a component', () => {
@@ -74,5 +85,18 @@ describe('resolvePlaybackShortcut', () => {
       code: 'Space',
       defaultPrevented: true,
     }))).toBeNull()
+  })
+})
+
+describe('seekTargetByOffset', () => {
+  it('moves by the requested offset', () => {
+    expect(seekTargetByOffset(30, 100, 5)).toBe(35)
+    expect(seekTargetByOffset(30, 100, -5)).toBe(25)
+  })
+
+  it('clamps seeking to the track bounds', () => {
+    expect(seekTargetByOffset(2, 100, -5)).toBe(0)
+    expect(seekTargetByOffset(98, 100, 5)).toBe(100)
+    expect(seekTargetByOffset(10, 0, 5)).toBe(10)
   })
 })
