@@ -43,6 +43,7 @@ pub async fn phone_send_code(
     state: State<'_, AppState>,
     phone: String,
 ) -> AppResult<PhoneSendCodeOutcome> {
+    state.ensure_client().await?;
     telegram_auth::phone_send_code(&state, phone.trim()).await
 }
 
@@ -61,11 +62,13 @@ pub async fn phone_check_password(
 
 #[tauri::command]
 pub async fn qr_start(state: State<'_, AppState>) -> AppResult<QrOutcome> {
+    state.ensure_client().await?;
     telegram_auth::qr_export(&state).await
 }
 
 #[tauri::command]
 pub async fn qr_poll(state: State<'_, AppState>) -> AppResult<QrOutcome> {
+    state.ensure_client().await?;
     telegram_auth::qr_export(&state).await
 }
 

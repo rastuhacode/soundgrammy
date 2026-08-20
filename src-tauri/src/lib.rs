@@ -42,40 +42,8 @@ pub fn run() {
             std::fs::create_dir_all(&cache_dir)?;
 
             let db = db::Db::open(&data_dir.join("library.db"))?;
-            let proxy = proxy_settings::load(&db)?;
-            let want_proxy = proxy.for_connect();
-
-            let (client, proxy_active, proxy_last_error) = tauri::async_runtime::block_on(async {
-                match telegram::client::build(&config, &data_dir, want_proxy).await {
-                    Ok((client, shutdown)) => {
-                        (Some((client, shutdown)), want_proxy.is_some(), None)
-                    }
-                    Err(err) if want_proxy.is_some() => {
-                        match telegram::client::build(&config, &data_dir, None).await {
-                            Ok((client, shutdown)) => {
-                                (Some((client, shutdown)), false, Some(err.to_string()))
-                            }
-                            Err(direct_err) => (
-                                None,
-                                false,
-                                Some(format!(
-                                    "proxy failed ({err}); direct also failed ({direct_err})"
-                                )),
-                            ),
-                        }
-                    }
-                    Err(err) => (None, false, Some(err.to_string())),
-                }
-            });
-
             app.manage(AppState::new(
-                config,
-                db,
-                client,
-                data_dir,
-                cache_dir,
-                proxy_active,
-                proxy_last_error,
+                config, db, None, data_dir, cache_dir, false, None,
             ));
 
             let handle = app.handle().clone();

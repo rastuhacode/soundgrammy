@@ -93,21 +93,27 @@ impl AppState {
 
     /// Cheap clone of the live ferogram client handle.
     pub async fn client(&self) -> AppResult<Client> {
-        let guard = self.telegram.read().await;
-        match guard.as_ref() {
-            Some(live) => Ok(live.client.clone()),
-            None => {
-                let detail = self
-                    .proxy_last_error
-                    .lock()
-                    .await
-                    .clone()
-                    .unwrap_or_else(|| "not connected to Telegram".into());
-                Err(AppError::msg(format!(
-                    "telegram offline: {detail}. Enable an MTProto proxy (or VPN) and apply it."
-                )))
-            }
+        if let Some(client) = self.current_client().await {
+            return Ok(client);
         }
+
+        let detail = self
+            .proxy_last_error
+            .lock()
+            .await
+            .clone()
+            .unwrap_or_else(|| "not connected to Telegram".into());
+        Err(AppError::msg(format!(
+            "telegram offline: {detail}. Enable an MTProto proxy (or VPN) and apply it."
+        )))
+    }
+
+    async fn current_client(&self) -> Option<Client> {
+        self.telegram
+            .read()
+            .await
+            .as_ref()
+            .map(|live| live.client.clone())
     }
 
     pub async fn is_telegram_online(&self) -> bool {
@@ -152,16 +158,41 @@ impl AppState {
             .map_err(|e| AppError::Telegram(e.to_string()))
     }
 
+    /// Connect on demand without replacing a client another caller just built.
+    /// This keeps app startup local-only while preserving first-time login.
+    pub async fn ensure_client(&self) -> AppResult<Client> {
+        if let Some(client) = self.current_client().await {
+            return Ok(client);
+        }
+
+        let _guard = self.reconnect_lock.lock().await;
+        if let Some(client) = self.current_client().await {
+            return Ok(client);
+        }
+
+        self.rebuild_client_locked().await?;
+        self.client().await
+    }
+
     /// Rebuild the ferogram client from current DB proxy settings.
     /// Clears in-flight auth tokens (they are invalid across reconnect).
     pub async fn rebuild_client(&self) -> AppResult<()> {
         let _guard = self.reconnect_lock.lock().await;
+        self.rebuild_client_locked().await
+    }
 
+    async fn rebuild_client_locked(&self) -> AppResult<()> {
         let settings = proxy_settings::load(&self.db)?;
         let want_proxy = settings.for_connect();
 
         let (client, shutdown) =
-            telegram::client::build(&self.config, &self.data_dir, want_proxy).await?;
+            match telegram::client::build(&self.config, &self.data_dir, want_proxy).await {
+                Ok(pair) => pair,
+                Err(err) => {
+                    self.set_proxy_last_error(Some(err.to_string())).await;
+                    return Err(err);
+                }
+            };
 
         {
             let mut slot = self.telegram.write().await;

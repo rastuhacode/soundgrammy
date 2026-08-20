@@ -147,7 +147,7 @@ export function PlaylistToolbar({
       <div className="flex h-fit w-full shrink-0 items-center justify-between gap-4 px-4">
         <div className="grow flex gap-2">
           <ToolbarIconButton label="Play" variant="default" onClick={onPlay}>
-            <Play className="size-4" />
+            <Play className="size-4 text-foreground fill-foreground" />
           </ToolbarIconButton>
           <ToolbarIconButton label="Shuffle" onClick={onShuffle}>
             <Shuffle className="size-4" />
