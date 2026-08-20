@@ -1,6 +1,4 @@
-import type { MouseEvent } from 'react'
 import { Heart } from 'lucide-react'
-import { fireSmallConfettiAt } from '@/lib/confetti'
 import { api } from '@/lib/api'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -17,19 +15,14 @@ export function LikeButton(props: LikeButtonProps) {
   const setPlaylistsData = usePlaylistsStore(state => state.setData)
   const isLiked = playlistsData?.liked.trackIds.includes(track?.id ?? 0) ?? false
 
-  async function handleToggleLike(event: MouseEvent<HTMLButtonElement>) {
+  async function handleToggleLike() {
     if (!track || !playlistsData) return
-    const button = event.currentTarget
-    const wasLiked = isLiked
     try {
       const liked = await api.toggleLike(track.id)
       setPlaylistsData({
         ...playlistsData,
         liked,
       })
-      if (!wasLiked) {
-        fireSmallConfettiAt(button)
-      }
     }
     catch {
       // keep UI unchanged on failure
