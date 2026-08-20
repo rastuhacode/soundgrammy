@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.1.0](https://github.com/rastuhacode/soundgrammy/compare/v1.0.0...v1.1.0) (2026-08-20)
+
+
+### Features
+
+* add arrows keybind to rewind on 5 sec ([ed7ced4](https://github.com/rastuhacode/soundgrammy/commit/ed7ced4c4ad1542bd438457a9607140cdd2c0b67))
+* add device events integrations, e.g. pause from headphones ([77a5a5e](https://github.com/rastuhacode/soundgrammy/commit/77a5a5e2481c82e15bb0117eab8408adf41b81d3))
+* added keybinds for pause, next, previous tracks ([8753069](https://github.com/rastuhacode/soundgrammy/commit/8753069f4eafc2ec6c1d388fd77f93d370f05829))
+* refined shuffle button ([d01fade](https://github.com/rastuhacode/soundgrammy/commit/d01fadee5096d5f4d1bfa705238dd875e0e228a6))
+
+
+### Bug Fixes
+
+* app doesn't load infinelly if connection through proxy is turned off ([d0d8d27](https://github.com/rastuhacode/soundgrammy/commit/d0d8d27bd8a639ac7bce65c83ebc356382816e8a))
+* make playlist name autofocused on create / edit ([d8551cb](https://github.com/rastuhacode/soundgrammy/commit/d8551cb12c7bbb7f6cd4f43eedde487f3e75dec4))
+
 ## [1.0.0](https://github.com/rastuhacode/soundgrammy/compare/v0.4.0...v1.0.0) (2026-08-11)
 
 
