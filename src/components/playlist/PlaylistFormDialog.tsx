@@ -205,6 +205,7 @@ export function PlaylistFormDialog({
             autoCorrect="off"
             autoCapitalize="off"
             spellCheck={false}
+            autoFocus
           />
           <FieldError>{nameError}</FieldError>
         </Field>

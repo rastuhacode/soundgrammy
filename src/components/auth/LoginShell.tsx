@@ -51,8 +51,6 @@ export function LoginShell({ children }: { children: ReactNode }) {
 
   return (
     <div className="hifi-bg relative flex min-h-screen justify-center overflow-y-auto px-5 pb-12 pt-16 sm:pt-20">
-      <div className="pointer-events-none absolute left-1/2 top-[-10%] h-144 w-xl -translate-x-1/2 rounded-full bg-primary/15 blur-[120px] animate-glow-pulse" />
-
       <div className="relative w-full max-w-104 animate-fade-up">
         <div className="mb-8 text-center">
           <span

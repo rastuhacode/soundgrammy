@@ -333,6 +333,12 @@ export const usePlayerStore = create<PlayerState>((set, get) => {
     },
 
     playPlaylist: (playlist, options = {}) => {
+      // An explicit playlist action (such as the toolbar shuffle button) also
+      // defines the player control state. Keep that state in sync before the
+      // queue is generated so the queue and shuffle indicator cannot disagree.
+      if (options.shuffle !== undefined) {
+        useShuffleStore.getState().setShuffle(options.shuffle)
+      }
       const queue = get().generateQueue({ playlist, ...options })
       get().playQueue(queue)
     },

@@ -6,7 +6,7 @@ import { ShuffleButton } from './buttons/ShuffleButton'
 
 export function AudioMainOperations() {
   return (
-    <div className="flex items-center gap-6">
+    <div className="flex items-center gap-4">
       <div className="flex items-center gap-4">
         <RepeatButton />
         <PreviousButton />
