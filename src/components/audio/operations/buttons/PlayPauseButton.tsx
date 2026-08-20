@@ -20,9 +20,9 @@ export function PlayPauseButton() {
       className={
         cn(
           'flex items-center justify-center',
-          'size-11 rounded-full bg-primary text-primary-foreground',
+          'size-11 rounded-full bg-primary text-foreground',
           'transition-transform hover:scale-105 active:scale-95 hover:bg-primary',
-          '[&>svg]:fill-current [&>svg]:size-5',
+          '[&>svg]:fill-foreground [&>svg]:size-5',
         )
       }
     >

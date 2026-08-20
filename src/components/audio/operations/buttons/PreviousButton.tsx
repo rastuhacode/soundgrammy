@@ -10,9 +10,9 @@ export function PreviousButton() {
       className={
         cn(
           'flex items-center justify-center',
-          'text-primary-foreground',
+          'text-foreground',
           'transition-transform hover:scale-105 active:scale-95',
-          '[&>svg]:fill-current [&>svg]:size-5',
+          '[&>svg]:fill-foreground [&>svg]:size-5',
         )
       }
       onClick={previousOrRestart}

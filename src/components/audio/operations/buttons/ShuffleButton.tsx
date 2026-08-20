@@ -1,10 +1,10 @@
-import { useState, type ReactNode } from 'react'
-import { Check, CircleHelp, Settings, Shuffle } from 'lucide-react'
+import { useRef, useState, type ReactNode } from 'react'
+import { Check, CircleHelp, Shuffle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { SHUFFLE_MODE_OPTIONS, type ShuffleMode } from '@/lib/shuffle'
 import { usePlayerStore } from '@/stores/player-store'
 import { useShuffleStore } from '@/stores/shuffle-store'
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { Popover, PopoverContent } from '@/components/ui/popover'
 import {
   Tooltip,
   TooltipContent,
@@ -37,6 +37,7 @@ function ShufflePopoverItem(props: ShufflePopoverItemProps) {
 
 export function ShuffleButton() {
   const [open, setOpen] = useState(false)
+  const buttonRef = useRef<HTMLButtonElement>(null)
   const shuffleState = useShuffleStore(state => state.shuffle)
   const shuffleMode = useShuffleStore(state => state.mode)
   const setShuffle = usePlayerStore(state => state.setShuffle)
@@ -56,38 +57,39 @@ export function ShuffleButton() {
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <div className="group flex items-center">
-        <button
-          type="button"
-          aria-label="Shuffle"
-          aria-pressed={shuffleState === 'on'}
-          className={cn(
-            'flex items-center justify-center transition-transform hover:scale-105 active:scale-95 [&>svg]:size-4',
-            shuffleState === 'on'
-              ? 'text-primary'
-              : 'text-muted-foreground',
-          )}
-          onClick={toggleShuffle}
-        >
-          <Shuffle />
-        </button>
-
-        <PopoverTrigger
-          render={(
-            <button
-              type="button"
-              aria-label={`Choose shuffle mode. Current: ${activeLabel}`}
-              className={cn(
-                'ml-0.5 flex size-5 items-center justify-center rounded-full text-muted-foreground opacity-0 pointer-events-none transition-[color,opacity,transform] hover:text-foreground active:scale-90 group-hover:opacity-100 group-hover:pointer-events-auto focus-visible:opacity-100 focus-visible:pointer-events-auto [&>svg]:size-3',
-                open && 'opacity-100 pointer-events-auto text-foreground',
-              )}
-            >
-              <Settings />
-            </button>
-          )}
-        />
-      </div>
-      <PopoverContent side="top" sideOffset={40} className="w-40 gap-1 p-1 text-xs">
+      <button
+        ref={buttonRef}
+        type="button"
+        aria-label="Shuffle"
+        aria-pressed={shuffleState === 'on'}
+        aria-keyshortcuts="Shift+F10"
+        title={`Shuffle: ${shuffleState === 'on' ? activeLabel : 'Off'}. Right-click to choose mode.`}
+        className={cn(
+          'flex items-center justify-center transition-transform hover:scale-105 active:scale-95 [&>svg]:size-4',
+          shuffleState === 'on'
+            ? 'text-primary'
+            : 'text-muted-foreground',
+        )}
+        onClick={toggleShuffle}
+        onContextMenu={(event) => {
+          event.preventDefault()
+          setOpen(true)
+        }}
+        onKeyDown={(event) => {
+          if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+            event.preventDefault()
+            setOpen(true)
+          }
+        }}
+      >
+        <Shuffle />
+      </button>
+      <PopoverContent
+        anchor={buttonRef}
+        side="top"
+        sideOffset={40}
+        className="w-40 gap-1 p-1 text-xs"
+      >
         <TooltipProvider>
           <div className="flex flex-col gap-1 h-40 overflow-y-auto" role="list" aria-label="Shuffle algorithms">
             {SHUFFLE_MODE_OPTIONS.map((option) => {
