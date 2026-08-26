@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   canSyncMediaPlaybackState,
   isExpectedPlayInterruption,
-  registerMediaSessionTrackActions,
+  registerMediaSessionActions,
 } from './use-audio-engine'
 
 describe('isExpectedPlayInterruption', () => {
@@ -62,45 +62,55 @@ describe('canSyncMediaPlaybackState', () => {
   })
 })
 
-describe('registerMediaSessionTrackActions', () => {
-  it('registers native next/previous handlers and removes them on cleanup', () => {
+describe('registerMediaSessionActions', () => {
+  const handlers = {
+    play: () => {},
+    pause: () => {},
+    stop: () => {},
+    seekto: () => {},
+    seekforward: () => {},
+    seekbackward: () => {},
+    nexttrack: () => {},
+    previoustrack: () => {},
+  }
+
+  it('registers native playback handlers and removes them on cleanup', () => {
     const calls: Array<{
-      action: 'nexttrack' | 'previoustrack'
+      action: keyof typeof handlers
       handler: MediaSessionActionHandler | null
     }> = []
-    const nexttrack = () => {}
-    const previoustrack = () => {}
 
-    const cleanup = registerMediaSessionTrackActions({
+    const cleanup = registerMediaSessionActions({
+      metadata: null,
+      playbackState: 'none',
+      setPositionState: () => {},
       setActionHandler: (action, handler) => calls.push({ action, handler }),
-    }, { nexttrack, previoustrack })
+    }, handlers)
 
-    expect(calls).toEqual([
-      { action: 'nexttrack', handler: nexttrack },
-      { action: 'previoustrack', handler: previoustrack },
-    ])
+    expect(calls.map(call => call.action)).toEqual(Object.keys(handlers))
 
     cleanup()
-    expect(calls.slice(2)).toEqual([
-      { action: 'nexttrack', handler: null },
-      { action: 'previoustrack', handler: null },
-    ])
+    expect(calls.slice(8)).toEqual(
+      Object.keys(handlers).map(action => ({ action, handler: null })),
+    )
   })
 
   it('keeps supported actions when a WebView rejects another one', () => {
     const registered: string[] = []
 
-    const cleanup = registerMediaSessionTrackActions({
+    const cleanup = registerMediaSessionActions({
+      metadata: null,
+      playbackState: 'none',
+      setPositionState: () => {},
       setActionHandler: (action) => {
         if (action === 'previoustrack') throw new DOMException('Unsupported')
         registered.push(action)
       },
-    }, {
-      nexttrack: () => {},
-      previoustrack: () => {},
-    })
+    }, handlers)
 
-    expect(registered).toEqual(['nexttrack'])
+    expect(registered).toEqual(Object.keys(handlers).filter(
+      action => action !== 'previoustrack',
+    ))
     expect(cleanup).not.toThrow()
   })
 })

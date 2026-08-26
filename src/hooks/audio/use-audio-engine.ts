@@ -1,4 +1,5 @@
 import { useCallback, useState } from 'react'
+import { useCachedThumbnail } from '@/hooks/use-cached-thumbnail'
 import { usePlayerStore } from '@/stores/player-store'
 import { useRepeatStore } from '@/stores/repeat-store'
 import { useAudioPlaybackState } from './audio-playback-state'
@@ -12,7 +13,7 @@ import { useListenTracker } from './use-listen-tracker'
 import { useMseColdStartPrime } from './use-mse-cold-start-prime'
 
 export { isExpectedPlayInterruption } from './audio-playback-state'
-export { registerMediaSessionTrackActions } from './use-audio-controls'
+export { registerMediaSessionActions } from './use-audio-controls'
 export { canSyncMediaPlaybackState } from './use-mse-cold-start-prime'
 
 export function useAudioEngine() {
@@ -25,6 +26,9 @@ export function useAudioEngine() {
 
   const [currentTime, setCurrentTime] = useState(0)
   const [duration, setDuration] = useState(0)
+  const { url: mediaArtworkUrl } = useCachedThumbnail(track?.id ?? 0, {
+    enabled: track !== null,
+  })
 
   const {
     audioRef,
@@ -114,7 +118,14 @@ export function useAudioEngine() {
     isPlaying,
   })
 
-  useAudioControls({ currentTime, duration, handleSeek })
+  useAudioControls({
+    track,
+    artworkUrl: mediaArtworkUrl,
+    isPlaying,
+    currentTime,
+    duration,
+    handleSeek,
+  })
 
   const msePrimeRef = useMseColdStartPrime({
     audioRef,
