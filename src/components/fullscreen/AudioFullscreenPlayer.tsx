@@ -6,6 +6,7 @@ import { useCachedThumbnail } from '@/hooks/use-cached-thumbnail'
 import { useImagePalette } from '@/hooks/use-image-palette'
 import { useArtworkBounce } from '@/hooks/use-artwork-bounce'
 import { formatTime } from '@/lib/format-time'
+import { updateFullscreenWakeLock } from '@/lib/fullscreen-wake-lock'
 import { cn } from '@/lib/utils'
 import { useFullscreenStore } from '@/stores/fullscreen-store'
 import { usePlayerStore } from '@/stores/player-store'
@@ -40,6 +41,7 @@ export function AudioFullscreenPlayer(props: AudioFullscreenPlayerProps) {
   const palette = useImagePalette(url)
   const exitFullscreen = useFullscreenStore(state => state.exitFullscreen)
   const syncFullscreen = useFullscreenStore(state => state.syncFullscreen)
+  const keepDisplayAwake = useFullscreenStore(state => state.keepDisplayAwake)
   const queue = usePlayerStore(state => state.queue)
   const [controlsVisible, setControlsVisible] = useState(true)
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -50,6 +52,13 @@ export function AudioFullscreenPlayer(props: AudioFullscreenPlayerProps) {
     elementRef: artworkBounceRef,
     getAudioElement: props.getAudioElement,
   })
+
+  useEffect(() => {
+    updateFullscreenWakeLock(keepDisplayAwake)
+    return () => {
+      updateFullscreenWakeLock(false)
+    }
+  }, [keepDisplayAwake])
 
   const hideControlsLater = useCallback(() => {
     if (hideTimerRef.current) clearTimeout(hideTimerRef.current)

@@ -5,6 +5,7 @@ mod cache;
 mod commands;
 mod config;
 mod db;
+mod display_wake;
 mod error;
 mod export;
 mod listen_stats;
@@ -33,6 +34,8 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
             let handle = app.handle();
+
+            app.manage(display_wake::DisplayWakeState::new()?);
 
             let config = config::Config::load()?;
 
@@ -68,6 +71,7 @@ pub fn run() {
             commands::list_tracks,
             commands::get_profile,
             commands::sync_status,
+            commands::set_fullscreen_display_awake,
             commands::get_track_source,
             commands::get_track_bounce_profile,
             commands::read_stream_range,

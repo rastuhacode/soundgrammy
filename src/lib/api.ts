@@ -85,6 +85,8 @@ export const api = {
   listTracks: () => invoke<Track[]>('list_tracks'),
   getProfile: () => invoke<Profile | null>('get_profile'),
   syncStatus: () => invoke<string | null>('sync_status'),
+  setFullscreenDisplayAwake: (enabled: boolean) =>
+    invoke<void>('set_fullscreen_display_awake', { enabled }),
 
   // ---- media ------------------------------------------------------------
   getTrackSource: (trackId: number) =>
