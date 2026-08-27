@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.0](https://github.com/rastuhacode/soundgrammy/compare/v1.1.0...v1.2.0) (2026-08-27)
+
+
+### Features
+
+* add fullscreen display wake functionality to prevent screen dimming during fullscreen playback ([bb232c9](https://github.com/rastuhacode/soundgrammy/commit/bb232c9eab7088f25ce1aa999fcf7f2d8573a819))
+* enhance media session controls with track metadata and playback position management ([968e8e6](https://github.com/rastuhacode/soundgrammy/commit/968e8e617900a662f796d1f09eefb824a81676bc))
+
 ## [1.1.0](https://github.com/rastuhacode/soundgrammy/compare/v1.0.0...v1.1.0) (2026-08-20)
 
 
