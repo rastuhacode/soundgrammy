@@ -51,6 +51,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const [error, setError] = useState<string | null>(null)
   const [cacheOpen, setCacheOpen] = useState(false)
   const [proxyOpen, setProxyOpen] = useState(false)
+  const [fullscreenOpen, setFullscreenOpen] = useState(false)
   const [bounceOpen, setBounceOpen] = useState(false)
   const [statisticsOpen, setStatisticsOpen] = useState(false)
   const [diagnosticsOpen, setDiagnosticsOpen] = useState(false)
@@ -58,6 +59,8 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
   const statisticsEnabled = useListenStatsStore(state => state.enabled)
   const setStatisticsEnabled = useListenStatsStore(state => state.setEnabled)
   const bounce = useFullscreenStore(state => state.bounce)
+  const keepDisplayAwake = useFullscreenStore(state => state.keepDisplayAwake)
+  const setKeepDisplayAwake = useFullscreenStore(state => state.setKeepDisplayAwake)
   const setBounceSettings = useFullscreenStore(state => state.setBounceSettings)
   const resetBounceSettings = useFullscreenStore(state => state.resetBounceSettings)
   const diagnosticLogsEnabled = useLogStore(state => state.enabled)
@@ -86,6 +89,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
         setError(null)
         setCacheOpen(false)
         setProxyOpen(false)
+        setFullscreenOpen(false)
         setBounceOpen(false)
         setStatisticsOpen(false)
         setDiagnosticsOpen(false)
@@ -107,6 +111,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
       setError(null)
       setCacheOpen(false)
       setProxyOpen(false)
+      setFullscreenOpen(false)
       setBounceOpen(false)
       setStatisticsOpen(false)
       setDiagnosticsOpen(false)
@@ -411,6 +416,28 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
                       {diagnosticLogCount > 0 ? ` (${diagnosticLogCount})` : ''}
                     </Button>
                   </div>
+                </CollapsibleContent>
+              </Collapsible>
+
+              <Collapsible open={fullscreenOpen} onOpenChange={setFullscreenOpen}>
+                <CollapsibleTrigger className="flex h-auto w-full items-center justify-between rounded-md px-2 py-2.5 text-sm font-medium hover:bg-muted/40">
+                  <span>Fullscreen player</span>
+                  <ChevronDown
+                    className={`size-4 text-muted-foreground transition-transform ${fullscreenOpen ? 'rotate-180' : ''}`}
+                  />
+                </CollapsibleTrigger>
+                <CollapsibleContent className="mt-1 flex flex-col gap-3 px-2 pb-3">
+                  <p className="text-xs text-muted-foreground">
+                    Prevent normal inactivity from dimming or turning off the display while the fullscreen player is open. This may increase battery usage.
+                  </p>
+
+                  <label className="flex items-center gap-2 text-sm">
+                    <Checkbox
+                      checked={keepDisplayAwake}
+                      onCheckedChange={checked => setKeepDisplayAwake(checked === true)}
+                    />
+                    <span>Keep display awake</span>
+                  </label>
                 </CollapsibleContent>
               </Collapsible>
 

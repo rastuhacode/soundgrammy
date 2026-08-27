@@ -1,6 +1,10 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { DEFAULT_BOUNCE_SETTINGS } from '@/lib/bounce'
-import { useFullscreenStore } from './fullscreen-store'
+import {
+  KEEP_DISPLAY_AWAKE_KEY,
+  loadKeepDisplayAwake,
+  useFullscreenStore,
+} from './fullscreen-store'
 
 vi.mock('@tauri-apps/api/window', () => ({
   getCurrentWindow: vi.fn(() => ({
@@ -22,7 +26,24 @@ beforeEach(() => {
       },
     },
   })
-  useFullscreenStore.setState({ bounce: { ...DEFAULT_BOUNCE_SETTINGS } })
+  useFullscreenStore.setState({
+    bounce: { ...DEFAULT_BOUNCE_SETTINGS },
+    keepDisplayAwake: true,
+  })
+})
+
+describe('fullscreen display wake setting', () => {
+  it('defaults to enabled when no preference is stored', () => {
+    expect(loadKeepDisplayAwake()).toBe(true)
+  })
+
+  it('persists an explicit opt-out', () => {
+    useFullscreenStore.getState().setKeepDisplayAwake(false)
+
+    expect(useFullscreenStore.getState().keepDisplayAwake).toBe(false)
+    expect(values.get(KEEP_DISPLAY_AWAKE_KEY)).toBe('false')
+    expect(loadKeepDisplayAwake()).toBe(false)
+  })
 })
 
 describe('fullscreen bounce settings', () => {

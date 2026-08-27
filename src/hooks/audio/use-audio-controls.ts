@@ -3,9 +3,24 @@ import {
   previousOrRestart,
   registerPlaybackController,
 } from '@/lib/playback-controller'
+import type { Track } from '@/lib/db'
 import { usePlayerStore } from '@/stores/player-store'
 
-type TrackMediaSessionAction = 'nexttrack' | 'previoustrack'
+// const MEDIA_SEEK_SECONDS = 10
+
+const MediaSessionAction = {
+  next_track: 'nexttrack',
+  pause: 'pause',
+  play: 'play',
+  previous_track: 'previoustrack',
+  // This events should be registered, but macOS spawns 15 seconds seek instead of next/previous buttons, which is less comfort
+  // TODO: Check if it works fine on other platforms, then delete comments
+  // seek_backward: 'seekbackward',
+  // seek_forward: 'seekforward',
+  seek_to: 'seekto',
+  stop: 'stop',
+} as const
+type MediaSessionAction = typeof MediaSessionAction[keyof typeof MediaSessionAction]
 
 export type PlaybackShortcut
   = 'toggle' | 'next' | 'previous' | 'seekForward' | 'seekBackward'
@@ -85,21 +100,49 @@ export function seekTargetByOffset(
   return Math.min(Math.max(safeCurrentTime + offset, 0), duration)
 }
 
-interface TrackMediaSession {
+interface SoundGrammyMediaSession {
+  metadata: MediaMetadata | null
+  playbackState: MediaSessionPlaybackState
+  setPositionState: (state?: MediaPositionState) => void
   setActionHandler: (
-    action: TrackMediaSessionAction,
+    action: MediaSessionAction,
     handler: MediaSessionActionHandler | null,
   ) => void
 }
 
-/** Register only the queue actions a headset cannot express through <audio>. */
-export function registerMediaSessionTrackActions(
-  mediaSession: TrackMediaSession,
-  handlers: Record<TrackMediaSessionAction, MediaSessionActionHandler>,
-): () => void {
-  const registered: TrackMediaSessionAction[] = []
+export function mediaMetadataInit(
+  track: Track,
+  artworkUrl: string | null,
+): MediaMetadataInit {
+  return {
+    title: track.title ?? 'Unknown Title',
+    artist: track.performer ?? 'Unknown Artist',
+    ...(artworkUrl
+      ? { artwork: [{ src: artworkUrl }] }
+      : {}),
+  }
+}
 
-  for (const action of ['nexttrack', 'previoustrack'] as const) {
+export function mediaPositionState(
+  currentTime: number,
+  duration: number,
+): MediaPositionState | null {
+  if (!Number.isFinite(duration) || duration <= 0) return null
+
+  const position = Number.isFinite(currentTime)
+    ? Math.min(Math.max(currentTime, 0), duration)
+    : 0
+  return { duration, playbackRate: 1, position }
+}
+
+/** Register each supported OS action independently for partial WebViews. */
+export function registerMediaSessionActions(
+  mediaSession: SoundGrammyMediaSession,
+  handlers: Record<MediaSessionAction, MediaSessionActionHandler>,
+): () => void {
+  const registered: MediaSessionAction[] = []
+
+  for (const action of Object.values(MediaSessionAction)) {
     try {
       mediaSession.setActionHandler(action, handlers[action])
       registered.push(action)
@@ -122,6 +165,9 @@ export function registerMediaSessionTrackActions(
 }
 
 interface UseAudioControlsOptions {
+  track: Track | null
+  artworkUrl: string | null
+  isPlaying: boolean
   currentTime: number
   duration: number
   handleSeek: (time: number) => void
@@ -129,6 +175,9 @@ interface UseAudioControlsOptions {
 
 /** Connect app playback commands and OS media-session queue controls. */
 export function useAudioControls({
+  track,
+  artworkUrl,
+  isPlaying,
   currentTime,
   duration,
   handleSeek,
@@ -199,9 +248,87 @@ export function useAudioControls({
   useEffect(() => {
     if (typeof navigator === 'undefined' || !navigator.mediaSession) return
 
-    return registerMediaSessionTrackActions(navigator.mediaSession, {
+    return registerMediaSessionActions(navigator.mediaSession, {
+      play: () => usePlayerStore.getState().setPlaying(true),
+      pause: () => usePlayerStore.getState().setPlaying(false),
+      stop: () => {
+        usePlayerStore.getState().setPlaying(false)
+        currentTimeRef.current = 0
+        handleSeekRef.current(0)
+      },
+      seekto: (details) => {
+        if (details.seekTime === undefined) return
+        const target = seekTargetByOffset(
+          details.seekTime,
+          durationRef.current,
+          0,
+        )
+        currentTimeRef.current = target
+        handleSeekRef.current(target)
+      },
+      // seekforward: (details) => {
+      //   const target = seekTargetByOffset(
+      //     currentTimeRef.current,
+      //     durationRef.current,
+      //     details.seekOffset ?? MEDIA_SEEK_SECONDS,
+      //   )
+      //   currentTimeRef.current = target
+      //   handleSeekRef.current(target)
+      // },
+      // seekbackward: (details) => {
+      //   const target = seekTargetByOffset(
+      //     currentTimeRef.current,
+      //     durationRef.current,
+      //     -(details.seekOffset ?? MEDIA_SEEK_SECONDS),
+      //   )
+      //   currentTimeRef.current = target
+      //   handleSeekRef.current(target)
+      // },
       nexttrack: () => usePlayerStore.getState().playNext(),
       previoustrack: previousOrRestart,
     })
   }, [])
+
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !navigator.mediaSession) return
+    const mediaSession = navigator.mediaSession
+
+    if (!track) {
+      mediaSession.metadata = null
+      return
+    }
+    if (typeof MediaMetadata === 'undefined') return
+
+    const init = mediaMetadataInit(track, artworkUrl)
+    try {
+      mediaSession.metadata = new MediaMetadata(init)
+    }
+    catch {
+      // A WebView may reject a custom/local artwork URL. Keep text metadata.
+      try {
+        mediaSession.metadata = new MediaMetadata(mediaMetadataInit(track, null))
+      }
+      catch {
+        // Older WebViews can expose mediaSession without MediaMetadata support.
+      }
+    }
+  }, [artworkUrl, track])
+
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !navigator.mediaSession) return
+    navigator.mediaSession.playbackState = track
+      ? (isPlaying ? 'playing' : 'paused')
+      : 'none'
+  }, [isPlaying, track])
+
+  useEffect(() => {
+    if (typeof navigator === 'undefined' || !navigator.mediaSession) return
+    const position = track ? mediaPositionState(currentTime, duration) : null
+    try {
+      navigator.mediaSession.setPositionState(position ?? undefined)
+    }
+    catch {
+      // Duration can change while a streamed MediaSource is being rebuilt.
+    }
+  }, [currentTime, duration, track])
 }

@@ -5,6 +5,7 @@ use tauri::{AppHandle, State};
 
 use crate::cache;
 use crate::db::{Profile, Track};
+use crate::display_wake::DisplayWakeState;
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 use crate::streaming;
@@ -42,6 +43,16 @@ pub async fn sync_status(state: State<'_, AppState>) -> AppResult<Option<String>
         Some(p) => state.db.last_sync_at(p.tg_user_id),
         None => Ok(None),
     }
+}
+
+/// Holds only user-idle display/system assertions. Explicit or emergency sleep
+/// remains controlled by the operating system.
+#[tauri::command]
+pub async fn set_fullscreen_display_awake(
+    state: State<'_, DisplayWakeState>,
+    enabled: bool,
+) -> AppResult<()> {
+    state.set_enabled(enabled)
 }
 
 // ---- media ---------------------------------------------------------------
