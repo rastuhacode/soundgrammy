@@ -33,8 +33,10 @@ export function AudioVolume(props: AudioVolumeProps) {
   const volumeRef = useRef(normalizeVolume(props.volume))
   const wheelRemainderRef = useRef(0)
   const cancelBlurRef = useRef(false)
+
   const isMuted = props.volume === 0
   const VolumeIcon = isMuted ? VolumeX : props.volume < 50 ? Volume1 : Volume2
+  const title = isMuted ? 'Unmute' : 'Mute'
 
   useEffect(() => {
     volumeRef.current = normalizeVolume(props.volume)
@@ -129,7 +131,8 @@ export function AudioVolume(props: AudioVolumeProps) {
           <Button
             variant="ghost"
             size="icon-sm"
-            aria-label={isMuted ? 'Unmute' : 'Mute'}
+            aria-label={title}
+            title={title}
             onClick={props.onMuteToggle}
             onWheel={handleWheel}
             onPointerLeave={resetWheelRemainder}

@@ -3,10 +3,13 @@ import { previousOrRestart } from '@/lib/playback-controller'
 import { cn } from '@/lib/utils'
 
 export function PreviousButton() {
+  const title = 'Previous track'
+
   return (
     <button
       type="button"
-      aria-label="Previous track"
+      aria-label={title}
+      title={title}
       className={
         cn(
           'flex items-center justify-center',

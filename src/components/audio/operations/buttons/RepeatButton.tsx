@@ -6,10 +6,13 @@ export function RepeatButton() {
   const repeatState = useRepeatStore(state => state.repeat)
   const toggleRepeat = usePlayerStore(state => state.toggleRepeat)
 
+  const title = 'Toggle repeat'
+
   return (
     <button
       type="button"
-      aria-label="Toggle repeat"
+      aria-label={title}
+      title={title}
       className="flex items-center justify-center text-primary transition-transform hover:scale-105 active:scale-95 [&>svg]:size-4"
       onClick={toggleRepeat}
     >

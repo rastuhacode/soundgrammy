@@ -46,13 +46,15 @@ export function SidebarPlaylistsToolbar({
   const hasActiveFilters = search.length > 0
     || sortMode !== 'recency'
     || sortReversed
+  const title = 'Playlists filters'
 
   return (
     <Popover>
       <PopoverTrigger
         render={(
           <Button
-            aria-label="Search, filter, and sort playlists"
+            aria-label={title}
+            title={title}
             variant="ghost"
             size="icon-sm"
             className={cn(

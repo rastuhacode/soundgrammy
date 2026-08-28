@@ -61,6 +61,8 @@ export function PlayerSidebar(props: { onLogout: () => void }) {
 
   const [actionError, setActionError] = useState<string | null>(null)
 
+  const title = 'Create playlist'
+
   const handleExportPlaylist = async (
     source: PlaylistRecipeSource,
     name: string,
@@ -97,7 +99,8 @@ export function PlayerSidebar(props: { onLogout: () => void }) {
             variant="ghost"
             size="icon-sm"
             onClick={() => setDialogState({ mode: 'create' })}
-            aria-label="Create playlist"
+            aria-label={title}
+            title={title}
             className="text-muted-foreground hover:text-foreground"
           >
             <Plus />

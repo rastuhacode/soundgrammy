@@ -15,6 +15,8 @@ export function LikeButton(props: LikeButtonProps) {
   const setPlaylistsData = usePlaylistsStore(state => state.setData)
   const isLiked = playlistsData?.liked.trackIds.includes(track?.id ?? 0) ?? false
 
+  const title = isLiked ? 'Remove from liked' : 'Add to liked'
+
   async function handleToggleLike() {
     if (!track || !playlistsData) return
     try {
@@ -33,7 +35,8 @@ export function LikeButton(props: LikeButtonProps) {
     <Button
       variant="ghost"
       size="icon-sm"
-      aria-label={isLiked ? 'Remove from liked' : 'Add to liked'}
+      aria-label={title}
+      title={title}
       onClick={handleToggleLike}
       className={props.className}
     >

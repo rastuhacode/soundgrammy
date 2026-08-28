@@ -1,7 +1,6 @@
 import { ListMusic } from 'lucide-react'
 import { useState } from 'react'
 import type { PopoverRoot } from '@base-ui/react/popover'
-import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import {
   Popover,
@@ -21,6 +20,8 @@ export function QueueButton({ className, classes }: QueueButtonProps) {
   const [open, setOpen] = useState(false)
   const trackCount = usePlayerStore(state => state.queue.tracks.length)
 
+  const title = 'Queue'
+
   function handleOpenChange(
     nextOpen: boolean,
     details: PopoverRoot.ChangeEventDetails,
@@ -39,15 +40,14 @@ export function QueueButton({ className, classes }: QueueButtonProps) {
           <Button
             variant="ghost"
             size="icon-sm"
-            aria-label="Queue"
+            aria-label={title}
             aria-expanded={open}
-            className={cn(
-              'transition-transform hover:scale-105 active:scale-95',
-              className,
-            )}
+            title={title}
+            className={className}
           >
             <ListMusic className="size-5 shrink-0" />
           </Button>
+
         )}
       />
       <PopoverContent
