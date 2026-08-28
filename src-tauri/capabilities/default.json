@@ -5,7 +5,13 @@
   "windows": ["main"],
   "permissions": [
     "core:default",
-    "opener:default",
+    {
+      "identifier": "opener:allow-open-url",
+      "allow": [
+        { "url": "https://www.last.fm/*" },
+        { "url": "https://github.com/Flowseal/tg-ws-proxy" }
+      ]
+    },
     "opener:allow-reveal-item-in-dir",
     "dialog:default",
     "core:event:default",

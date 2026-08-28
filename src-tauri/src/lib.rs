@@ -8,6 +8,7 @@ mod db;
 mod display_wake;
 mod error;
 mod export;
+mod lastfm;
 mod listen_stats;
 mod playlist_recipe;
 mod proxy_settings;
@@ -54,6 +55,9 @@ pub fn run() {
                 let state = handle.state::<AppState>();
                 let _ = cache::enforce_ttl(&state, &handle).await;
             });
+
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(lastfm::LastFmService::worker_loop(handle));
 
             Ok(())
         })
@@ -112,6 +116,17 @@ pub fn run() {
             commands::listen_stats::list_listen_stats,
             commands::listen_stats::rebuild_listen_stats,
             commands::listen_stats::clear_listen_statistics,
+            commands::lastfm::get_lastfm_status,
+            commands::lastfm::start_lastfm_auth,
+            commands::lastfm::complete_lastfm_auth,
+            commands::lastfm::cancel_lastfm_auth,
+            commands::lastfm::set_lastfm_enabled,
+            commands::lastfm::disconnect_lastfm,
+            commands::lastfm::open_lastfm_profile,
+            commands::lastfm::flush_lastfm_queue,
+            commands::lastfm::lastfm_attempt_started,
+            commands::lastfm::lastfm_attempt_qualified,
+            commands::lastfm::lastfm_attempt_ended,
             commands::get_proxy_settings,
             commands::set_proxy_settings,
             commands::parse_proxy_link,

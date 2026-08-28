@@ -11,6 +11,11 @@ pub const DEFAULT_CACHE_TTL_SECS: i64 = 2_592_000;
 pub const SETTING_CACHE_LIMIT_BYTES: &str = "cache_limit_bytes";
 pub const SETTING_CACHE_TTL_SECS: &str = "cache_ttl_secs";
 pub const SETTING_LISTEN_STATS_ENABLED: &str = "listen_stats_enabled";
+pub const SETTING_LASTFM_USERNAME: &str = "lastfm_username";
+pub const SETTING_LASTFM_ACCOUNT_KEY: &str = "lastfm_account_key";
+pub const SETTING_LASTFM_ENABLED: &str = "lastfm_enabled";
+pub const SETTING_LASTFM_LAST_SCROBBLE_AT_MS: &str = "lastfm_last_scrobble_at_ms";
+pub const SETTING_LASTFM_NEEDS_REAUTH: &str = "lastfm_needs_reauth";
 
 impl Db {
     pub fn get_setting(&self, key: &str) -> AppResult<Option<String>> {
@@ -32,6 +37,12 @@ impl Db {
              ON CONFLICT (key) DO UPDATE SET value = excluded.value",
             params![key, value],
         )?;
+        Ok(())
+    }
+
+    pub fn delete_setting(&self, key: &str) -> AppResult<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("DELETE FROM app_settings WHERE key = ?1", params![key])?;
         Ok(())
     }
 

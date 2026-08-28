@@ -15,6 +15,8 @@ import type {
   LikedPlaylist,
   ListenEndReason,
   ListenEndResult,
+  LastFmPendingAction,
+  LastFmStatus,
   PlaylistDownloadProgress,
   PlaylistDownloadResult,
   PlaylistImportPreview,
@@ -222,6 +224,26 @@ export const api = {
   listListenStats: () => invoke<TrackListenStats[]>('list_listen_stats'),
   rebuildListenStats: () => invoke<void>('rebuild_listen_stats'),
   clearListenStatistics: () => invoke<void>('clear_listen_statistics'),
+
+  // ---- Last.fm ---------------------------------------------------------
+  getLastFmStatus: () => invoke<LastFmStatus>('get_lastfm_status'),
+  startLastFmAuth: () => invoke<LastFmStatus>('start_lastfm_auth'),
+  completeLastFmAuth: () => invoke<LastFmStatus>('complete_lastfm_auth'),
+  cancelLastFmAuth: () => invoke<LastFmStatus>('cancel_lastfm_auth'),
+  setLastFmEnabled: (enabled: boolean) =>
+    invoke<LastFmStatus>('set_lastfm_enabled', { enabled }),
+  disconnectLastFm: (pendingAction?: LastFmPendingAction) =>
+    invoke<LastFmStatus>('disconnect_lastfm', {
+      pendingAction: pendingAction ?? null,
+    }),
+  openLastFmProfile: () => invoke<void>('open_lastfm_profile'),
+  flushLastFmQueue: () => invoke<void>('flush_lastfm_queue'),
+  lastFmAttemptStarted: (attemptId: string, trackId: number) =>
+    invoke<void>('lastfm_attempt_started', { attemptId, trackId }),
+  lastFmAttemptQualified: (attemptId: string, listenedMs: number) =>
+    invoke<void>('lastfm_attempt_qualified', { attemptId, listenedMs }),
+  lastFmAttemptEnded: (attemptId: string) =>
+    invoke<void>('lastfm_attempt_ended', { attemptId }),
 }
 
 /** Turns an absolute cache path into an `asset:` URL for `<audio>`/`<img>`. */
@@ -274,6 +296,12 @@ export function onDownloadProgress(
   cb: (p: DownloadProgress) => void,
 ): Promise<UnlistenFn> {
   return listen<DownloadProgress>('download:progress', e => cb(e.payload))
+}
+
+export function onLastFmStatusChanged(
+  cb: (status: LastFmStatus) => void,
+): Promise<UnlistenFn> {
+  return listen<LastFmStatus>('lastfm:status_changed', event => cb(event.payload))
 }
 
 export function onPlaylistDownloadProgress(

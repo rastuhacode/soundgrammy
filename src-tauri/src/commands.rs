@@ -12,6 +12,7 @@ use crate::streaming;
 use crate::telegram::saved_music::{self, SyncResult};
 
 pub(crate) mod auth;
+pub(crate) mod lastfm;
 pub(crate) mod listen_stats;
 pub(crate) mod playlists;
 

@@ -10,7 +10,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import { SyncStatusDot } from '@/components/SyncStatusDot'
-import { SettingsDialog } from '@/components/SettingsDialog'
+import { SettingsDialog } from '@/components/settings/SettingsDialog'
 import { useProfileMusicSync } from '@/hooks/use-profile-music-sync'
 import { useUserAvatar } from '@/hooks/use-user-avatar'
 import { formatDisplayName, formatInitials, useSessionStore } from '@/stores/session-store'

@@ -29,6 +29,7 @@ keepawake = "=0.6.1"
 # Async runtime
 tokio = { version = "1", features = ["full"] }
 futures-util = "0.3"
+async-trait = "0.1"
 
 # Telegram MTProto
 ferogram = { version = "=0.6.5", default-features = false, features = ["parsers"] }
@@ -39,6 +40,7 @@ rusqlite = { version = "0.40", features = ["bundled"] }
 # Serialization
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+reqwest = { version = "0.13", default-features = false, features = ["form", "json", "rustls"] }
 
 # Crypto / secure session at rest
 aes-gcm = "0.11"
@@ -49,6 +51,8 @@ thiserror = "2"
 anyhow = "1"
 base64 = "0.23"
 hex = "0.4"
+md5 = "0.8"
+url = "2"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 lofty = "0.25"

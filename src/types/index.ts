@@ -136,6 +136,41 @@ export interface ListenEndResult {
   stats: TrackListenStats
 }
 
+export type LastFmAuthState
+  = | 'unavailable_in_build'
+    | 'disconnected'
+    | 'requesting_token'
+    | 'waiting_for_browser_approval'
+    | 'exchanging_session'
+    | 'connected'
+    | 'needs_reauthentication'
+    | 'error'
+
+export interface LastFmSafeIssue {
+  kind: string
+  code: number | null
+  message: string
+  atMs: number
+}
+
+export interface LastFmQueueSummary {
+  username: string
+  count: number
+}
+
+export interface LastFmStatus {
+  state: LastFmAuthState
+  username: string | null
+  enabled: boolean
+  pendingCount: number
+  retainedQueues: LastFmQueueSummary[]
+  lastScrobbleAtMs: number | null
+  lastError: LastFmSafeIssue | null
+  lastMetadataWarning: LastFmSafeIssue | null
+}
+
+export type LastFmPendingAction = 'retain' | 'delete'
+
 export interface CacheSettings {
   limitBytes: number
   ttlSecs: number

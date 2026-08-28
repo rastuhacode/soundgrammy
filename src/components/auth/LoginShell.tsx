@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { api } from '@/lib/api'
-import { ProxySettingsFields } from '@/components/proxy/ProxySettingsFields'
+import { ProxySettingsForm } from '@/components/settings/forms/ProxySettingsForm'
 import {
   Collapsible,
   CollapsibleContent,
@@ -103,7 +103,7 @@ export function LoginShell({ children }: { children: ReactNode }) {
                       .
                     </p>
                   )}
-              <ProxySettingsFields
+              <ProxySettingsForm
                 compact
                 onApplied={(view) => {
                   if (view.applyError) {

@@ -1,4 +1,4 @@
-//! Telegram API credentials.
+//! Backend-only Telegram and optional Last.fm application credentials.
 //!
 //! `api_id`/`api_hash` are embedded into the binary at build time via
 //! `TELEGRAM_API_ID` / `TELEGRAM_API_HASH`. `build.rs` loads
@@ -12,6 +12,13 @@ use crate::error::{AppError, AppResult};
 pub struct Config {
     pub api_id: i32,
     pub api_hash: String,
+    pub lastfm: Option<LastFmCredentials>,
+}
+
+#[derive(Clone)]
+pub struct LastFmCredentials {
+    pub api_key: String,
+    pub api_secret: String,
 }
 
 impl Config {
@@ -47,6 +54,31 @@ impl Config {
             .parse::<i32>()
             .map_err(|_| AppError::msg("TELEGRAM_API_ID must be an integer"))?;
 
-        Ok(Self { api_id, api_hash })
+        let lastfm_key = non_blank_env("LASTFM_API_KEY")
+            .or_else(|| option_env!("LASTFM_API_KEY").and_then(non_blank));
+        let lastfm_secret = non_blank_env("LASTFM_API_SECRET")
+            .or_else(|| option_env!("LASTFM_API_SECRET").and_then(non_blank));
+        let lastfm = match (lastfm_key, lastfm_secret) {
+            (Some(api_key), Some(api_secret)) => Some(LastFmCredentials {
+                api_key,
+                api_secret,
+            }),
+            _ => None,
+        };
+
+        Ok(Self {
+            api_id,
+            api_hash,
+            lastfm,
+        })
     }
+}
+
+fn non_blank_env(key: &str) -> Option<String> {
+    std::env::var(key).ok().and_then(|value| non_blank(&value))
+}
+
+fn non_blank(value: &str) -> Option<String> {
+    let trimmed = value.trim();
+    (!trimmed.is_empty()).then(|| trimmed.to_owned())
 }

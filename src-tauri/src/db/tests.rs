@@ -168,6 +168,7 @@ fn upsert_test_track(db: &Db, user: i64, unique: &str, position: i64) -> AppResu
         file_id: format!("file-{unique}"),
         file_unique_id: unique.to_string(),
         title: Some(unique.to_string()),
+        title_source: "telegram_audio".into(),
         performer: None,
         duration: Some(60),
         mime_type: Some("audio/mpeg".into()),
@@ -245,5 +246,68 @@ fn cache_settings_invalid_int_falls_back_to_default() -> AppResult<()> {
         db.get_setting_i64(SETTING_CACHE_LIMIT_BYTES, DEFAULT_CACHE_LIMIT_BYTES)?,
         DEFAULT_CACHE_LIMIT_BYTES
     );
+    Ok(())
+}
+
+#[test]
+fn lastfm_queue_is_durable_account_scoped_and_idempotent() -> AppResult<()> {
+    let db = test_db()?;
+    let row = LastFmQueueInsert {
+        attempt_id: "attempt-a".into(),
+        username: "Alice".into(),
+        account_key: "alice".into(),
+        track_id: Some(999),
+        artist: "Artist".into(),
+        track_title: "Track".into(),
+        duration_seconds: Some(31),
+        started_at_utc: 100,
+        created_at_ms: 1_000,
+    };
+    assert!(db.enqueue_lastfm_scrobble(&row)?);
+    assert!(!db.enqueue_lastfm_scrobble(&row)?);
+    assert_eq!(db.lastfm_pending_count("alice")?, 1);
+    assert_eq!(db.lastfm_pending_count("bob")?, 0);
+
+    let due = db.due_lastfm_scrobbles("alice", 1_000, 50)?;
+    assert_eq!(due.len(), 1);
+    assert_eq!(due[0].artist, "Artist");
+    db.retry_lastfm_queue_rows(&[due[0].id], 5_000, Some(11), "temporary")?;
+    assert!(db.due_lastfm_scrobbles("alice", 4_999, 50)?.is_empty());
+    assert_eq!(db.due_lastfm_scrobbles("alice", 5_000, 50)?.len(), 1);
+
+    db.delete_lastfm_queue_for("alice")?;
+    assert_eq!(db.lastfm_pending_count("alice")?, 0);
+    Ok(())
+}
+
+#[test]
+fn schema_backfills_only_structured_telegram_audio_titles() -> AppResult<()> {
+    let conn = Connection::open_in_memory()?;
+    conn.execute_batch(
+        "CREATE TABLE tracks (
+           id INTEGER PRIMARY KEY, tg_user_id INTEGER NOT NULL, file_id TEXT NOT NULL,
+           file_unique_id TEXT NOT NULL UNIQUE, title TEXT, performer TEXT, duration INTEGER,
+           source TEXT NOT NULL DEFAULT 'mtproto', mime_type TEXT, file_size INTEGER,
+           mtproto_document TEXT, track_position INTEGER, created_at TEXT NOT NULL DEFAULT ''
+         );
+         INSERT INTO tracks (id, tg_user_id, file_id, file_unique_id, title, mtproto_document)
+         VALUES
+           (1, 1, '1', '1', 'Structured',
+            '{\"attributes\":[{\"type\":\"DocumentAttributeAudio\",\"title\":\"Structured\"}]}'),
+           (2, 1, '2', '2', 'filename.mp3',
+            '{\"attributes\":[{\"type\":\"DocumentAttributeFilename\",\"fileName\":\"filename.mp3\"}]}'),
+           (3, 1, '3', '3', 'broken.mp3', '{broken');",
+    )?;
+    schema::apply(&conn)?;
+    let source = |id| -> rusqlite::Result<String> {
+        conn.query_row(
+            "SELECT title_source FROM tracks WHERE id = ?1",
+            [id],
+            |row| row.get(0),
+        )
+    };
+    assert_eq!(source(1)?, "telegram_audio");
+    assert_eq!(source(2)?, "filename");
+    assert_eq!(source(3)?, "filename");
     Ok(())
 }

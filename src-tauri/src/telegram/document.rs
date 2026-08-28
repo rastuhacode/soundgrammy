@@ -111,6 +111,7 @@ impl StoredDocument {
 /// Display fields plus the persisted JSON, parsed from a Telegram document.
 pub struct ParsedDocument {
     pub title: Option<String>,
+    pub title_source: String,
     pub performer: Option<String>,
     pub duration: Option<i64>,
     pub file_unique_id: String,
@@ -141,9 +142,15 @@ pub fn parse_document(doc: &tl::types::Document) -> ParsedDocument {
         }
     }
 
-    if title.is_none() {
+    let title_source = if title
+        .as_deref()
+        .is_some_and(|value| !value.trim().is_empty())
+    {
+        "telegram_audio"
+    } else {
         title = filename_title;
-    }
+        "filename"
+    };
 
     let stored = StoredDocument {
         id: doc.id,
@@ -173,6 +180,7 @@ pub fn parse_document(doc: &tl::types::Document) -> ParsedDocument {
 
     ParsedDocument {
         title,
+        title_source: title_source.to_string(),
         performer,
         duration,
         // Telegram's file_unique_id concept isn't in the TL doc; the document

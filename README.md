@@ -33,6 +33,7 @@ You can read more about philosophy around SoundGrammy in [Why I don’t use musi
 - 🎵**Full playback controls** — stream, cache, download, shuffle, and repeat tracks.
 - 💿**Local playlists** — create, rename, reorder, delete, and cache playlists; export them for basic cross-device transfer.
 - 🔐**Private listening statistics** — use the **Popular** and **Recent** smart playlists generated from local listening history.
+- 📻**Last.fm scrobbling** — connect through Last.fm in your browser and upload qualified listens, including after temporary offline use.
 - ✏️**Editable queue** — play next, add to the end, reorder tracks, and save the queue as a playlist.
 - 💾**Downloads and exports** — download individual tracks or complete playlists, including an `M3U8` playlist file.
 - 📝**Bulk actions** — add, cache, download, or manage many selected tracks at once.
@@ -93,6 +94,15 @@ TELEGRAM_API_ID=your_api_id
 TELEGRAM_API_HASH=your_api_hash
 ```
 
+Last.fm scrobbling is optional for self-builds. To enable it, register a Last.fm API application and add its application credentials to the same file:
+
+```dotenv
+LASTFM_API_KEY=your_lastfm_api_key
+LASTFM_API_SECRET=your_lastfm_shared_secret
+```
+
+The Last.fm user session is stored in the operating-system keychain. The application secret is embedded in configured desktop builds and should be treated as an application credential, not as a user credential.
+
 Start the desktop app:
 
 ```bash
@@ -137,5 +147,7 @@ SoundGrammy is free software licensed under the [GNU General Public License vers
 SoundGrammy does not grant any license to music or other content available through a Telegram account. You are responsible for having the rights and permissions required to access, cache, copy, export, and play content, and for complying with copyright law, Telegram's terms, and applicable local law. Do not use SoundGrammy to infringe rights, evade access controls, scrape Telegram, train AI systems on Telegram data, spam, or perform actions prohibited by Telegram.
 
 Use of the Telegram API is governed by Telegram's [API Terms of Service](https://core.telegram.org/api/terms), [Terms of Service](https://telegram.org/tos), [Content Licensing Terms](https://telegram.org/tos/content-licensing), and [Security Guidelines for Client Developers](https://core.telegram.org/mtproto/security_guidelines). These documents can change, so release maintainers should review them before every public release.
+
+Optional scrobbling uses the [Last.fm API](https://www.last.fm/api) and is governed by its [API Terms of Service](https://www.last.fm/api/tos). Release maintainers must review those terms before distribution and contact Last.fm before commercial use.
 
 The SoundGrammy name, artwork, and source code are independent of Telegram. The Telegram name and logo remain the property of their respective owner. References to Telegram describe compatibility and the remote service used by the app; they do not imply an official relationship.

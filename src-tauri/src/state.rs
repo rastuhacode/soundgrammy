@@ -14,6 +14,7 @@ use tokio::sync::{Mutex, RwLock};
 use crate::config::Config;
 use crate::db::Db;
 use crate::error::{AppError, AppResult};
+use crate::lastfm::LastFmService;
 use crate::proxy_settings::{self, ProxySettings};
 use crate::streaming::StreamingManager;
 use crate::telegram;
@@ -59,6 +60,7 @@ pub struct AppState {
     pub bounce_requested_track: AtomicI64,
     /// Active progressive audio downloads, shared by playback and explicit saves.
     pub streaming: StreamingManager,
+    pub lastfm: LastFmService,
 }
 
 impl AppState {
@@ -72,6 +74,7 @@ impl AppState {
         proxy_last_error: Option<String>,
     ) -> Self {
         let telegram = client.map(|(client, shutdown)| LiveTelegram { client, shutdown });
+        let lastfm = LastFmService::new(&config, &db);
         Self {
             config,
             db,
@@ -88,6 +91,7 @@ impl AppState {
             bounce_analysis_slot: Default::default(),
             bounce_requested_track: AtomicI64::new(-1),
             streaming: Default::default(),
+            lastfm,
         }
     }
 

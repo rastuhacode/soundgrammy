@@ -42,6 +42,22 @@ export function trackDurationMs(durationSeconds: number | null | undefined): num
   return Math.round(durationSeconds * 1000)
 }
 
+/** Last.fm threshold in milliseconds; null means Now Playing only. */
+export function lastFmThresholdMs(
+  durationSeconds: number | null | undefined,
+): number | null {
+  if (durationSeconds != null && durationSeconds > 0) {
+    if (durationSeconds <= 30) return null
+    return Math.min(Math.round(durationSeconds * 500), 240_000)
+  }
+  return 240_000
+}
+
+/** Monotonic clock used by playback event handlers. */
+export function monotonicNow(): number {
+  return performance.now()
+}
+
 export interface ListenAttemptClock {
   listenedMs: number
   playingSince: number | null
