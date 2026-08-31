@@ -25,7 +25,7 @@ export function SidebarProfile({ onLogout }: SidebarProfileProps) {
   const [isLoggingOut, setIsLoggingOut] = useState(false)
   const [settingsOpen, setSettingsOpen] = useState(false)
   const session = useSessionStore(state => state.session)
-  const avatarSrc = useUserAvatar(Boolean(session))
+  const avatarSrc = useUserAvatar(session?.tgUserId ?? null)
   const {
     phase,
     statusLabel,
