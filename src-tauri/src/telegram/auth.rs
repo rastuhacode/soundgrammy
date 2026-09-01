@@ -18,6 +18,7 @@ const REFRESH_AUTH_TIMEOUT: Duration = Duration::from_secs(8);
 
 /// RPC / error fragments that mean the local session is dead on the server.
 const AUTH_REVOKED_MARKERS: &[&str] = &[
+    "AUTH_KEY_DUPLICATED",
     "AUTH_KEY_UNREGISTERED",
     "AUTH_KEY_INVALID",
     "SESSION_REVOKED",
@@ -121,6 +122,7 @@ fn clear_local_session(state: &AppState) -> AppResult<()> {
 }
 
 async fn clear_local_session_and_pending(state: &AppState) -> AppResult<()> {
+    state.disconnect_client().await;
     clear_local_session(state)?;
     let mut pending = state.pending.lock().await;
     *pending = Default::default();
@@ -144,10 +146,7 @@ pub async fn refresh_auth(state: &AppState, app: &AppHandle) -> AppResult<AuthSt
     }
 
     let result = tokio::time::timeout(REFRESH_AUTH_TIMEOUT, async {
-        // A Ferogram client owns a live connection. Rebuild it for each
-        // reconnect attempt so an offline startup or dead socket can recover.
-        state.rebuild_client().await?;
-        let client = state.client().await?;
+        let client = state.ensure_client().await?;
         let authorized = client::is_authorized(&client).await?;
         if !authorized {
             return Ok::<AuthStatus, AppError>(AuthStatus {
@@ -190,9 +189,13 @@ pub async fn refresh_auth(state: &AppState, app: &AppHandle) -> AppResult<AuthSt
                 });
             }
             // Unreachable / transient — keep local session; surface as soft error for UI.
+            state.disconnect_client().await;
             Err(AppError::msg("telegram unreachable"))
         }
-        Err(_elapsed) => Err(AppError::msg("telegram unreachable")),
+        Err(_elapsed) => {
+            state.disconnect_client().await;
+            Err(AppError::msg("telegram unreachable"))
+        }
     }
 }
 
@@ -274,9 +277,7 @@ pub async fn check_password(state: &AppState, password: &str) -> AppResult<AuthU
 
 // ---- QR ------------------------------------------------------------------
 
-/// Runs one QR login round. Used both to start the flow and to poll it.
-pub async fn qr_export(state: &AppState) -> AppResult<QrOutcome> {
-    let client = state.client().await?;
+async fn qr_export_once(state: &AppState, client: &Client) -> AppResult<QrOutcome> {
     match client.export_login_token().await {
         Ok((token, _expires)) if token.is_empty() => Ok(QrOutcome::Authorized {
             user: finalize(state).await?,
@@ -291,6 +292,22 @@ pub async fn qr_export(state: &AppState) -> AppResult<QrOutcome> {
             qr_password_required(state).await
         }
         Err(e) => Err(e.into()),
+    }
+}
+
+/// Runs one QR login round. Used both to start the flow and to poll it.
+pub async fn qr_export(state: &AppState) -> AppResult<QrOutcome> {
+    let client = state.client().await?;
+    match qr_export_once(state, &client).await {
+        Err(err) if is_auth_revoked_message(&err.to_string()) => {
+            // Telegram has already invalidated this key. Discard both its
+            // in-memory connection and persisted snapshot, then retry once
+            // with a fresh unauthenticated client so QR login can recover.
+            clear_local_session_and_pending(state).await?;
+            let client = state.ensure_client().await?;
+            qr_export_once(state, &client).await
+        }
+        outcome => outcome,
     }
 }
 
@@ -327,6 +344,13 @@ pub async fn logout(state: &AppState) -> AppResult<()> {
 #[cfg(test)]
 mod tests {
     use super::is_auth_revoked_message;
+
+    #[test]
+    fn treats_duplicated_auth_key_as_revoked() {
+        assert!(is_auth_revoked_message(
+            "telegram error: RPC 406: AUTH_KEY_DUPLICATED"
+        ));
+    }
 
     #[test]
     fn detects_revoked_auth_markers() {

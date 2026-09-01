@@ -134,3 +134,25 @@ pub fn run() {
         .run(tauri::generate_context!())
         .expect("error while running SoundGrammy");
 }
+
+#[cfg(test)]
+mod build_flavor_tests {
+    use serde_json::Value;
+
+    #[test]
+    fn development_build_uses_an_isolated_app_identity() {
+        let release: Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let development: Value =
+            serde_json::from_str(include_str!("../tauri.dev.conf.json")).unwrap();
+        let package: Value = serde_json::from_str(include_str!("../../package.json")).unwrap();
+
+        assert_eq!(release["identifier"], "com.soundgrammy.app");
+        assert_eq!(development["identifier"], "com.soundgrammy.app.dev");
+        assert_ne!(release["identifier"], development["identifier"]);
+        assert_eq!(development["productName"], "SoundGrammy Dev");
+        assert_eq!(
+            package["scripts"]["tauri:dev"],
+            "tauri dev --config src-tauri/tauri.dev.conf.json"
+        );
+    }
+}

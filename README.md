@@ -109,6 +109,9 @@ Start the desktop app:
 bun tauri:dev
 ```
 
+The development app uses its own `com.soundgrammy.app.dev` identity, data directory,
+cache and Telegram session to not interfere with production installment.
+
 ### Quality checks
 
 ```bash

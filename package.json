@@ -10,7 +10,7 @@
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "tauri:dev": "tauri dev",
+    "tauri:dev": "tauri dev --config src-tauri/tauri.dev.conf.json",
     "tauri:build": "tauri build",
     "generate-icons": "tauri icon src-tauri/icons/original/soundgrammy-original.svg -o src-tauri/icons --ios-color \"#0088CC\" && cp src-tauri/icons/32x32.png public/favicon-32x32.png && cp src-tauri/icons/icon.ico public/favicon.ico && cp src-tauri/icons/ios/AppIcon-60x60@3x.png public/apple-touch-icon.png",
     "check:versions": "bun run scripts/check-version-sync.ts",
