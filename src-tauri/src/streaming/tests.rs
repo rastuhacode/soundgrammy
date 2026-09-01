@@ -186,3 +186,18 @@ fn closed_playback_token_rejects_more_stream_work() {
     let active = std::sync::atomic::AtomicBool::new(false);
     assert!(TrackStream::require_active(Some(&active)).is_err());
 }
+
+#[test]
+fn a_waiter_retries_when_the_previous_chunk_owner_was_cancelled() {
+    use super::transfer::{completed_chunk_wait_outcome, ChunkWaitOutcome};
+
+    assert_eq!(
+        completed_chunk_wait_outcome(ChunkStatus::Missing),
+        Some(ChunkWaitOutcome::Retry)
+    );
+    assert_eq!(
+        completed_chunk_wait_outcome(ChunkStatus::Ready),
+        Some(ChunkWaitOutcome::Ready)
+    );
+    assert_eq!(completed_chunk_wait_outcome(ChunkStatus::Loading), None);
+}

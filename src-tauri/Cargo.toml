@@ -60,3 +60,6 @@ dotenvy = "0.15"
 rustfft = "6.4"
 ruopus = "0.1.2"
 symphonia = { version = "0.6", default-features = false, features = ["aac", "alac", "flac", "isomp4", "mkv", "ogg", "pcm", "vorbis", "wav", "mpa"] }
+
+[dev-dependencies]
+tokio = { version = "1", features = ["test-util"] }

@@ -18,6 +18,7 @@ use crate::lastfm::LastFmService;
 use crate::proxy_settings::{self, ProxySettings};
 use crate::streaming::StreamingManager;
 use crate::telegram;
+use crate::telegram::media_requests::MediaRequestCoordinator;
 
 /// Transient authentication state kept between login command calls.
 #[derive(Default)]
@@ -60,6 +61,8 @@ pub struct AppState {
     pub bounce_requested_track: AtomicI64,
     /// Active progressive audio downloads, shared by playback and explicit saves.
     pub streaming: StreamingManager,
+    /// Aggregate Telegram media pacing shared by audio, artwork, and bulk downloads.
+    pub media_requests: MediaRequestCoordinator,
     pub lastfm: LastFmService,
 }
 
@@ -91,6 +94,7 @@ impl AppState {
             bounce_analysis_slot: Default::default(),
             bounce_requested_track: AtomicI64::new(-1),
             streaming: Default::default(),
+            media_requests: Default::default(),
             lastfm,
         }
     }
