@@ -625,6 +625,29 @@ describe('attachMseSession', () => {
     expect(onError).not.toHaveBeenCalled()
   })
 
+  it('does not proactively remove an MP3 back buffer without quota pressure', async () => {
+    const total = MSE_APPEND_CHUNK * 16
+    const { session: active, mediaSource } = await attach({
+      total,
+      bufferAheadSeconds: 32,
+    })
+    const buffer = mediaSource.sourceBuffers[0]!
+
+    await waitFor(() => (
+      buffer.buffered.ranges.at(-1)?.end ?? 0
+    ) >= 32 && !buffer.updating)
+    const offsetBeforeSeek = active.getAppendedOffset()
+    expect(buffer.removeCalls).toHaveLength(0)
+
+    // An in-buffer seek advances currentTime far enough that the old rolling
+    // eviction path removed data immediately after `seeked`. WebKit can then
+    // freeze its clock or continue silently despite healthy forward data.
+    audio.tickTime(20)
+    await waitFor(() => active.getAppendedOffset() > offsetBeforeSeek)
+
+    expect(buffer.removeCalls).toHaveLength(0)
+  })
+
   it('snaps and lands onto SourceBuffer ranges (not element buffered)', async () => {
     const { session: active, mediaSource } = await attach()
     await pumpPrefix(active, MSE_APPEND_CHUNK)

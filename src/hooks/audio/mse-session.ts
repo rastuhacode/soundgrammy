@@ -927,7 +927,13 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
       tryEndOfStream()
       return
     }
-    const removeEnd = backBufferRemovalEnd(sourceBuffer, currentPlaybackTime)
+    // WebKit can stall raw-MP3 playback after SourceBuffer.remove(), even when
+    // currentTime remains inside a healthy buffered range. Do not churn the
+    // back buffer during normal playback; only reclaim it after the browser
+    // has actually rejected an append with QuotaExceededError.
+    const removeEnd = quotaBlocked
+      ? backBufferRemovalEnd(sourceBuffer, currentPlaybackTime)
+      : null
     if (removeEnd !== null) {
       appendInFlight = true
       try {
