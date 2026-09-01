@@ -67,12 +67,8 @@ pub async fn ensure_audio(state: &AppState, app: &AppHandle, track_id: i64) -> A
     let track = require_track(state, track_id)?;
     let dest = audio_path(state, &track)?;
     if dest.exists() {
+        let _ = state.db.touch_audio_cache(track_id);
         return Ok(dest);
-    }
-
-    // Make room for this one track when possible (explicit single-cache path).
-    if let Some(size) = track.file_size {
-        let _ = evict_for_room(state, app, size as u64).await;
     }
 
     tokio::fs::create_dir_all(audio_dir(state)).await?;
@@ -80,7 +76,11 @@ pub async fn ensure_audio(state: &AppState, app: &AppHandle, track_id: i64) -> A
         .streaming
         .start(app.clone(), track, dest.clone())
         .await?;
-    let path = stream.wait_complete().await?;
+    // Start first so a resumable partial for this track is protected from the
+    // eviction pass, and reserve only the bytes it is still missing.
+    let remaining = stream.total().saturating_sub(stream.received().await);
+    let _ = evict_for_room(state, app, remaining).await;
+    let path = stream.download_complete().await?;
     emit_cache_changed(app, &[track_id], true);
     Ok(path)
 }
@@ -178,7 +178,17 @@ pub async fn usage_bytes(state: &AppState) -> AppResult<(u64, u64)> {
         if meta.is_file() {
             let name = entry.file_name();
             let name = name.to_string_lossy();
-            if name.ends_with(".part") || name.ends_with(".complete") {
+            if name.ends_with(".part") {
+                if let Some(info) = crate::streaming::partial_cache_info(&entry.path()).await {
+                    used = used.saturating_add(info.received);
+                    count += 1;
+                }
+                continue;
+            }
+            if name.ends_with(".part.meta")
+                || name.ends_with(".part.meta.tmp")
+                || name.ends_with(".complete")
+            {
                 continue;
             }
             used = used.saturating_add(meta.len());
@@ -238,10 +248,7 @@ pub async fn remove_audio(state: &AppState, app: &AppHandle, track_id: i64) -> A
         while let Some(entry) = entries.next_entry().await? {
             let name = entry.file_name();
             let name = name.to_string_lossy();
-            if name.starts_with(&track.file_unique_id)
-                && !name.ends_with(".part")
-                && !name.ends_with(".complete")
-            {
+            if name.starts_with(&track.file_unique_id) {
                 let p = entry.path();
                 if !path_is_protected(&p, &protected) {
                     let _ = fs::remove_file(&p).await;
@@ -250,6 +257,7 @@ pub async fn remove_audio(state: &AppState, app: &AppHandle, track_id: i64) -> A
         }
     }
     emit_cache_changed(app, &[track_id], false);
+    let _ = state.db.remove_audio_cache_entry(track_id);
     Ok(())
 }
 
@@ -257,6 +265,7 @@ pub async fn clear_audio_cache(state: &AppState, app: &AppHandle) -> AppResult<(
     let protected = protected_path_set(state).await;
     let dir = audio_dir(state);
     if !dir.exists() {
+        let _ = state.db.clear_audio_cache_entries();
         emit_cache_cleared(app);
         return Ok(());
     }
@@ -268,6 +277,7 @@ pub async fn clear_audio_cache(state: &AppState, app: &AppHandle) -> AppResult<(
         }
         let _ = fs::remove_file(&path).await;
     }
+    let _ = state.db.clear_audio_cache_entries();
     emit_cache_cleared(app);
     Ok(())
 }
@@ -292,6 +302,7 @@ pub async fn cache_tracks(
             .ok_or_else(|| AppError::msg(format!("track not found: {id}")))?;
         let path = audio_path(state, &track)?;
         if path.exists() {
+            state.db.mark_audio_cache_pinned(id)?;
             continue;
         }
         match track.file_size {
@@ -328,13 +339,6 @@ pub async fn cache_tracks(
         )));
     }
 
-    // Evict enough room for the whole job upfront.
-    let (used, _) = usage_bytes(state).await?;
-    let free_now = limit.saturating_sub(used);
-    if needed > free_now {
-        evict_for_room(state, app, needed).await?;
-    }
-
     // Progress totals match the requested playlist size (already-cached tracks
     // count as done) so the toolbar does not jump from `0/N` to `1/M`.
     let total = track_ids.len() as u32;
@@ -355,7 +359,10 @@ pub async fn cache_tracks(
             );
         }
         match ensure_audio(state, app, track.id).await {
-            Ok(_) => cached.push(track.id),
+            Ok(_) => {
+                state.db.mark_audio_cache_pinned(track.id)?;
+                cached.push(track.id);
+            }
             Err(err) => {
                 if cached.is_empty() {
                     return Err(err);

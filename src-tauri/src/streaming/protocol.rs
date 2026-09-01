@@ -80,7 +80,7 @@ async fn try_protocol_response(
         };
     let end = requested_end.min(start + MAX_PROTOCOL_RESPONSE - 1);
     let bytes = if let Some(stream) = stream {
-        stream.read_range(start, end).await?
+        stream.read_range(start, end, None).await?
     } else {
         read_file_range(
             cached_path

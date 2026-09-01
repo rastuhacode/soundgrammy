@@ -67,6 +67,13 @@ pub(super) fn apply(conn: &Connection) -> AppResult<()> {
           value TEXT NOT NULL
         );
 
+        CREATE TABLE IF NOT EXISTS audio_cache_entries (
+          track_id INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
+          cache_class TEXT NOT NULL DEFAULT 'automatic'
+            CHECK (cache_class IN ('automatic', 'pinned')),
+          last_accessed_at_ms INTEGER NOT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS listen_events (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           track_id INTEGER NOT NULL,

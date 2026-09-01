@@ -10,11 +10,21 @@ Progressive `<audio src="stream:…">` under WKWebView/AVFoundation advertises a
 |------|----------|
 | Cached track | `asset:` URL via `fileSrc` (unchanged) |
 | Streamed track | `MediaSource` + `SourceBuffer.appendBuffer` |
-| Bytes | `read_stream_range` / `ensure_stream_range` → `StreamingManager` |
+| Bytes | Session-scoped `read_stream_range` / `ensure_stream_range` → `StreamingManager` |
 | Progress / buffer UI | Honest `audio.buffered` islands → `buffer-ranges.ts` |
 | Seek into unloaded region | MP3: discontinuous island via frame sync. WebM/MP4: grow the existing leading prefix until the target time is covered (clear+rebuild closes MediaSource on WebKit). |
-| Unsupported MSE mime | Wait for full `download_track`, then play cached `asset:` (never fall back to progressive `stream:` src) |
+| Unsupported MSE mime | Wait for a cancellable full playback download, then play cached `asset:` (never fall back to progressive `stream:` src) |
 | Wrong Telegram MIME | Stream sniffs the file header before MSE attach and corrects container MIME/extension |
+
+## Download lifecycle and partial cache
+
+- Playback fetches only requested byte ranges and keeps about 32 seconds ahead of the playhead.
+- Every source load owns a unique backend playback session. Replacing or disposing the source closes that session, so a skip can finish at most already in-flight Telegram requests and cannot schedule more chunks.
+- Completed chunks are recorded in a sidecar manifest next to the sparse `.part` file. Reopening the track restores those chunks instead of restarting from byte zero.
+- Large ID3v2 tags are skipped for playback startup. After the ledger proves the complete MPEG payload through EOF is local, the app backfills only the backend-validated ID3 prefix, one chunk at a time. A seek island with an audio gap cannot trigger this work, and a skip cancels it.
+- Media end-of-stream depends on complete playable MPEG coverage, not on the storage-only ID3 backfill, so unusually large tags cannot stall queue advancement.
+- A complete file is atomically finalized and subsequent playback uses the cached file without Telegram requests.
+- Partial playback data is lowest-priority cache data. Explicit Cache actions mark complete files as pinned; normal eviction and TTL cleanup do not remove pinned entries.
 
 Primary frontend modules:
 

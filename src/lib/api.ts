@@ -45,6 +45,7 @@ export type TrackSource
     | {
       kind: 'stream'
       trackId: number
+      sessionId: string
       mimeType: string
       total: number
     }
@@ -91,12 +92,18 @@ export const api = {
     invoke<void>('set_fullscreen_display_awake', { enabled }),
 
   // ---- media ------------------------------------------------------------
-  getTrackSource: (trackId: number) =>
-    invoke<TrackSource>('get_track_source', { trackId }),
-  /** Inclusive byte range from an active stream or cached file (chunk-capped). */
-  readStreamRange: async (trackId: number, start: number, end: number) => {
+  getTrackSource: (trackId: number, sessionId: string) =>
+    invoke<TrackSource>('get_track_source', { trackId, sessionId }),
+  /** Inclusive byte range from an active playback stream (chunk-capped). */
+  readStreamRange: async (
+    trackId: number,
+    sessionId: string,
+    start: number,
+    end: number,
+  ) => {
     const bytes = await invoke<ArrayBuffer | number[]>('read_stream_range', {
       trackId,
+      sessionId,
       start,
       end,
     })
@@ -105,8 +112,24 @@ export const api = {
       : Uint8Array.from(bytes)
   },
   /** Prioritize downloading an inclusive byte range (seek-ahead gap fill). */
-  ensureStreamRange: (trackId: number, start: number, end: number) =>
-    invoke<void>('ensure_stream_range', { trackId, start, end }),
+  ensureStreamRange: (
+    trackId: number,
+    sessionId: string,
+    start: number,
+    end: number,
+  ) => invoke<void>('ensure_stream_range', { trackId, sessionId, start, end }),
+  /** Low-priority storage-only fill of the backend-validated ID3v2 prefix. */
+  backfillStreamId3: (
+    trackId: number,
+    sessionId: string,
+  ) => invoke<void>('backfill_stream_id3', {
+    trackId,
+    sessionId,
+  }),
+  downloadTrackForPlayback: (trackId: number, sessionId: string) =>
+    invoke<string>('download_track_for_playback', { trackId, sessionId }),
+  closeStreamSession: (sessionId: string) =>
+    invoke<void>('close_stream_session', { sessionId }),
   downloadTrack: (trackId: number) =>
     invoke<string>('download_track', { trackId }),
   prefetchTrack: (trackId: number) =>
