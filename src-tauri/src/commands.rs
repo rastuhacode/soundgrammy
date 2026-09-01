@@ -67,6 +67,8 @@ pub enum TrackSource {
     Stream {
         #[serde(rename = "trackId")]
         track_id: i64,
+        #[serde(rename = "sessionId")]
+        session_id: String,
         #[serde(rename = "mimeType")]
         mime_type: String,
         total: u64,
@@ -78,18 +80,24 @@ pub async fn get_track_source(
     state: State<'_, AppState>,
     app: AppHandle,
     track_id: i64,
+    session_id: String,
 ) -> AppResult<TrackSource> {
     let track = cache::require_track(&state, track_id)?;
     let path = cache::audio_path(&state, &track)?;
     if path.exists() {
+        let _ = state.db.touch_audio_cache(track_id);
         return Ok(TrackSource::Cached {
             path: path.to_string_lossy().into_owned(),
         });
     }
 
-    let stream = state.streaming.start(app, track, path).await?;
+    let stream = state
+        .streaming
+        .open_playback(app, track, path, session_id.clone())
+        .await?;
     Ok(TrackSource::Stream {
         track_id: stream.track_id(),
+        session_id,
         mime_type: stream.mime_type().to_string(),
         total: stream.total(),
     })
@@ -111,8 +119,8 @@ pub async fn get_track_bounce_profile(
 #[tauri::command]
 pub async fn read_stream_range(
     state: State<'_, AppState>,
-    app: AppHandle,
     track_id: i64,
+    session_id: String,
     start: u64,
     end: u64,
 ) -> AppResult<tauri::ipc::Response> {
@@ -124,37 +132,17 @@ pub async fn read_stream_range(
         .saturating_add(streaming::CHUNK_SIZE.saturating_sub(1))
         .min(end);
 
-    if let Some(stream) = state.streaming.get(track_id).await {
-        let last = stream.total().saturating_sub(1);
-        if start > last {
-            return Err(AppError::msg("requested audio range is invalid"));
-        }
-        let bytes = stream.read_range(start, capped_end.min(last)).await?;
-        return Ok(tauri::ipc::Response::new(bytes));
-    }
-
-    let track = cache::require_track(&state, track_id)?;
-    let path = cache::audio_path(&state, &track)?;
-    if path.exists() {
-        let total = tokio::fs::metadata(&path).await?.len();
-        if total == 0 {
-            return Err(AppError::msg("cached audio file is empty"));
-        }
-        let last = total.saturating_sub(1);
-        if start > last {
-            return Err(AppError::msg("requested audio range is invalid"));
-        }
-        let bytes = streaming::read_file_range(&path, start, capped_end.min(last)).await?;
-        return Ok(tauri::ipc::Response::new(bytes));
-    }
-
-    // Stream entry expired before cache finalize — restart download and read.
-    let stream = state.streaming.start(app, track, path).await?;
+    let (stream, active) = state
+        .streaming
+        .playback_stream(&session_id, track_id)
+        .await?;
     let last = stream.total().saturating_sub(1);
     if start > last {
         return Err(AppError::msg("requested audio range is invalid"));
     }
-    let bytes = stream.read_range(start, capped_end.min(last)).await?;
+    let bytes = stream
+        .read_range(start, capped_end.min(last), Some(active))
+        .await?;
     Ok(tauri::ipc::Response::new(bytes))
 }
 
@@ -163,8 +151,8 @@ pub async fn read_stream_range(
 #[tauri::command]
 pub async fn ensure_stream_range(
     state: State<'_, AppState>,
-    app: AppHandle,
     track_id: i64,
+    session_id: String,
     start: u64,
     end: u64,
 ) -> AppResult<()> {
@@ -172,27 +160,59 @@ pub async fn ensure_stream_range(
         return Err(AppError::msg("requested audio range is invalid"));
     }
 
-    if let Some(stream) = state.streaming.get(track_id).await {
-        let last = stream.total().saturating_sub(1);
-        if start > last {
-            return Err(AppError::msg("requested audio range is invalid"));
-        }
-        stream.ensure_range(start, end.min(last)).await?;
-        return Ok(());
-    }
-
-    let track = cache::require_track(&state, track_id)?;
-    let path = cache::audio_path(&state, &track)?;
-    if path.exists() {
-        return Ok(());
-    }
-
-    let stream = state.streaming.start(app, track, path).await?;
+    let (stream, active) = state
+        .streaming
+        .playback_stream(&session_id, track_id)
+        .await?;
     let last = stream.total().saturating_sub(1);
     if start > last {
         return Err(AppError::msg("requested audio range is invalid"));
     }
-    stream.ensure_range(start, end.min(last)).await?;
+    stream
+        .ensure_range(start, end.min(last), Some(active))
+        .await?;
+    Ok(())
+}
+
+/// Completes only a skipped ID3v2 prefix after all playable audio is local.
+/// The backend independently parses the trusted prefix boundary.
+#[tauri::command]
+pub async fn backfill_stream_id3(
+    state: State<'_, AppState>,
+    track_id: i64,
+    session_id: String,
+) -> AppResult<()> {
+    let (stream, active) = state
+        .streaming
+        .playback_stream(&session_id, track_id)
+        .await?;
+    stream.backfill_id3_for_playback(active).await
+}
+
+#[tauri::command]
+pub async fn download_track_for_playback(
+    state: State<'_, AppState>,
+    track_id: i64,
+    session_id: String,
+) -> AppResult<String> {
+    let (stream, active) = state
+        .streaming
+        .playback_stream(&session_id, track_id)
+        .await?;
+    let path = stream.download_complete_for_playback(active).await?;
+    Ok(path.to_string_lossy().into_owned())
+}
+
+#[tauri::command]
+pub async fn close_stream_session(
+    state: State<'_, AppState>,
+    app: AppHandle,
+    session_id: String,
+) -> AppResult<()> {
+    state.streaming.close_playback(&session_id).await;
+    // If partial playback temporarily took usage over the configured limit,
+    // reclaim idle partials now. Active stream paths remain protected.
+    let _ = cache::evict_for_room(&state, &app, 0).await;
     Ok(())
 }
 
@@ -224,6 +244,7 @@ pub async fn cache_track(
     track_id: i64,
 ) -> AppResult<()> {
     cache::ensure_audio(&state, &app, track_id).await?;
+    state.db.mark_audio_cache_pinned(track_id)?;
     Ok(())
 }
 

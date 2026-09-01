@@ -22,6 +22,13 @@ import { appLogger } from '@/lib/app-logger'
 
 /** Bytes of MPEG payload to probe for Xing/VBRI / CBR duration. */
 const MPEG_DURATION_PROBE_BYTES = 8 * 1024
+let playbackSessionSequence = 0
+
+function createPlaybackSessionId(trackId: number): string {
+  playbackSessionSequence += 1
+  const uuid = globalThis.crypto?.randomUUID?.()
+  return uuid ?? `${trackId}-${Date.now()}-${playbackSessionSequence}`
+}
 
 function isMpegMime(mimeType: string): boolean {
   const base = mimeType.split(';')[0]?.trim().toLowerCase() || ''
@@ -77,9 +84,14 @@ export function useAudioSource(options: UseAudioSourceOptions) {
   useEffect(() => {
     const audio = audioRef.current
     const generation = ++loadGenerationRef.current
+    const sessionId = track
+      ? createPlaybackSessionId(track.id)
+      : `idle-${generation}`
     let disposed = false
     let unlisten: (() => void) | undefined
     let mseSession: MseSession | null = null
+    let backendSessionMayExist = false
+    let latestStreamProgress: DownloadProgress | null = null
 
     loadedTrackIdRef.current = null
     sourceErrorRef.current = false
@@ -148,7 +160,7 @@ export function useAudioSource(options: UseAudioSourceOptions) {
       // Paint download-mapped buffer chrome — leave MSE mode so progress is visible.
       setStreamingMse(false)
       setShowInitialLoading(true)
-      const path = await api.downloadTrack(track.id)
+      const path = await api.downloadTrackForPlayback(track.id, sessionId)
       if (disposed || loadGenerationRef.current !== generation) return
       const total = track.file_size ?? totalHint
       attachCached(path, total)
@@ -168,6 +180,7 @@ export function useAudioSource(options: UseAudioSourceOptions) {
           ) {
             return
           }
+          latestStreamProgress = progress
           setDownloadProgress(progress)
           mseSession?.notifyProgress(progress)
           if (progress.received > 0) {
@@ -180,10 +193,12 @@ export function useAudioSource(options: UseAudioSourceOptions) {
         }
         unlisten = stop
 
-        const source = await api.getTrackSource(track.id)
+        backendSessionMayExist = true
+        const source = await api.getTrackSource(track.id, sessionId)
         if (disposed || loadGenerationRef.current !== generation) return
 
         if (source.kind === 'cached') {
+          backendSessionMayExist = false
           const total = track.file_size ?? 1
           attachCached(source.path, total)
           return
@@ -216,10 +231,16 @@ export function useAudioSource(options: UseAudioSourceOptions) {
           if (isMpegMime(mimeType) && source.total > 10) {
             try {
               const headerEnd = Math.min(source.total - 1, 9)
-              await api.ensureStreamRange(source.trackId, 0, headerEnd)
+              await api.ensureStreamRange(
+                source.trackId,
+                sessionId,
+                0,
+                headerEnd,
+              )
               if (disposed || loadGenerationRef.current !== generation) return
               const header = await api.readStreamRange(
                 source.trackId,
+                sessionId,
                 0,
                 headerEnd,
               )
@@ -233,12 +254,14 @@ export function useAudioSource(options: UseAudioSourceOptions) {
               if (probeEnd >= payloadStart) {
                 await api.ensureStreamRange(
                   source.trackId,
+                  sessionId,
                   payloadStart,
                   probeEnd,
                 )
                 if (disposed || loadGenerationRef.current !== generation) return
                 const payloadProbe = await api.readStreamRange(
                   source.trackId,
+                  sessionId,
                   payloadStart,
                   probeEnd,
                 )
@@ -269,6 +292,7 @@ export function useAudioSource(options: UseAudioSourceOptions) {
         mseSession = attachMseSession({
           audio,
           trackId: source.trackId,
+          sessionId,
           mimeType,
           total: source.total,
           duration,
@@ -319,6 +343,9 @@ export function useAudioSource(options: UseAudioSourceOptions) {
           },
         })
         mseSessionRef.current = mseSession
+        if (latestStreamProgress) {
+          mseSession.notifyProgress(latestStreamProgress)
+        }
         finishAttach(false)
       }
       catch (error) {
@@ -345,6 +372,9 @@ export function useAudioSource(options: UseAudioSourceOptions) {
       disposed = true
       unlisten?.()
       mseSession?.dispose()
+      if (backendSessionMayExist) {
+        void api.closeStreamSession(sessionId).catch(() => {})
+      }
       mseSession = null
       mseSessionRef.current = null
       setStreamingMse(false)

@@ -6,6 +6,7 @@ use tauri::AppHandle;
 use tokio::fs;
 
 use super::{audio_dir, current_uid, emit_cache_changed, get_cache_settings, usage_bytes};
+use crate::db::AudioCacheClass;
 use crate::error::AppResult;
 use crate::state::AppState;
 
@@ -13,6 +14,16 @@ struct AudioCacheEntry {
     path: PathBuf,
     track_id: Option<i64>,
     size: u64,
+    modified: SystemTime,
+    pinned: bool,
+    last_accessed_at_ms: Option<i64>,
+}
+
+struct PartialCacheEntry {
+    path: PathBuf,
+    metadata_path: PathBuf,
+    metadata_temp_path: PathBuf,
+    received: u64,
     modified: SystemTime,
 }
 
@@ -31,6 +42,7 @@ async fn list_audio_entries(state: &AppState) -> AppResult<Vec<AudioCacheEntry>>
     }
 
     let mut out = Vec::new();
+    let cache_records = state.db.audio_cache_entries()?;
     let mut entries = fs::read_dir(&dir).await?;
     while let Some(entry) = entries.next_entry().await? {
         let meta = entry.metadata().await?;
@@ -40,7 +52,11 @@ async fn list_audio_entries(state: &AppState) -> AppResult<Vec<AudioCacheEntry>>
         let path = entry.path();
         let name = entry.file_name();
         let name = name.to_string_lossy();
-        if name.ends_with(".part") || name.ends_with(".complete") {
+        if name.ends_with(".part")
+            || name.ends_with(".part.meta")
+            || name.ends_with(".part.meta.tmp")
+            || name.ends_with(".complete")
+        {
             continue;
         }
         let stem = path
@@ -53,10 +69,50 @@ async fn list_audio_entries(state: &AppState) -> AppResult<Vec<AudioCacheEntry>>
         }
         let modified = meta.modified().unwrap_or(SystemTime::UNIX_EPOCH);
         let track_id = by_unique.get(&stem).copied();
+        let record = track_id.and_then(|id| cache_records.get(&id));
         out.push(AudioCacheEntry {
             path,
             track_id,
             size: meta.len(),
+            modified,
+            pinned: record.is_some_and(|record| record.class == AudioCacheClass::Pinned),
+            last_accessed_at_ms: record.map(|record| record.last_accessed_at_ms),
+        });
+    }
+    Ok(out)
+}
+
+async fn list_partial_entries(state: &AppState) -> AppResult<Vec<PartialCacheEntry>> {
+    let dir = audio_dir(state);
+    if !dir.exists() {
+        return Ok(Vec::new());
+    }
+    let mut out = Vec::new();
+    let mut entries = fs::read_dir(&dir).await?;
+    while let Some(entry) = entries.next_entry().await? {
+        let name = entry.file_name();
+        if !name.to_string_lossy().ends_with(".part") {
+            continue;
+        }
+        let path = entry.path();
+        let Some(info) = crate::streaming::partial_cache_info(&path).await else {
+            continue;
+        };
+        let modified = entry
+            .metadata()
+            .await?
+            .modified()
+            .unwrap_or(SystemTime::UNIX_EPOCH);
+        let mut metadata = path.as_os_str().to_owned();
+        metadata.push(".meta");
+        let metadata_path = PathBuf::from(metadata);
+        let mut temp = path.as_os_str().to_owned();
+        temp.push(".meta.tmp");
+        out.push(PartialCacheEntry {
+            path,
+            metadata_path,
+            metadata_temp_path: PathBuf::from(temp),
+            received: info.received,
             modified,
         });
     }
@@ -93,6 +149,29 @@ pub async fn enforce_ttl(state: &AppState, app: &AppHandle) -> AppResult<Vec<i64
     let mut removed_ids = Vec::new();
 
     for entry in list_audio_entries(state).await? {
+        if entry.pinned || path_is_protected(&entry.path, &protected) {
+            continue;
+        }
+        let accessed = entry
+            .last_accessed_at_ms
+            .and_then(|value| {
+                SystemTime::UNIX_EPOCH
+                    .checked_add(std::time::Duration::from_millis(value.max(0) as u64))
+            })
+            .unwrap_or(entry.modified);
+        let age = match now.duration_since(accessed) {
+            Ok(d) => d,
+            Err(_) => continue,
+        };
+        if age > ttl && fs::remove_file(&entry.path).await.is_ok() {
+            if let Some(id) = entry.track_id {
+                removed_ids.push(id);
+                let _ = state.db.remove_audio_cache_entry(id);
+            }
+        }
+    }
+
+    for entry in list_partial_entries(state).await? {
         if path_is_protected(&entry.path, &protected) {
             continue;
         }
@@ -100,10 +179,10 @@ pub async fn enforce_ttl(state: &AppState, app: &AppHandle) -> AppResult<Vec<i64
             Ok(d) => d,
             Err(_) => continue,
         };
-        if age > ttl && fs::remove_file(&entry.path).await.is_ok() {
-            if let Some(id) = entry.track_id {
-                removed_ids.push(id);
-            }
+        if age > ttl {
+            let _ = fs::remove_file(&entry.path).await;
+            let _ = fs::remove_file(&entry.metadata_path).await;
+            let _ = fs::remove_file(&entry.metadata_temp_path).await;
         }
     }
 
@@ -127,13 +206,36 @@ pub async fn evict_for_room(state: &AppState, app: &AppHandle, needed: u64) -> A
     let protected = protected_path_set(state).await;
     let now = SystemTime::now();
 
+    let mut partials = list_partial_entries(state).await?;
+    partials.retain(|entry| !path_is_protected(&entry.path, &protected));
+    partials.sort_by_key(|entry| entry.modified);
+
+    let mut freed = 0u64;
+    for entry in partials {
+        if freed >= to_free {
+            break;
+        }
+        if fs::remove_file(&entry.path).await.is_ok() {
+            let _ = fs::remove_file(&entry.metadata_path).await;
+            let _ = fs::remove_file(&entry.metadata_temp_path).await;
+            freed = freed.saturating_add(entry.received);
+        }
+    }
+
     let mut entries = list_audio_entries(state).await?;
-    entries.retain(|e| !path_is_protected(&e.path, &protected));
+    entries.retain(|e| !e.pinned && !path_is_protected(&e.path, &protected));
     // Higher score = older * heavier → evict first.
     entries.sort_by(|a, b| {
         let score = |e: &AudioCacheEntry| {
+            let accessed = e
+                .last_accessed_at_ms
+                .and_then(|value| {
+                    SystemTime::UNIX_EPOCH
+                        .checked_add(std::time::Duration::from_millis(value.max(0) as u64))
+                })
+                .unwrap_or(e.modified);
             let age = now
-                .duration_since(e.modified)
+                .duration_since(accessed)
                 .unwrap_or_default()
                 .as_secs_f64();
             age * e.size as f64
@@ -143,7 +245,6 @@ pub async fn evict_for_room(state: &AppState, app: &AppHandle, needed: u64) -> A
             .unwrap_or(std::cmp::Ordering::Equal)
     });
 
-    let mut freed = 0u64;
     let mut removed_ids = Vec::new();
     for entry in entries {
         if freed >= to_free {
@@ -154,6 +255,7 @@ pub async fn evict_for_room(state: &AppState, app: &AppHandle, needed: u64) -> A
                 freed = freed.saturating_add(entry.size);
                 if let Some(id) = entry.track_id {
                     removed_ids.push(id);
+                    let _ = state.db.remove_audio_cache_entry(id);
                 }
             }
             Err(_) => continue,
@@ -174,8 +276,13 @@ pub async fn available_after_eviction(state: &AppState) -> AppResult<u64> {
     let entries = list_audio_entries(state).await?;
     let mut protected_used = 0u64;
     for entry in &entries {
-        if path_is_protected(&entry.path, &protected) {
+        if entry.pinned || path_is_protected(&entry.path, &protected) {
             protected_used = protected_used.saturating_add(entry.size);
+        }
+    }
+    for entry in list_partial_entries(state).await? {
+        if path_is_protected(&entry.path, &protected) {
+            protected_used = protected_used.saturating_add(entry.received);
         }
     }
     // After eviction we must keep protected files; room for new data is limit - protected.

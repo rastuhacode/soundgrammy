@@ -50,6 +50,16 @@ pub(super) struct StreamState {
     pub(super) terminal_error: Option<String>,
 }
 
+impl StreamState {
+    pub(super) fn ready_indices(&self) -> Vec<usize> {
+        self.chunks
+            .iter()
+            .enumerate()
+            .filter_map(|(index, slot)| (slot.status == ChunkStatus::Ready).then_some(index))
+            .collect()
+    }
+}
+
 pub(super) fn progress_from_state(
     track_id: i64,
     total: u64,

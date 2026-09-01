@@ -16,6 +16,29 @@ export function leadingPrefixEnd(ranges: ByteRange[]): number {
   return leading?.end ?? 0
 }
 
+/** Whether half-open byte ranges continuously cover the requested window. */
+export function rangesCoverWindow(
+  ranges: ByteRange[],
+  start: number,
+  end: number,
+): boolean {
+  if (!(start >= 0) || !(end >= start)) return false
+  if (start === end) return true
+
+  let cursor = start
+  const ordered = [...ranges]
+    .filter(range => range.end > range.start)
+    .sort((a, b) => a.start - b.start || a.end - b.end)
+
+  for (const range of ordered) {
+    if (range.end <= cursor) continue
+    if (range.start > cursor) return false
+    cursor = Math.max(cursor, range.end)
+    if (cursor >= end) return true
+  }
+  return false
+}
+
 /**
  * Prefer sequential rebuild from byte 0 when the seek target still lies inside
  * the downloaded leading prefix. Avoids backward `timestampOffset` jumps on

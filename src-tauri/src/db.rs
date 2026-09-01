@@ -10,6 +10,7 @@ use std::sync::Mutex;
 use rusqlite::Connection;
 
 mod bounce_profiles;
+mod cache_entries;
 mod lastfm;
 mod listen_stats;
 mod models;
@@ -21,6 +22,7 @@ mod settings;
 mod tests;
 mod tracks;
 
+pub use cache_entries::*;
 pub use lastfm::*;
 pub use models::*;
 pub use settings::*;

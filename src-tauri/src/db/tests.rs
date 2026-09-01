@@ -250,6 +250,24 @@ fn cache_settings_invalid_int_falls_back_to_default() -> AppResult<()> {
 }
 
 #[test]
+fn pinned_audio_cache_entries_are_not_downgraded_by_playback_touches() -> AppResult<()> {
+    let db = test_db()?;
+    let track_id = upsert_test_track(&db, 42, "cache-pinned", 0)?;
+
+    db.mark_audio_cache_pinned(track_id)?;
+    db.touch_audio_cache(track_id)?;
+    let entries = db.audio_cache_entries()?;
+    assert_eq!(entries[&track_id].class, AudioCacheClass::Pinned);
+
+    db.conn
+        .lock()
+        .unwrap()
+        .execute("DELETE FROM tracks WHERE id = ?1", [track_id])?;
+    assert!(!db.audio_cache_entries()?.contains_key(&track_id));
+    Ok(())
+}
+
+#[test]
 fn lastfm_queue_is_durable_account_scoped_and_idempotent() -> AppResult<()> {
     let db = test_db()?;
     let row = LastFmQueueInsert {
