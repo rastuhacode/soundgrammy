@@ -1,5 +1,28 @@
 # Changelog
 
+## [2.0.0](https://github.com/rastuhacode/soundgrammy/compare/v1.2.0...v2.0.0) (2026-09-02)
+
+
+### ⚠ BREAKING CHANGES
+
+* lots of streaming enhancements - lookahead, ID3 lazy loading, etc.
+
+### Features
+
+* add DeadSpace component for funsies ([27d8c5f](https://github.com/rastuhacode/soundgrammy/commit/27d8c5f8b5c1aced3de7fe79b7b4f7616ec3249a))
+* add experemental last.fm scrobbling ([3d4601f](https://github.com/rastuhacode/soundgrammy/commit/3d4601f2f447d1f1fb3a3c56c08fe1cd384f60b4))
+* add missing titles ([aff8adb](https://github.com/rastuhacode/soundgrammy/commit/aff8adbbeeffeb266e6f7a8a255eef6f064555d1))
+* enhance development environment with isolated app identity and configuration ([887e25d](https://github.com/rastuhacode/soundgrammy/commit/887e25d3c2ddbfa1960264dcdb5acc9382e441b7))
+* implement caching and request coordination for Telegram media downloads ([b978b36](https://github.com/rastuhacode/soundgrammy/commit/b978b367e62ba02eab17f46ff17a5c74b6e644e3))
+* lots of streaming enhancements - lookahead, ID3 lazy loading, etc. ([8aa7111](https://github.com/rastuhacode/soundgrammy/commit/8aa7111b4c45e84aea151435a9171e58467b6b2b))
+* replace SidebarProfile with SidebarDrawer for improved navigation and user experience; add new TauriLink component for external links; implement AlertDialog and Drawer components for better UI interactions ([87791f3](https://github.com/rastuhacode/soundgrammy/commit/87791f3d3f29c0a09013923ab8c12af58a667c94))
+
+
+### Bug Fixes
+
+* fixed missing avatar on initial launch ([cbd7524](https://github.com/rastuhacode/soundgrammy/commit/cbd7524730af910ffee7bde6f2a26729634f072b))
+* prevent proactive removal of MP3 back buffer during normal playback to avoid playback stalling in WebKit ([9553d07](https://github.com/rastuhacode/soundgrammy/commit/9553d07f1a5d67694b8c62f17802eff86298e601))
+
 ## [1.2.0](https://github.com/rastuhacode/soundgrammy/compare/v1.1.0...v1.2.0) (2026-08-27)
 
 
