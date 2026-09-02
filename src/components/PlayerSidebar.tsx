@@ -178,7 +178,7 @@ export function PlayerSidebar(props: { onLogout: () => void }) {
       >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Couldn’t finish</DialogTitle>
+            <DialogTitle>Could not finish</DialogTitle>
             <DialogDescription className="whitespace-pre-wrap">
               {actionError}
             </DialogDescription>
