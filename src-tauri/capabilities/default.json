@@ -9,7 +9,8 @@
       "identifier": "opener:allow-open-url",
       "allow": [
         { "url": "https://www.last.fm/*" },
-        { "url": "https://github.com/Flowseal/tg-ws-proxy" }
+        { "url": "https://github.com/Flowseal/tg-ws-proxy" },
+        { "url": "https://github.com/rastuhacode/soundgrammy/releases" }
       ]
     },
     "opener:allow-reveal-item-in-dir",

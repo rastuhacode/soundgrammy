@@ -18,6 +18,7 @@ import { Textarea } from '@/components/ui/textarea'
 import { api } from '@/lib/api'
 import { buildProxyLink } from '@/lib/proxy-link'
 import type { ProxySettings, ProxySettingsView } from '@/types'
+import { TauriLink } from '@/components/tauri/TauriLink'
 
 const proxySettingsSchema = z.object({
   enabled: z.boolean(),
@@ -213,7 +214,7 @@ export function ProxySettingsForm({
                 </FieldLegend>
                 <FieldDescription className="text-xs">
                   Route Telegram through a local helper such as&nbsp;
-                  <a href="https://github.com/Flowseal/tg-ws-proxy" target="_blank" rel="noopener noreferrer">tg-ws-proxy</a>
+                  <TauriLink href="https://github.com/Flowseal/tg-ws-proxy">tg-ws-proxy</TauriLink>
                   . This could be helpful to avoid censorship.
                 </FieldDescription>
               </>
