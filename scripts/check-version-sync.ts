@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readFileSync, writeFileSync } from 'node:fs'
 
 function readJson(path: string): Record<string, unknown> {
   return JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>
@@ -46,3 +46,13 @@ if (mismatches.length > 0) {
 }
 
 console.log(`Application versions are synchronized at ${expected}.`)
+
+const tauriDevConfigPath = 'src-tauri/tauri.dev.conf.json'
+const tauriDevConfig = readJson(tauriDevConfigPath)
+const expectedDevVersion = `${expected}-develop`
+
+if (tauriDevConfig.version !== expectedDevVersion) {
+  tauriDevConfig.version = expectedDevVersion
+  writeFileSync(tauriDevConfigPath, `${JSON.stringify(tauriDevConfig, null, 2)}\n`)
+  console.log(`Updated ${tauriDevConfigPath} to ${expectedDevVersion}.`)
+}
