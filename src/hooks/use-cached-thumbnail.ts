@@ -10,6 +10,37 @@ interface ThumbnailState {
 // Cache the resolved cache-file path per track for the session so re-mounting
 // virtualized rows doesn't re-invoke the backend.
 const pathCache = new Map<string, string | null>()
+const requestCache = new Map<string, Promise<string | null>>()
+
+export function clearThumbnailMemoryCache(): void {
+  pathCache.clear()
+  requestCache.clear()
+}
+
+export function loadThumbnailPath(
+  trackId: number,
+  highQuality: boolean,
+): Promise<string | null> {
+  const cacheKey = `${trackId}:${highQuality ? 'high' : 'standard'}`
+  if (!highQuality && pathCache.has(cacheKey)) {
+    return Promise.resolve(pathCache.get(cacheKey) ?? null)
+  }
+
+  const pending = requestCache.get(cacheKey)
+  if (pending) return pending
+
+  const request = api
+    .getTrackThumbnail(trackId, highQuality)
+    .then((path) => {
+      pathCache.set(cacheKey, path)
+      return path
+    })
+    .finally(() => {
+      requestCache.delete(cacheKey)
+    })
+  requestCache.set(cacheKey, request)
+  return request
+}
 
 function thumbnailUrl(path: string | null): string | null {
   return path ? fileSrc(path) : null
@@ -56,11 +87,9 @@ export function useCachedThumbnail(
       setState({ url: null, loaded: false, failed: false })
     }
 
-    api
-      .getTrackThumbnail(trackId, highQuality)
+    loadThumbnailPath(trackId, highQuality)
       .then((path) => {
         if (cancelled) return
-        pathCache.set(cacheKey, path)
         setState({
           url: thumbnailUrl(path),
           loaded: Boolean(path),

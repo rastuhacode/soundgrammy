@@ -29,7 +29,7 @@ import {
 } from '@/lib/playlist-recipe-io'
 import type { PlaylistRecipeSource } from '@/types'
 import { canExportPlaylist } from '@/components/playlist/track-actions'
-import { SidebarProfile } from './SidebarProfile'
+import { SidebarDrawer } from './SidebarDrawer'
 
 const restrictToVerticalAxis: Modifier = ({ transform }) => ({
   ...transform,
@@ -61,6 +61,8 @@ export function PlayerSidebar(props: { onLogout: () => void }) {
 
   const [actionError, setActionError] = useState<string | null>(null)
 
+  const title = 'Create playlist'
+
   const handleExportPlaylist = async (
     source: PlaylistRecipeSource,
     name: string,
@@ -77,7 +79,7 @@ export function PlayerSidebar(props: { onLogout: () => void }) {
     <div className="flex h-full grow flex-col gap-4 pt-4">
       <div className="flex items-center justify-between gap-2 px-4">
         <div className="flex items-center gap-4">
-          <SidebarProfile onLogout={props.onLogout} />
+          <SidebarDrawer onLogout={props.onLogout} />
           <h2 className="text-lg font-semibold tracking-tight text-foreground">
             Library
           </h2>
@@ -97,7 +99,8 @@ export function PlayerSidebar(props: { onLogout: () => void }) {
             variant="ghost"
             size="icon-sm"
             onClick={() => setDialogState({ mode: 'create' })}
-            aria-label="Create playlist"
+            aria-label={title}
+            title={title}
             className="text-muted-foreground hover:text-foreground"
           >
             <Plus />
@@ -175,7 +178,7 @@ export function PlayerSidebar(props: { onLogout: () => void }) {
       >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
-            <DialogTitle>Couldn’t finish</DialogTitle>
+            <DialogTitle>Could not finish</DialogTitle>
             <DialogDescription className="whitespace-pre-wrap">
               {actionError}
             </DialogDescription>

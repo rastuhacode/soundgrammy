@@ -6,40 +6,62 @@ import {
   clockOnPlay,
   clearPendingListenEndReason,
   createAttemptClock,
+  lastFmThresholdMs,
+  monotonicNow,
   takePendingListenEndReason,
   trackDurationMs,
   type ListenAttemptClock,
 } from '@/lib/listen-tracker'
+import { useLastFmStore } from '@/stores/lastfm-store'
 import { useListenStatsStore } from '@/stores/listen-stats-store'
 import { usePlayerStore } from '@/stores/player-store'
 import type { ListenEndReason } from '@/types'
 
+interface PlaybackAttempt {
+  attemptId: string
+  trackId: number
+  durationSec: number | null | undefined
+  clock: ListenAttemptClock
+  localActive: boolean
+  localBaselineMs: number
+  lastFmActive: boolean
+  lastFmBaselineMs: number
+  lastFmQualifiedSent: boolean
+  lastFmQualification: Promise<void> | null
+}
+
+function newAttemptId(): string {
+  return globalThis.crypto?.randomUUID?.()
+    ?? `attempt-${Date.now()}-${Math.random().toString(36).slice(2)}`
+}
+
 /**
- * Observes player track / play state and records listen attempts.
- * Call `notifyCompleted` from the audio `ended` handler (before next/repeat).
+ * Owns one neutral playback clock and independent local-statistics/Last.fm sinks.
+ * Media event callbacks, not requested player state, determine played wall time.
  */
 export function useListenTracker(options: {
   trackId: number | null
   durationSeconds: number | null | undefined
-  isPlaying: boolean
-}): { notifyCompleted: (restartSameTrack?: boolean) => void } {
-  const { trackId, durationSeconds, isPlaying } = options
+}): {
+  notifyPlaying: () => void
+  notifyActivityStopped: () => void
+  notifyCompleted: (restartSameTrack?: boolean) => void
+} {
+  const { trackId, durationSeconds } = options
   const listenAttemptEpoch = usePlayerStore(state => state.listenAttemptEpoch)
   const statisticsEnabled = useListenStatsStore(state => state.enabled)
   const statisticsClearEpoch = useListenStatsStore(state => state.clearEpoch)
+  const lastFmStatus = useLastFmStore(state => state.status)
+  const lastFmReady = lastFmStatus?.state === 'connected' && lastFmStatus.enabled
 
-  const attemptTrackIdRef = useRef<number | null>(null)
-  const attemptDurationSecRef = useRef<number | null | undefined>(null)
-  const clockRef = useRef<ListenAttemptClock>(createAttemptClock())
-  const isPlayingRef = useRef(isPlaying)
+  const attemptRef = useRef<PlaybackAttempt | null>(null)
+  const actuallyPlayingRef = useRef(false)
+  const qualificationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const trackIdRef = useRef(trackId)
   const listenAttemptEpochRef = useRef(listenAttemptEpoch)
   const statisticsClearEpochRef = useRef(statisticsClearEpoch)
   const statisticsEnabledRef = useRef(statisticsEnabled)
-
-  useEffect(() => {
-    isPlayingRef.current = isPlaying
-  }, [isPlaying])
+  const lastFmReadyRef = useRef(lastFmReady)
 
   useEffect(() => {
     trackIdRef.current = trackId
@@ -49,174 +71,251 @@ export function useListenTracker(options: {
     statisticsEnabledRef.current = statisticsEnabled
   }, [statisticsEnabled])
 
-  const persistEnd = (
-    id: number,
+  useEffect(() => {
+    lastFmReadyRef.current = lastFmReady
+  }, [lastFmReady])
+
+  const clearQualificationTimer = () => {
+    if (qualificationTimerRef.current !== null) {
+      clearTimeout(qualificationTimerRef.current)
+      qualificationTimerRef.current = null
+    }
+  }
+
+  const lastFmListenedMs = (attempt: PlaybackAttempt, now: number) =>
+    Math.max(0, clockListenedMs(attempt.clock, now) - attempt.lastFmBaselineMs)
+
+  const maybeQualifyLastFm = (now: number) => {
+    const attempt = attemptRef.current
+    if (
+      !attempt
+      || !attempt.lastFmActive
+      || attempt.lastFmQualifiedSent
+      || !lastFmReadyRef.current
+    ) return
+    const threshold = lastFmThresholdMs(attempt.durationSec)
+    if (threshold == null) return
+    const listenedMs = Math.round(lastFmListenedMs(attempt, now))
+    if (listenedMs < threshold) return
+    attempt.lastFmQualifiedSent = true
+    attempt.lastFmQualification = api
+      .lastFmAttemptQualified(attempt.attemptId, listenedMs)
+      .catch(() => {})
+  }
+
+  const scheduleQualification = () => {
+    clearQualificationTimer()
+    const attempt = attemptRef.current
+    if (
+      !attempt
+      || !attempt.lastFmActive
+      || attempt.lastFmQualifiedSent
+      || !actuallyPlayingRef.current
+      || !lastFmReadyRef.current
+    ) return
+    const threshold = lastFmThresholdMs(attempt.durationSec)
+    if (threshold == null) return
+    const remaining = threshold - lastFmListenedMs(attempt, monotonicNow())
+    if (remaining <= 0) {
+      maybeQualifyLastFm(monotonicNow())
+      return
+    }
+    qualificationTimerRef.current = setTimeout(() => {
+      qualificationTimerRef.current = null
+      maybeQualifyLastFm(monotonicNow())
+      if (!attemptRef.current?.lastFmQualifiedSent) scheduleQualification()
+    }, Math.max(1, Math.ceil(remaining)))
+  }
+
+  const activateLastFm = () => {
+    const attempt = attemptRef.current
+    if (
+      !attempt
+      || attempt.lastFmActive
+      || !actuallyPlayingRef.current
+      || !lastFmReadyRef.current
+    ) return
+    attempt.lastFmActive = true
+    attempt.lastFmBaselineMs = clockListenedMs(attempt.clock, monotonicNow())
+    attempt.lastFmQualifiedSent = false
+    attempt.lastFmQualification = null
+    api.lastFmAttemptStarted(attempt.attemptId, attempt.trackId).catch(() => {})
+    scheduleQualification()
+  }
+
+  const deactivateLastFm = () => {
+    const attempt = attemptRef.current
+    clearQualificationTimer()
+    if (!attempt?.lastFmActive) return
+    attempt.lastFmActive = false
+    attempt.lastFmQualifiedSent = false
+    const pending = attempt.lastFmQualification ?? Promise.resolve()
+    pending.finally(() => api.lastFmAttemptEnded(attempt.attemptId).catch(() => {}))
+    attempt.lastFmQualification = null
+  }
+
+  const persistLocalEnd = (
+    attempt: PlaybackAttempt,
     endReason: ListenEndReason,
-    listenedMs: number,
-    durationSec: number | null | undefined,
+    totalMs: number,
   ) => {
-    if (!statisticsEnabledRef.current) return
-    const durationMs = trackDurationMs(durationSec)
+    if (!attempt.localActive) return
+    const listenedMs = Math.max(0, Math.round(totalMs - attempt.localBaselineMs))
     api.recordListenEnd({
-      trackId: id,
+      trackId: attempt.trackId,
       listenedMs,
-      durationMs,
+      durationMs: trackDurationMs(attempt.durationSec),
       endReason,
     }).then((result) => {
       if (result) useListenStatsStore.getState().upsert(result.stats)
-    }).catch(() => {
-      // Best-effort; do not interrupt playback.
-    })
+    }).catch(() => {})
   }
 
-  /** Clears local attempt state immediately; returns snapshot for async persist. */
-  const closeAttemptLocally = (): {
-    id: number
-    listenedMs: number
-    durationSec: number | null | undefined
-  } | null => {
-    const id = attemptTrackIdRef.current
-    if (id == null) return null
-    const now = performance.now()
-    const listenedMs = Math.round(clockListenedMs(clockRef.current, now))
-    const durationSec = attemptDurationSecRef.current
-    attemptTrackIdRef.current = null
-    attemptDurationSecRef.current = null
-    clockRef.current = createAttemptClock()
-    return { id, listenedMs, durationSec }
+  const finishLastFm = (attempt: PlaybackAttempt, totalMs: number) => {
+    clearQualificationTimer()
+    if (!attempt.lastFmActive) return
+    const threshold = lastFmThresholdMs(attempt.durationSec)
+    const listenedMs = Math.max(0, Math.round(totalMs - attempt.lastFmBaselineMs))
+    let pending = attempt.lastFmQualification ?? Promise.resolve()
+    if (
+      !attempt.lastFmQualifiedSent
+      && lastFmReadyRef.current
+      && threshold != null
+      && listenedMs >= threshold
+    ) {
+      pending = api.lastFmAttemptQualified(attempt.attemptId, listenedMs).catch(() => {})
+    }
+    pending.finally(() => api.lastFmAttemptEnded(attempt.attemptId).catch(() => {}))
+  }
+
+  const closeAttempt = (endReason: ListenEndReason) => {
+    const attempt = attemptRef.current
+    if (!attempt) return
+    const now = monotonicNow()
+    attempt.clock = clockOnPause(attempt.clock, now)
+    const totalMs = clockListenedMs(attempt.clock, now)
+    attemptRef.current = null
+    actuallyPlayingRef.current = false
+    persistLocalEnd(attempt, endReason, totalMs)
+    finishLastFm(attempt, totalMs)
   }
 
   const startAttempt = (id: number, durationSec: number | null | undefined) => {
-    if (!statisticsEnabledRef.current) return
     clearPendingListenEndReason()
-    attemptTrackIdRef.current = id
-    attemptDurationSecRef.current = durationSec
-    clockRef.current = createAttemptClock()
-    if (isPlayingRef.current) {
-      clockRef.current = clockOnPlay(clockRef.current, performance.now())
+    const localActive = statisticsEnabledRef.current
+    attemptRef.current = {
+      attemptId: newAttemptId(),
+      trackId: id,
+      durationSec,
+      clock: createAttemptClock(),
+      localActive,
+      localBaselineMs: 0,
+      lastFmActive: false,
+      lastFmBaselineMs: 0,
+      lastFmQualifiedSent: false,
+      lastFmQualification: null,
     }
-    api.recordListenStart(id).catch(() => {
-      // Best-effort; do not interrupt playback.
-    })
+    actuallyPlayingRef.current = false
+    if (localActive) api.recordListenStart(id).catch(() => {})
   }
 
-  // Disabling drops the in-progress attempt without recording it. Re-enabling
-  // starts a fresh attempt for the currently loaded track.
   useEffect(() => {
+    const attempt = attemptRef.current
+    if (!attempt) return
     if (!statisticsEnabled) {
-      closeAttemptLocally()
-      clearPendingListenEndReason()
+      attempt.localActive = false
       return
     }
-    if (trackId != null && attemptTrackIdRef.current == null) {
-      startAttempt(trackId, durationSeconds)
+    if (!attempt.localActive) {
+      attempt.localActive = true
+      attempt.localBaselineMs = clockListenedMs(attempt.clock, monotonicNow())
+      api.recordListenStart(attempt.trackId).catch(() => {})
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [statisticsEnabled])
 
-  // A clear operation is a hard history boundary. Drop any time accumulated
-  // before it and start a fresh attempt if playback remains active.
   useEffect(() => {
     if (statisticsClearEpochRef.current === statisticsClearEpoch) return
     statisticsClearEpochRef.current = statisticsClearEpoch
-    closeAttemptLocally()
-    clearPendingListenEndReason()
-    if (statisticsEnabled && trackId != null) {
-      startAttempt(trackId, durationSeconds)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [statisticsClearEpoch])
+    const attempt = attemptRef.current
+    if (!attempt || !statisticsEnabled) return
+    attempt.localActive = true
+    attempt.localBaselineMs = clockListenedMs(attempt.clock, monotonicNow())
+    api.recordListenStart(attempt.trackId).catch(() => {})
+  }, [statisticsClearEpoch, statisticsEnabled])
 
-  // Track identity changes: end previous attempt, start new when track present.
   useEffect(() => {
-    const activeId = attemptTrackIdRef.current
-
-    if (activeId != null && activeId !== trackId) {
-      const closed = closeAttemptLocally()
-      if (closed) {
-        const reason = takePendingListenEndReason('replaced')
-        persistEnd(closed.id, reason, closed.listenedMs, closed.durationSec)
-      }
+    const attempt = attemptRef.current
+    if (attempt && attempt.trackId !== trackId) {
+      closeAttempt(takePendingListenEndReason(trackId == null ? 'stopped' : 'replaced'))
     }
-
-    if (trackId != null && attemptTrackIdRef.current !== trackId) {
+    if (trackId != null && attemptRef.current?.trackId !== trackId) {
       startAttempt(trackId, durationSeconds)
-    }
-
-    if (trackId == null && attemptTrackIdRef.current != null) {
-      const closed = closeAttemptLocally()
-      if (closed) {
-        const reason = takePendingListenEndReason('stopped')
-        persistEnd(closed.id, reason, closed.listenedMs, closed.durationSec)
-      }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [trackId])
 
-  // Same track id, new queue row (duplicate entries / single-track next|prev).
   useEffect(() => {
     if (listenAttemptEpochRef.current === listenAttemptEpoch) return
     listenAttemptEpochRef.current = listenAttemptEpoch
-
-    if (trackId == null || attemptTrackIdRef.current !== trackId) return
-
-    const closed = closeAttemptLocally()
-    if (closed) {
-      const reason = takePendingListenEndReason('skipped')
-      persistEnd(closed.id, reason, closed.listenedMs, closed.durationSec)
-    }
+    if (trackId == null || attemptRef.current?.trackId !== trackId) return
+    closeAttempt(takePendingListenEndReason('skipped'))
     startAttempt(trackId, durationSeconds)
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [listenAttemptEpoch])
 
-  // Keep duration metadata fresh for the active attempt.
   useEffect(() => {
-    if (attemptTrackIdRef.current != null && trackId === attemptTrackIdRef.current) {
-      attemptDurationSecRef.current = durationSeconds
-    }
+    const attempt = attemptRef.current
+    if (!attempt || attempt.trackId !== trackId) return
+    attempt.durationSec = durationSeconds
+    scheduleQualification()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [durationSeconds, trackId])
 
-  // Pause / resume: accumulate wall-clock only while playing.
-  // Also reopen an attempt when play resumes after a natural end left the
-  // same track loaded (trackId does not change, so the track effect is silent).
   useEffect(() => {
-    if (trackId != null && isPlaying && attemptTrackIdRef.current == null) {
-      startAttempt(trackId, durationSeconds)
-      return
-    }
-    if (attemptTrackIdRef.current == null) return
-    const now = performance.now()
-    clockRef.current = isPlaying
-      ? clockOnPlay(clockRef.current, now)
-      : clockOnPause(clockRef.current, now)
+    if (lastFmReady) activateLastFm()
+    else deactivateLastFm()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isPlaying])
+  }, [lastFmReady])
 
-  // App quit / tab close → interrupted.
   useEffect(() => {
-    const onPageHide = () => {
-      const closed = closeAttemptLocally()
-      if (!closed) return
-      persistEnd(closed.id, 'interrupted', closed.listenedMs, closed.durationSec)
-    }
+    const onPageHide = () => closeAttempt('interrupted')
     window.addEventListener('pagehide', onPageHide)
     window.addEventListener('beforeunload', onPageHide)
     return () => {
       window.removeEventListener('pagehide', onPageHide)
       window.removeEventListener('beforeunload', onPageHide)
+      clearQualificationTimer()
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  const notifyPlaying = () => {
+    const attempt = attemptRef.current
+    if (!attempt) return
+    actuallyPlayingRef.current = true
+    attempt.clock = clockOnPlay(attempt.clock, monotonicNow())
+    activateLastFm()
+    scheduleQualification()
+  }
+
+  const notifyActivityStopped = () => {
+    const attempt = attemptRef.current
+    if (!attempt) return
+    const now = monotonicNow()
+    attempt.clock = clockOnPause(attempt.clock, now)
+    actuallyPlayingRef.current = false
+    maybeQualifyLastFm(now)
+    clearQualificationTimer()
+  }
+
   const notifyCompleted = (restartSameTrack = false) => {
-    const closed = closeAttemptLocally()
-    if (!closed) return
-    persistEnd(closed.id, 'completed', closed.listenedMs, closed.durationSec)
-    // Same track stays active without a trackId change — open a new attempt
-    // (repeat-one, or repeat-all wrapping onto the same track).
-    if (restartSameTrack && trackIdRef.current === closed.id) {
-      startAttempt(closed.id, closed.durationSec)
+    notifyActivityStopped()
+    const completedTrackId = attemptRef.current?.trackId ?? null
+    closeAttempt('completed')
+    if (restartSameTrack && completedTrackId != null && trackIdRef.current === completedTrackId) {
+      startAttempt(completedTrackId, durationSeconds)
     }
   }
 
-  return { notifyCompleted }
+  return { notifyPlaying, notifyActivityStopped, notifyCompleted }
 }

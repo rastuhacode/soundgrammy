@@ -15,21 +15,39 @@ import {
   type MseSession,
 } from './mse-session'
 
-const { readStreamRange, ensureStreamRange } = vi.hoisted(() => ({
+const { readStreamRange, ensureStreamRange, backfillStreamId3 } = vi.hoisted(() => ({
   readStreamRange: vi.fn(),
   ensureStreamRange: vi.fn(),
+  backfillStreamId3: vi.fn(),
 }))
 
 vi.mock('@/lib/api', () => ({
   api: {
     readStreamRange,
     ensureStreamRange,
+    backfillStreamId3,
   },
 }))
 
 const TRACK_ID = 42
 const TOTAL = 512 * 1024
 const DURATION = 200
+
+function id3Header(tagByteLength: number): Uint8Array {
+  const payloadSize = tagByteLength - 10
+  return new Uint8Array([
+    0x49,
+    0x44,
+    0x33,
+    0x04,
+    0,
+    0,
+    (payloadSize >> 21) & 0x7F,
+    (payloadSize >> 14) & 0x7F,
+    (payloadSize >> 7) & 0x7F,
+    payloadSize & 0x7F,
+  ])
+}
 
 async function waitFor(predicate: () => boolean): Promise<void> {
   await vi.waitFor(
@@ -120,11 +138,13 @@ describe('attachMseSession', () => {
     session = null
     readStreamRange.mockReset()
     ensureStreamRange.mockReset()
+    backfillStreamId3.mockReset()
     ensureStreamRange.mockResolvedValue(undefined)
+    backfillStreamId3.mockResolvedValue(undefined)
 
     // Default: any inclusive window returns MPEG-framed bytes of the right length.
     readStreamRange.mockImplementation(
-      async (_trackId: number, start: number, end: number) => {
+      async (_trackId: number, _sessionId: string, start: number, end: number) => {
         const length = Math.max(0, end - start + 1)
         return fillMpegFrames(length)
       },
@@ -177,6 +197,7 @@ describe('attachMseSession', () => {
     onAppendedOffset?: (offset: number) => void
     onBufferedChanged?: () => void
     onError?: (failure: MseFailure) => void
+    bufferAheadSeconds?: number
   }): Promise<{ session: MseSession, mediaSource: FakeMediaSource }> {
     const mimeType = options?.mimeType ?? 'audio/mpeg'
     const total = options?.total ?? TOTAL
@@ -196,9 +217,11 @@ describe('attachMseSession', () => {
     const next = attachMseSession({
       audio: audio as unknown as HTMLAudioElement,
       trackId: TRACK_ID,
+      sessionId: 'test-session',
       mimeType,
       total,
       duration,
+      bufferAheadSeconds: options?.bufferAheadSeconds ?? Number.POSITIVE_INFINITY,
       onAppendedOffset: options?.onAppendedOffset,
       onBufferedChanged: options?.onBufferedChanged,
       onError: options?.onError,
@@ -242,10 +265,191 @@ describe('attachMseSession', () => {
     expect(appended.at(-1)).toBe(active.getAppendedOffset())
     expect(readStreamRange).toHaveBeenCalled()
     // MPEG cold start resolves ID3 / Xing before the first append window.
-    expect(readStreamRange.mock.calls[0]).toEqual([TRACK_ID, 0, 9])
+    expect(readStreamRange.mock.calls[0]).toEqual([TRACK_ID, 'test-session', 0, 9])
     expect(readStreamRange.mock.calls.some(
-      call => call[1] === 0 && call[2] === MSE_APPEND_CHUNK - 1,
+      call => call[2] === 0 && call[3] === MSE_APPEND_CHUNK - 1,
     )).toBe(true)
+  })
+
+  it('bounds read-ahead and resumes pumping as playback advances', async () => {
+    const total = MSE_APPEND_CHUNK * 8
+    const { session: active } = await attach({
+      total,
+      bufferAheadSeconds: 32,
+    })
+
+    await waitFor(() => active.getAppendedOffset() > MSE_APPEND_CHUNK)
+    await flushMicrotasks(16)
+    const stoppedOffset = active.getAppendedOffset()
+    expect(stoppedOffset).toBeLessThan(total)
+
+    audio.tickTime(30)
+    await waitFor(() => active.getAppendedOffset() > stoppedOffset)
+  })
+
+  it('backfills a large ID3 prefix only after playable audio is continuous', async () => {
+    const total = MSE_APPEND_CHUNK * 6
+    const tagEnd = MSE_APPEND_CHUNK * 2 + 10
+    readStreamRange.mockImplementation(
+      async (_trackId: number, _sessionId: string, start: number, end: number) => {
+        if (start === 0 && end === 9) return id3Header(tagEnd)
+        return fillMpegFrames(Math.max(0, end - start + 1))
+      },
+    )
+    const { session: active } = await attach({ total })
+
+    // A seek island reaches EOF but leaves an unheard audio gap.
+    active.notifyProgress(progress({
+      total,
+      received: MSE_APPEND_CHUNK * 4,
+      ranges: [
+        { start: 0, end: MSE_APPEND_CHUNK },
+        { start: MSE_APPEND_CHUNK * 2, end: MSE_APPEND_CHUNK * 4 },
+        { start: MSE_APPEND_CHUNK * 5, end: total },
+      ],
+    }))
+    await flushMicrotasks(16)
+    expect(backfillStreamId3).not.toHaveBeenCalled()
+
+    active.notifyProgress(progress({
+      total,
+      received: MSE_APPEND_CHUNK * 5,
+      ranges: [
+        { start: 0, end: MSE_APPEND_CHUNK },
+        { start: MSE_APPEND_CHUNK * 2, end: total },
+      ],
+    }))
+    await waitFor(() => backfillStreamId3.mock.calls.length === 1)
+    expect(backfillStreamId3).toHaveBeenCalledWith(
+      TRACK_ID,
+      'test-session',
+    )
+  })
+
+  it('does not backfill ID3 when the whole file is already complete', async () => {
+    const total = MSE_APPEND_CHUNK * 4
+    const tagEnd = MSE_APPEND_CHUNK + 10
+    readStreamRange.mockImplementation(
+      async (_trackId: number, _sessionId: string, start: number, end: number) => {
+        if (start === 0 && end === 9) return id3Header(tagEnd)
+        return fillMpegFrames(Math.max(0, end - start + 1))
+      },
+    )
+    const { session: active } = await attach({ total })
+    active.notifyProgress(progress({
+      total,
+      received: total,
+      ranges: [{ start: 0, end: total }],
+      complete: true,
+    }))
+    await flushMicrotasks(16)
+    expect(backfillStreamId3).not.toHaveBeenCalled()
+  })
+
+  it('allows media end-of-stream while ID3 storage backfill is pending', async () => {
+    const total = MSE_APPEND_CHUNK * 5
+    const tagEnd = MSE_APPEND_CHUNK * 2 + 10
+    readStreamRange.mockImplementation(
+      async (_trackId: number, _sessionId: string, start: number, end: number) => {
+        if (start === 0 && end === 9) return id3Header(tagEnd)
+        return fillMpegFrames(Math.max(0, end - start + 1))
+      },
+    )
+    backfillStreamId3.mockImplementation(() => new Promise(() => {}))
+    const { session: active, mediaSource } = await attach({ total })
+    await waitFor(() => active.getAppendedOffset() >= total)
+
+    active.notifyProgress(progress({
+      total,
+      received: total - MSE_APPEND_CHUNK,
+      ranges: [
+        { start: 0, end: MSE_APPEND_CHUNK },
+        { start: MSE_APPEND_CHUNK * 2, end: total },
+      ],
+      complete: false,
+    }))
+    await waitFor(() => mediaSource.endOfStreamCalls === 1)
+    expect(backfillStreamId3).toHaveBeenCalledOnce()
+  })
+
+  it('retries a transient ID3 backfill failure on a later playback tick', async () => {
+    const total = MSE_APPEND_CHUNK * 5
+    const tagEnd = MSE_APPEND_CHUNK * 2 + 10
+    readStreamRange.mockImplementation(
+      async (_trackId: number, _sessionId: string, start: number, end: number) => {
+        if (start === 0 && end === 9) return id3Header(tagEnd)
+        return fillMpegFrames(Math.max(0, end - start + 1))
+      },
+    )
+    backfillStreamId3
+      .mockRejectedValueOnce(new Error('temporary network error'))
+      .mockResolvedValueOnce(undefined)
+    const now = Date.now()
+    const { session: active } = await attach({ total })
+    active.notifyProgress(progress({
+      total,
+      received: total - MSE_APPEND_CHUNK,
+      ranges: [
+        { start: 0, end: MSE_APPEND_CHUNK },
+        { start: MSE_APPEND_CHUNK * 2, end: total },
+      ],
+    }))
+    await waitFor(() => backfillStreamId3.mock.calls.length === 1)
+    await flushMicrotasks(16)
+
+    vi.spyOn(Date, 'now').mockReturnValue(now + 10_000)
+    audio.tickTime(1)
+    await waitFor(() => backfillStreamId3.mock.calls.length === 2)
+  })
+
+  it('deduplicates ID3 backfill while the storage request is in flight', async () => {
+    const total = MSE_APPEND_CHUNK * 5
+    const tagEnd = MSE_APPEND_CHUNK * 2 + 10
+    readStreamRange.mockImplementation(
+      async (_trackId: number, _sessionId: string, start: number, end: number) => {
+        if (start === 0 && end === 9) return id3Header(tagEnd)
+        return fillMpegFrames(Math.max(0, end - start + 1))
+      },
+    )
+    backfillStreamId3.mockImplementation(() => new Promise(() => {}))
+    const { session: active } = await attach({ total })
+    const audioReady = progress({
+      total,
+      received: total - MSE_APPEND_CHUNK,
+      ranges: [
+        { start: 0, end: MSE_APPEND_CHUNK },
+        { start: MSE_APPEND_CHUNK * 2, end: total },
+      ],
+    })
+
+    active.notifyProgress(audioReady)
+    active.notifyProgress(audioReady)
+    audio.tickTime(1)
+    await flushMicrotasks(16)
+    expect(backfillStreamId3).toHaveBeenCalledOnce()
+  })
+
+  it('does not start ID3 backfill after the MSE session is disposed', async () => {
+    const total = MSE_APPEND_CHUNK * 5
+    const tagEnd = MSE_APPEND_CHUNK * 2 + 10
+    readStreamRange.mockImplementation(
+      async (_trackId: number, _sessionId: string, start: number, end: number) => {
+        if (start === 0 && end === 9) return id3Header(tagEnd)
+        return fillMpegFrames(Math.max(0, end - start + 1))
+      },
+    )
+    const { session: active } = await attach({ total })
+    active.dispose()
+    active.notifyProgress(progress({
+      total,
+      received: total - MSE_APPEND_CHUNK,
+      ranges: [
+        { start: 0, end: MSE_APPEND_CHUNK },
+        { start: MSE_APPEND_CHUNK * 2, end: total },
+      ],
+    }))
+    await flushMicrotasks(16)
+    expect(backfillStreamId3).not.toHaveBeenCalled()
   })
 
   it('uses segments mode for non-mpeg mime types', async () => {
@@ -266,6 +470,7 @@ describe('attachMseSession', () => {
     await waitFor(() => active.getAppendedOffset() >= smallTotal)
     await flushMicrotasks(8)
     expect(mediaSource.endOfStreamCalls).toBe(0)
+    expect(backfillStreamId3).not.toHaveBeenCalled()
 
     active.notifyProgress(progress({
       ranges: [{ start: 0, end: smallTotal }],
@@ -316,7 +521,7 @@ describe('attachMseSession', () => {
     const onError = vi.fn()
     let appendAttempts = 0
     readStreamRange.mockImplementation(
-      async (_trackId: number, start: number, end: number) => {
+      async (_trackId: number, _sessionId: string, start: number, end: number) => {
         const length = Math.max(0, end - start + 1)
         // Payload-start probes are small; the append pump retries only the
         // leading window after MPEG start is resolved.
@@ -420,6 +625,29 @@ describe('attachMseSession', () => {
     expect(onError).not.toHaveBeenCalled()
   })
 
+  it('does not proactively remove an MP3 back buffer without quota pressure', async () => {
+    const total = MSE_APPEND_CHUNK * 16
+    const { session: active, mediaSource } = await attach({
+      total,
+      bufferAheadSeconds: 32,
+    })
+    const buffer = mediaSource.sourceBuffers[0]!
+
+    await waitFor(() => (
+      buffer.buffered.ranges.at(-1)?.end ?? 0
+    ) >= 32 && !buffer.updating)
+    const offsetBeforeSeek = active.getAppendedOffset()
+    expect(buffer.removeCalls).toHaveLength(0)
+
+    // An in-buffer seek advances currentTime far enough that the old rolling
+    // eviction path removed data immediately after `seeked`. WebKit can then
+    // freeze its clock or continue silently despite healthy forward data.
+    audio.tickTime(20)
+    await waitFor(() => active.getAppendedOffset() > offsetBeforeSeek)
+
+    expect(buffer.removeCalls).toHaveLength(0)
+  })
+
   it('snaps and lands onto SourceBuffer ranges (not element buffered)', async () => {
     const { session: active, mediaSource } = await attach()
     await pumpPrefix(active, MSE_APPEND_CHUNK)
@@ -466,7 +694,7 @@ describe('attachMseSession', () => {
     const ensureAfterSeek = ensureStreamRange.mock.calls.filter(
       call => call[0] === TRACK_ID,
     )
-    expect(ensureAfterSeek.some(call => call[1] === 0)).toBe(true)
+    expect(ensureAfterSeek.some(call => call[2] === 0)).toBe(true)
     expect(active.getAppendedOffset()).toBeGreaterThan(0)
   })
 
@@ -484,7 +712,7 @@ describe('attachMseSession', () => {
     expect(ensureStreamRange).toHaveBeenCalled()
 
     const targetByte = Math.floor((targetTime / DURATION) * TOTAL)
-    const probeStarts = ensureStreamRange.mock.calls.map(call => call[1] as number)
+    const probeStarts = ensureStreamRange.mock.calls.map(call => call[2] as number)
     // Probe window starts ~4KiB before the target byte (or 0).
     expect(probeStarts.some(start => start <= targetByte && start >= targetByte - 4096 - 1))
       .toBe(true)
@@ -614,6 +842,26 @@ describe('attachMseSession', () => {
     expect(readStreamRange.mock.calls.length).toBe(readsBefore)
   })
 
+  it('ignores stale progress with a different file size', async () => {
+    const { session: active } = await attach({ holdAppends: true })
+    await flushMicrotasks(8)
+    const readsBefore = readStreamRange.mock.calls.length
+    const offsetBefore = active.getAppendedOffset()
+
+    active.notifyProgress({
+      trackId: TRACK_ID,
+      received: TOTAL + 1,
+      total: TOTAL + 1,
+      ranges: [{ start: 0, end: TOTAL + 1 }],
+      complete: true,
+    })
+    await flushMicrotasks(16)
+
+    expect(active.getAppendedOffset()).toBe(offsetBefore)
+    expect(readStreamRange.mock.calls.length).toBe(readsBefore)
+    expect(backfillStreamId3).not.toHaveBeenCalled()
+  })
+
   it('dispose cancels further pumps and revokes the object URL', async () => {
     const { session: active, mediaSource } = await attach({ holdAppends: true })
     await flushMicrotasks(8)
@@ -679,7 +927,7 @@ describe('attachMseSession', () => {
 
     // Island seek probe / append sees only junk — no MPEG sync words.
     readStreamRange.mockImplementation(
-      async (_trackId: number, start: number, end: number) => {
+      async (_trackId: number, _sessionId: string, start: number, end: number) => {
         return new Uint8Array(Math.max(0, end - start + 1))
       },
     )

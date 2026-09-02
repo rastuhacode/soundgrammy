@@ -14,9 +14,11 @@ use tokio::sync::{Mutex, RwLock};
 use crate::config::Config;
 use crate::db::Db;
 use crate::error::{AppError, AppResult};
+use crate::lastfm::LastFmService;
 use crate::proxy_settings::{self, ProxySettings};
 use crate::streaming::StreamingManager;
 use crate::telegram;
+use crate::telegram::media_requests::MediaRequestCoordinator;
 
 /// Transient authentication state kept between login command calls.
 #[derive(Default)]
@@ -59,6 +61,9 @@ pub struct AppState {
     pub bounce_requested_track: AtomicI64,
     /// Active progressive audio downloads, shared by playback and explicit saves.
     pub streaming: StreamingManager,
+    /// Aggregate Telegram media pacing shared by audio, artwork, and bulk downloads.
+    pub media_requests: MediaRequestCoordinator,
+    pub lastfm: LastFmService,
 }
 
 impl AppState {
@@ -72,6 +77,7 @@ impl AppState {
         proxy_last_error: Option<String>,
     ) -> Self {
         let telegram = client.map(|(client, shutdown)| LiveTelegram { client, shutdown });
+        let lastfm = LastFmService::new(&config, &db);
         Self {
             config,
             db,
@@ -88,6 +94,8 @@ impl AppState {
             bounce_analysis_slot: Default::default(),
             bounce_requested_track: AtomicI64::new(-1),
             streaming: Default::default(),
+            media_requests: Default::default(),
+            lastfm,
         }
     }
 
@@ -174,6 +182,24 @@ impl AppState {
         self.client().await
     }
 
+    /// Disconnects and drops the current client before another one may be built.
+    pub async fn disconnect_client(&self) {
+        let _guard = self.reconnect_lock.lock().await;
+        self.disconnect_client_locked().await;
+    }
+
+    async fn disconnect_client_locked(&self) {
+        let old = self.telegram.write().await.take();
+        if let Some(old) = old {
+            old.client.disconnect();
+            old.shutdown.cancel();
+        }
+        *self.proxy_active.lock().await = false;
+
+        let mut pending = self.pending.lock().await;
+        *pending = Default::default();
+    }
+
     /// Rebuild the ferogram client from current DB proxy settings.
     /// Clears in-flight auth tokens (they are invalid across reconnect).
     pub async fn rebuild_client(&self) -> AppResult<()> {
@@ -185,6 +211,11 @@ impl AppState {
         let settings = proxy_settings::load(&self.db)?;
         let want_proxy = settings.for_connect();
 
+        // Telegram normally permits only one main session per authorization
+        // key. Stop the old connection before loading that key into a new one.
+        self.disconnect_client_locked().await;
+        tokio::task::yield_now().await;
+
         let (client, shutdown) =
             match telegram::client::build(&self.config, &self.data_dir, want_proxy).await {
                 Ok(pair) => pair,
@@ -194,25 +225,16 @@ impl AppState {
                 }
             };
 
-        {
-            let mut slot = self.telegram.write().await;
-            if let Some(old) = slot.take() {
-                old.shutdown.cancel();
-            }
-            *slot = Some(LiveTelegram { client, shutdown });
-        }
+        *self.telegram.write().await = Some(LiveTelegram { client, shutdown });
         *self.proxy_active.lock().await = want_proxy.is_some();
         *self.proxy_last_error.lock().await = None;
-
-        let mut pending = self.pending.lock().await;
-        *pending = Default::default();
 
         Ok(())
     }
 
     /// Persist proxy settings and rebuild the client. On rebuild failure the
-    /// previous settings are restored so SQLite stays aligned with the live
-    /// client / `proxy_active` flag.
+    /// previous settings are restored. The client remains offline so the
+    /// reconnect loop can retry with those restored settings.
     pub async fn apply_proxy_settings(&self, settings: &ProxySettings) -> AppResult<()> {
         let previous = proxy_settings::load(&self.db)?;
         proxy_settings::save(&self.db, settings)?;

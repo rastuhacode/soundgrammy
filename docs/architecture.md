@@ -33,6 +33,8 @@ Optional **MTProto proxy** (tg-ws-proxy compatible: server / port / secret or `t
 | Liked playlist | App | SQLite |
 | Playback queue / UI state | App | Zustand (ephemeral session order; not restored across restart) |
 | Listen statistics | App (listen behaviour) | SQLite events + aggregates ([listen-statistics.md](./listen-statistics.md)) |
+| Last.fm account | Last.fm | Session key in OS keyring; username/settings in SQLite |
+| Pending Last.fm scrobbles | App (qualified playback attempts) | SQLite immutable queue |
 
 **Playlist JSON recipe** (`export_playlist_json` / `analyze_playlist_json` / `import_playlist_json`): same-account cross-device sync for Liked and custom playlists. File contains ordered Telegram document ids (`file_unique_id`) and exporter `tgUserId`. Import is a prepare-then-create flow in the Create playlist dialog (analyze matches first; name can be edited). Import always creates a new custom playlist (duplicate names allowed); other-account files are rejected. Distinct from **Download playlist** (audio files + M3U under Downloads).
 
@@ -57,6 +59,7 @@ Optional **MTProto proxy** (tg-ws-proxy compatible: server / port / secret or `t
 | `download_playlist:progress` | Playlist download slot progress (`jobId` / `current` / `total` / `trackId`) |
 | `cache_tracks:progress` | Bulk cache job progress when a `jobId` is provided |
 | `cache:changed` | Track(s) entered/left app cache, or full clear |
+| `lastfm:status_changed` | Safe account/auth/queue status changed |
 
 Listeners live in `src/lib/api.ts`.
 

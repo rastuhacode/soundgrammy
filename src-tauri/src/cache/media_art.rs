@@ -130,8 +130,7 @@ pub async fn ensure_avatar(state: &AppState) -> AppResult<Option<PathBuf>> {
         },
     );
 
-    let client = state.client().await?;
-    download::download_location(&client, photo.dc_id, location, &dest).await?;
+    download::download_location(state, photo.dc_id, location, &dest).await?;
     Ok(Some(dest))
 }
 

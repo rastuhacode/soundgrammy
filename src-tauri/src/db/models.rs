@@ -9,6 +9,8 @@ pub struct Track {
     pub file_id: String,
     pub file_unique_id: String,
     pub title: Option<String>,
+    #[serde(skip)]
+    pub title_source: String,
     pub performer: Option<String>,
     pub duration: Option<i64>,
     pub source: String,
@@ -51,6 +53,7 @@ pub struct UpsertTrack {
     pub file_id: String,
     pub file_unique_id: String,
     pub title: Option<String>,
+    pub title_source: String,
     pub performer: Option<String>,
     pub duration: Option<i64>,
     pub mime_type: Option<String>,

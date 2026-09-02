@@ -156,7 +156,7 @@ export function useProfileMusicSync() {
           ? 'syncing'
           : phase === 'error'
             ? 'sync failed'
-            : 'live'
+            : 'online'
 
   const statusDetail
     = phase === 'connecting'

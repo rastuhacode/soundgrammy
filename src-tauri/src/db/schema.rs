@@ -11,6 +11,8 @@ pub(super) fn apply(conn: &Connection) -> AppResult<()> {
           file_id TEXT NOT NULL,
           file_unique_id TEXT NOT NULL UNIQUE,
           title TEXT,
+          title_source TEXT NOT NULL DEFAULT 'filename'
+            CHECK (title_source IN ('telegram_audio', 'filename', 'user_override')),
           performer TEXT,
           duration INTEGER,
           source TEXT NOT NULL DEFAULT 'mtproto',
@@ -65,6 +67,13 @@ pub(super) fn apply(conn: &Connection) -> AppResult<()> {
           value TEXT NOT NULL
         );
 
+        CREATE TABLE IF NOT EXISTS audio_cache_entries (
+          track_id INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE,
+          cache_class TEXT NOT NULL DEFAULT 'automatic'
+            CHECK (cache_class IN ('automatic', 'pinned')),
+          last_accessed_at_ms INTEGER NOT NULL
+        );
+
         CREATE TABLE IF NOT EXISTS listen_events (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           track_id INTEGER NOT NULL,
@@ -102,7 +111,80 @@ pub(super) fn apply(conn: &Connection) -> AppResult<()> {
           onset BLOB NOT NULL,
           created_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
+
+        CREATE TABLE IF NOT EXISTS lastfm_scrobble_queue (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          attempt_id TEXT NOT NULL UNIQUE,
+          lastfm_username TEXT NOT NULL,
+          lastfm_account_key TEXT NOT NULL,
+          track_id INTEGER,
+          artist TEXT NOT NULL,
+          track_title TEXT NOT NULL,
+          album TEXT,
+          duration_seconds INTEGER,
+          started_at_utc INTEGER NOT NULL,
+          created_at_ms INTEGER NOT NULL,
+          attempt_count INTEGER NOT NULL DEFAULT 0,
+          next_attempt_at_ms INTEGER,
+          last_error_code INTEGER,
+          last_error_message TEXT
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_lastfm_queue_account_due
+          ON lastfm_scrobble_queue (lastfm_account_key, next_attempt_at_ms, started_at_utc, id);
         "#,
     )?;
+    ensure_title_source(conn)?;
     Ok(())
+}
+
+fn ensure_title_source(conn: &Connection) -> AppResult<()> {
+    let mut stmt = conn.prepare("PRAGMA table_info(tracks)")?;
+    let columns = stmt
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<Result<Vec<_>, _>>()?;
+    if !columns.iter().any(|name| name == "title_source") {
+        conn.execute(
+            "ALTER TABLE tracks ADD COLUMN title_source TEXT NOT NULL DEFAULT 'filename'",
+            [],
+        )?;
+    }
+
+    let mut stmt =
+        conn.prepare("SELECT id, mtproto_document FROM tracks WHERE title_source = 'filename'")?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok((row.get::<_, i64>(0)?, row.get::<_, Option<String>>(1)?))
+        })?
+        .collect::<Result<Vec<_>, _>>()?;
+    drop(stmt);
+
+    for (id, document) in rows {
+        if document.as_deref().is_some_and(has_structured_audio_title) {
+            conn.execute(
+                "UPDATE tracks SET title_source = 'telegram_audio' WHERE id = ?1",
+                [id],
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn has_structured_audio_title(document: &str) -> bool {
+    let Ok(value) = serde_json::from_str::<serde_json::Value>(document) else {
+        return false;
+    };
+    value
+        .get("attributes")
+        .and_then(serde_json::Value::as_array)
+        .is_some_and(|attributes| {
+            attributes.iter().any(|attribute| {
+                attribute.get("type").and_then(serde_json::Value::as_str)
+                    == Some("DocumentAttributeAudio")
+                    && attribute
+                        .get("title")
+                        .and_then(serde_json::Value::as_str)
+                        .is_some_and(|title| !title.trim().is_empty())
+            })
+        })
 }

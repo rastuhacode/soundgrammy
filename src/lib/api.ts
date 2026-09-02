@@ -15,6 +15,8 @@ import type {
   LikedPlaylist,
   ListenEndReason,
   ListenEndResult,
+  LastFmPendingAction,
+  LastFmStatus,
   PlaylistDownloadProgress,
   PlaylistDownloadResult,
   PlaylistImportPreview,
@@ -43,6 +45,7 @@ export type TrackSource
     | {
       kind: 'stream'
       trackId: number
+      sessionId: string
       mimeType: string
       total: number
     }
@@ -89,12 +92,18 @@ export const api = {
     invoke<void>('set_fullscreen_display_awake', { enabled }),
 
   // ---- media ------------------------------------------------------------
-  getTrackSource: (trackId: number) =>
-    invoke<TrackSource>('get_track_source', { trackId }),
-  /** Inclusive byte range from an active stream or cached file (chunk-capped). */
-  readStreamRange: async (trackId: number, start: number, end: number) => {
+  getTrackSource: (trackId: number, sessionId: string) =>
+    invoke<TrackSource>('get_track_source', { trackId, sessionId }),
+  /** Inclusive byte range from an active playback stream (chunk-capped). */
+  readStreamRange: async (
+    trackId: number,
+    sessionId: string,
+    start: number,
+    end: number,
+  ) => {
     const bytes = await invoke<ArrayBuffer | number[]>('read_stream_range', {
       trackId,
+      sessionId,
       start,
       end,
     })
@@ -103,8 +112,24 @@ export const api = {
       : Uint8Array.from(bytes)
   },
   /** Prioritize downloading an inclusive byte range (seek-ahead gap fill). */
-  ensureStreamRange: (trackId: number, start: number, end: number) =>
-    invoke<void>('ensure_stream_range', { trackId, start, end }),
+  ensureStreamRange: (
+    trackId: number,
+    sessionId: string,
+    start: number,
+    end: number,
+  ) => invoke<void>('ensure_stream_range', { trackId, sessionId, start, end }),
+  /** Low-priority storage-only fill of the backend-validated ID3v2 prefix. */
+  backfillStreamId3: (
+    trackId: number,
+    sessionId: string,
+  ) => invoke<void>('backfill_stream_id3', {
+    trackId,
+    sessionId,
+  }),
+  downloadTrackForPlayback: (trackId: number, sessionId: string) =>
+    invoke<string>('download_track_for_playback', { trackId, sessionId }),
+  closeStreamSession: (sessionId: string) =>
+    invoke<void>('close_stream_session', { sessionId }),
   downloadTrack: (trackId: number) =>
     invoke<string>('download_track', { trackId }),
   prefetchTrack: (trackId: number) =>
@@ -222,6 +247,26 @@ export const api = {
   listListenStats: () => invoke<TrackListenStats[]>('list_listen_stats'),
   rebuildListenStats: () => invoke<void>('rebuild_listen_stats'),
   clearListenStatistics: () => invoke<void>('clear_listen_statistics'),
+
+  // ---- Last.fm ---------------------------------------------------------
+  getLastFmStatus: () => invoke<LastFmStatus>('get_lastfm_status'),
+  startLastFmAuth: () => invoke<LastFmStatus>('start_lastfm_auth'),
+  completeLastFmAuth: () => invoke<LastFmStatus>('complete_lastfm_auth'),
+  cancelLastFmAuth: () => invoke<LastFmStatus>('cancel_lastfm_auth'),
+  setLastFmEnabled: (enabled: boolean) =>
+    invoke<LastFmStatus>('set_lastfm_enabled', { enabled }),
+  disconnectLastFm: (pendingAction?: LastFmPendingAction) =>
+    invoke<LastFmStatus>('disconnect_lastfm', {
+      pendingAction: pendingAction ?? null,
+    }),
+  openLastFmProfile: () => invoke<void>('open_lastfm_profile'),
+  flushLastFmQueue: () => invoke<void>('flush_lastfm_queue'),
+  lastFmAttemptStarted: (attemptId: string, trackId: number) =>
+    invoke<void>('lastfm_attempt_started', { attemptId, trackId }),
+  lastFmAttemptQualified: (attemptId: string, listenedMs: number) =>
+    invoke<void>('lastfm_attempt_qualified', { attemptId, listenedMs }),
+  lastFmAttemptEnded: (attemptId: string) =>
+    invoke<void>('lastfm_attempt_ended', { attemptId }),
 }
 
 /** Turns an absolute cache path into an `asset:` URL for `<audio>`/`<img>`. */
@@ -274,6 +319,12 @@ export function onDownloadProgress(
   cb: (p: DownloadProgress) => void,
 ): Promise<UnlistenFn> {
   return listen<DownloadProgress>('download:progress', e => cb(e.payload))
+}
+
+export function onLastFmStatusChanged(
+  cb: (status: LastFmStatus) => void,
+): Promise<UnlistenFn> {
+  return listen<LastFmStatus>('lastfm:status_changed', event => cb(event.payload))
 }
 
 export function onPlaylistDownloadProgress(

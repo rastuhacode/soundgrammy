@@ -2,6 +2,7 @@ import { api, type DownloadProgress } from '@/lib/api'
 import {
   leadingPrefixEnd,
   nextAppendWindow,
+  rangesCoverWindow,
   shouldEndOfStream,
   shouldRebuildFromPrefix,
   type ByteRange,
@@ -9,6 +10,7 @@ import {
 import {
   completeMpegFrameByteLength,
   findMp3FrameOffset,
+  id3v2TagByteLength,
   parseMp3FrameAt,
   resolveFrameSyncOffset,
   resolveMpegPayloadStart,
@@ -18,8 +20,10 @@ import {
 export const MSE_APPEND_CHUNK = 128 * 1024
 
 export const MSE_BACK_BUFFER_SECONDS = 15
+export const MSE_BUFFER_AHEAD_SECONDS = 32
 const MSE_BACK_BUFFER_EVICT_MIN_SECONDS = 5
 const MSE_QUOTA_RETRY_ADVANCE_SECONDS = 5
+const METADATA_BACKFILL_RETRY_MS = 3_000
 
 /** Bytes before the seek target to search for a frame sync. */
 const SEEK_PROBE_BACK = 4 * 1024
@@ -107,9 +111,12 @@ export interface MseFailure {
 export interface AttachMseSessionOptions extends MseSessionCallbacks {
   audio: HTMLAudioElement
   trackId: number
+  sessionId: string
   mimeType: string
   total: number
   duration: number
+  /** Test/diagnostic override; production defaults to the bounded read-ahead. */
+  bufferAheadSeconds?: number
 }
 
 export interface MseSession {
@@ -164,6 +171,13 @@ function readBufferedRanges(
   catch {
     return []
   }
+}
+
+function bufferedAheadSeconds(buffer: SourceBuffer, currentTime: number): number {
+  const range = readBufferedRanges(buffer).find(
+    item => currentTime >= item.start - 0.05 && currentTime <= item.end + 0.05,
+  )
+  return range ? Math.max(0, range.end - currentTime) : 0
 }
 
 function bufferCoversTime(buffer: SourceBuffer, time: number): boolean {
@@ -230,9 +244,11 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
   const {
     audio,
     trackId,
+    sessionId,
     mimeType,
     total,
     duration,
+    bufferAheadSeconds: bufferAheadTarget = MSE_BUFFER_AHEAD_SECONDS,
     onAppendedOffset,
     onBufferedChanged,
     onError,
@@ -254,7 +270,11 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
   let quotaRetryAfterTime = 0
   // Skip ID3v2 (often multi‑MB album art) before the first MPEG frame.
   let mpegPayloadStart = 0
+  let metadataPrefixEnd = 0
   let mpegStartResolved = !isMpegMseMime(mimeType)
+  let metadataBackfillInFlight = false
+  let metadataBackfillFinished = false
+  let metadataBackfillRetryAt = 0
   // Library metadata can be 0; adopt element duration once it is known.
   let resolvedDuration = duration > 0 ? duration : 0
 
@@ -281,10 +301,14 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
     }
     try {
       const headerEnd = Math.min(total - 1, 9)
-      await api.ensureStreamRange(trackId, 0, headerEnd)
+      await api.ensureStreamRange(trackId, sessionId, 0, headerEnd)
       if (disposed) return false
-      const header = await api.readStreamRange(trackId, 0, headerEnd)
+      const header = await api.readStreamRange(trackId, sessionId, 0, headerEnd)
       if (disposed) return false
+      const id3TagLength = id3v2TagByteLength(header)
+      metadataPrefixEnd = id3TagLength !== null && id3TagLength < total
+        ? id3TagLength
+        : 0
       const id3Start = resolveMpegPayloadStart(header, total)
       let start = Math.max(0, Math.min(total - 1, id3Start))
 
@@ -293,9 +317,14 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
       const probeBack = Math.min(start, 4 * 1024)
       const probeAhead = Math.min(total - 1, start + 8 * 1024)
       const probeFrom = start - probeBack
-      await api.ensureStreamRange(trackId, probeFrom, probeAhead)
+      await api.ensureStreamRange(trackId, sessionId, probeFrom, probeAhead)
       if (disposed) return false
-      const probe = await api.readStreamRange(trackId, probeFrom, probeAhead)
+      const probe = await api.readStreamRange(
+        trackId,
+        sessionId,
+        probeFrom,
+        probeAhead,
+      )
       if (disposed) return false
 
       const relAtId3 = start - probeFrom
@@ -324,6 +353,7 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
         // MPEG frames are decoded.
         nextAppendOffset = mpegPayloadStart
       }
+      maybeStartMetadataBackfill()
       return true
     }
     catch (error) {
@@ -343,6 +373,39 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
     onError?.({ stage, cause })
   }
 
+  const playableBytesComplete = () => (
+    mpegStartResolved
+    && rangesCoverWindow(latestRanges, mpegPayloadStart, total)
+  )
+
+  const maybeStartMetadataBackfill = () => {
+    if (
+      disposed
+      || latestComplete
+      || metadataPrefixEnd <= 0
+      || metadataBackfillInFlight
+      || metadataBackfillFinished
+      || !playableBytesComplete()
+      || Date.now() < metadataBackfillRetryAt
+    ) {
+      return
+    }
+
+    metadataBackfillInFlight = true
+    void api.backfillStreamId3(
+      trackId,
+      sessionId,
+    ).then(() => {
+      metadataBackfillFinished = true
+    }).catch(() => {
+      if (!disposed) {
+        metadataBackfillRetryAt = Date.now() + METADATA_BACKFILL_RETRY_MS
+      }
+    }).finally(() => {
+      metadataBackfillInFlight = false
+    })
+  }
+
   const tryEndOfStream = () => {
     if (
       disposed
@@ -354,7 +417,10 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
     ) {
       return
     }
-    if (!shouldEndOfStream(nextAppendOffset, total, latestComplete)) return
+    const playableComplete = latestComplete || (
+      metadataPrefixEnd > 0 && playableBytesComplete()
+    )
+    if (!shouldEndOfStream(nextAppendOffset, total, playableComplete)) return
 
     // WebKit's endOfStream() clamps MediaSource.duration to SourceBuffer
     // buffered end. Doing that mid-track can seek currentTime onto the clamp
@@ -385,6 +451,7 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
 
   const onAudioTimeUpdate = () => {
     if (disposed) return
+    maybeStartMetadataBackfill()
     tryEndOfStream()
 
     if (!sourceBuffer || ended || discontinuityPending) return
@@ -392,6 +459,9 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
       ? Math.max(0, audio.currentTime)
       : 0
     if (quotaBlocked && current >= quotaRetryAfterTime) {
+      schedulePump()
+    }
+    else if (bufferedAheadSeconds(sourceBuffer, current) < bufferAheadTarget) {
       schedulePump()
     }
   }
@@ -492,7 +562,7 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
     end: number,
     generation: number,
   ): Promise<boolean> => {
-    const bytes = await api.readStreamRange(trackId, start, end)
+    const bytes = await api.readStreamRange(trackId, sessionId, start, end)
     if (
       disposed
       || generation !== seekGeneration
@@ -561,7 +631,7 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
       const end = Math.min(total - 1, nextAppendOffset + MSE_APPEND_CHUNK - 1)
       if (end < nextAppendOffset) break
 
-      await api.ensureStreamRange(trackId, nextAppendOffset, end)
+      await api.ensureStreamRange(trackId, sessionId, nextAppendOffset, end)
       if (disposed || generation !== seekGeneration) return
 
       const ok = await appendChunk(buffer, nextAppendOffset, end, generation)
@@ -695,7 +765,7 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
       )
       if (end < nextAppendOffset) break
 
-      await api.ensureStreamRange(trackId, nextAppendOffset, end)
+      await api.ensureStreamRange(trackId, sessionId, nextAppendOffset, end)
       if (disposed || generation !== seekGeneration) return
 
       const ok = await appendChunk(buffer, nextAppendOffset, end, generation)
@@ -735,10 +805,15 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
     const probeStart = Math.max(0, targetByte - SEEK_PROBE_BACK)
     const probeEnd = Math.min(total - 1, targetByte + MSE_APPEND_CHUNK - 1)
 
-    await api.ensureStreamRange(trackId, probeStart, probeEnd)
+    await api.ensureStreamRange(trackId, sessionId, probeStart, probeEnd)
     if (disposed || generation !== seekGeneration) return false
 
-    const probe = await api.readStreamRange(trackId, probeStart, probeEnd)
+    const probe = await api.readStreamRange(
+      trackId,
+      sessionId,
+      probeStart,
+      probeEnd,
+    )
     if (disposed || generation !== seekGeneration) return false
 
     const syncAbs = resolveFrameSyncOffset({
@@ -759,9 +834,14 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
       appendBytes = probe.subarray(relSync, appendEnd - probeStart + 1)
     }
     else {
-      await api.ensureStreamRange(trackId, appendStart, appendEnd)
+      await api.ensureStreamRange(trackId, sessionId, appendStart, appendEnd)
       if (disposed || generation !== seekGeneration) return false
-      appendBytes = await api.readStreamRange(trackId, appendStart, appendEnd)
+      appendBytes = await api.readStreamRange(
+        trackId,
+        sessionId,
+        appendStart,
+        appendEnd,
+      )
     }
     if (disposed || generation !== seekGeneration) return false
     if (appendBytes.byteLength === 0) return false
@@ -837,11 +917,23 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
     const currentPlaybackTime = Number.isFinite(audio.currentTime)
       ? Math.max(0, audio.currentTime)
       : 0
+    if (
+      bufferedAheadSeconds(sourceBuffer, currentPlaybackTime)
+      >= bufferAheadTarget
+    ) {
+      return
+    }
     if (nextAppendOffset >= total) {
       tryEndOfStream()
       return
     }
-    const removeEnd = backBufferRemovalEnd(sourceBuffer, currentPlaybackTime)
+    // WebKit can stall raw-MP3 playback after SourceBuffer.remove(), even when
+    // currentTime remains inside a healthy buffered range. Do not churn the
+    // back buffer during normal playback; only reclaim it after the browser
+    // has actually rejected an append with QuotaExceededError.
+    const removeEnd = quotaBlocked
+      ? backBufferRemovalEnd(sourceBuffer, currentPlaybackTime)
+      : null
     if (removeEnd !== null) {
       appendInFlight = true
       try {
@@ -896,11 +988,21 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
       // path snapshot and open; a hard fail here pauses via onError.
       let bytes: Uint8Array
       try {
-        bytes = await api.readStreamRange(trackId, window.start, window.end)
+        bytes = await api.readStreamRange(
+          trackId,
+          sessionId,
+          window.start,
+          window.end,
+        )
       }
       catch {
         if (disposed || discontinuityPending) return
-        bytes = await api.readStreamRange(trackId, window.start, window.end)
+        bytes = await api.readStreamRange(
+          trackId,
+          sessionId,
+          window.start,
+          window.end,
+        )
       }
       if (
         disposed
@@ -1104,9 +1206,16 @@ export function attachMseSession(options: AttachMseSessionOptions): MseSession {
   return {
     objectUrl,
     notifyProgress(progress: DownloadProgress) {
-      if (disposed || progress.trackId !== trackId) return
+      if (
+        disposed
+        || progress.trackId !== trackId
+        || progress.total !== total
+      ) {
+        return
+      }
       latestRanges = progress.ranges
       latestComplete = progress.complete
+      maybeStartMetadataBackfill()
       schedulePump()
     },
     getAppendedOffset: () => nextAppendOffset,

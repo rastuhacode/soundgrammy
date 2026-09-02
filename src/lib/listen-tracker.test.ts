@@ -6,6 +6,7 @@ import {
   clockOnPlay,
   createAttemptClock,
   effectiveListenedMs,
+  lastFmThresholdMs,
   setPendingListenEndReason,
   takePendingListenEndReason,
   trackDurationMs,
@@ -34,6 +35,21 @@ describe('effectiveListenedMs', () => {
 
   it('keeps raw L when duration unknown', () => {
     expect(effectiveListenedMs(12_000, null, 'stopped')).toBe(12_000)
+  })
+})
+
+describe('lastFmThresholdMs', () => {
+  it('rejects tracks of 30 seconds or less', () => {
+    expect(lastFmThresholdMs(30)).toBeNull()
+  })
+
+  it('qualifies a 31-second track at half and caps long tracks at four minutes', () => {
+    expect(lastFmThresholdMs(31)).toBe(15_500)
+    expect(lastFmThresholdMs(900)).toBe(240_000)
+  })
+
+  it('uses four minutes for unknown duration', () => {
+    expect(lastFmThresholdMs(null)).toBe(240_000)
   })
 })
 

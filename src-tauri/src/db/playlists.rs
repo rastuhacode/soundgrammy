@@ -38,7 +38,7 @@ impl Db {
             return Err(crate::error::AppError::msg("Playlist not found"));
         }
         let mut stmt = conn.prepare(
-            "SELECT t.id, t.tg_user_id, t.file_id, t.file_unique_id, t.title, t.performer, \
+            "SELECT t.id, t.tg_user_id, t.file_id, t.file_unique_id, t.title, t.title_source, t.performer, \
              t.duration, t.source, t.mime_type, t.file_size, t.created_at, t.mtproto_document \
              FROM playlist_tracks pt \
              JOIN tracks t ON t.id = pt.track_id \

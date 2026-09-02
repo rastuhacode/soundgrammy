@@ -23,6 +23,7 @@ import {
 import { startPlaylistJobsListeners } from '@/stores/playlist-jobs-store'
 import { useConnectivityStore } from '@/stores/connectivity-store'
 import { useTelegramReconnect } from '@/hooks/use-telegram-reconnect'
+import { useLastFmIntegration } from '@/hooks/use-lastfm-integration'
 import {
   SplitterGroup,
   SplitterPanel,
@@ -121,6 +122,7 @@ export default function App() {
     onUser: onReconnectUser,
     onConnected: onReconnectConnected,
   })
+  useLastFmIntegration(status === 'ready')
 
   const bootstrap = useCallback(async () => {
     try {

@@ -8,6 +8,8 @@ export function PlayPauseButton() {
   const setPlaying = usePlayerStore(state => state.setPlaying)
   const track = usePlayerStore(state => state.currentTrack)
 
+  const title = isPlaying ? 'Pause' : 'Play'
+
   function handleToggle() {
     if (!track) return
     setPlaying(!isPlaying)
@@ -16,7 +18,8 @@ export function PlayPauseButton() {
   return (
     <Button
       onClick={handleToggle}
-      aria-label={isPlaying ? 'Pause' : 'Play'}
+      aria-label={title}
+      title={title}
       className={
         cn(
           'flex items-center justify-center',

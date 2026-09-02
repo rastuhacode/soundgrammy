@@ -3,9 +3,43 @@ import {
   appendedEndTime,
   leadingPrefixEnd,
   nextAppendWindow,
+  rangesCoverWindow,
   shouldEndOfStream,
   shouldRebuildFromPrefix,
 } from './mse-append-queue'
+
+describe('rangesCoverWindow', () => {
+  it('accepts exact, overlapping, adjacent, and unsorted coverage', () => {
+    expect(rangesCoverWindow([{ start: 100, end: 500 }], 100, 500)).toBe(true)
+    expect(rangesCoverWindow([
+      { start: 300, end: 500 },
+      { start: 50, end: 200 },
+      { start: 180, end: 320 },
+    ], 100, 500)).toBe(true)
+    expect(rangesCoverWindow([
+      { start: 200, end: 500 },
+      { start: 0, end: 200 },
+    ], 100, 500)).toBe(true)
+  })
+
+  it('rejects gaps even when the beginning and EOF are present', () => {
+    expect(rangesCoverWindow([
+      { start: 0, end: 200 },
+      { start: 201, end: 500 },
+    ], 100, 500)).toBe(false)
+    expect(rangesCoverWindow([
+      { start: 0, end: 150 },
+      { start: 450, end: 500 },
+    ], 100, 500)).toBe(false)
+  })
+
+  it('ignores empty ranges and validates the requested window', () => {
+    expect(rangesCoverWindow([{ start: 100, end: 100 }], 100, 200)).toBe(false)
+    expect(rangesCoverWindow([], 100, 100)).toBe(true)
+    expect(rangesCoverWindow([], 200, 100)).toBe(false)
+    expect(rangesCoverWindow([], -1, 100)).toBe(false)
+  })
+})
 
 describe('leadingPrefixEnd', () => {
   it('returns the contiguous prefix ending at byte 0', () => {

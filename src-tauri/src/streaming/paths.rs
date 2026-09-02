@@ -6,6 +6,18 @@ pub(super) fn partial_path(destination: &Path) -> PathBuf {
     PathBuf::from(value)
 }
 
+pub(super) fn partial_metadata_path(partial: &Path) -> PathBuf {
+    let mut value = partial.as_os_str().to_owned();
+    value.push(".meta");
+    PathBuf::from(value)
+}
+
+pub(super) fn partial_metadata_temp_path(partial: &Path) -> PathBuf {
+    let mut value = partial.as_os_str().to_owned();
+    value.push(".meta.tmp");
+    PathBuf::from(value)
+}
+
 pub(super) fn complete_path(destination: &Path) -> PathBuf {
     let mut value = destination.as_os_str().to_owned();
     value.push(".complete");

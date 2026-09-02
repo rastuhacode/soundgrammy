@@ -3,6 +3,7 @@
 //! Chunk fetches go through [`Client::invoke_on_dc`] with `upload.getFile`
 
 use std::path::Path;
+use std::sync::atomic::AtomicBool;
 
 use ferogram::cdn_download::{CdnChunkResult, CdnDownloader, CDN_CHUNK_SIZE};
 use ferogram::tl;
@@ -12,8 +13,16 @@ use crate::db::Track;
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 use crate::telegram::document::{parse_document, StoredDocument};
+use crate::telegram::media_requests::{MediaPriority, MediaRequestCoordinator};
 
 const CHUNK_SIZE: i32 = 128 * 1024;
+
+#[derive(Clone, Copy)]
+struct MediaRequestContext<'a> {
+    coordinator: &'a MediaRequestCoordinator,
+    priority: MediaPriority,
+    active: Option<&'a AtomicBool>,
+}
 
 pub(crate) fn is_file_reference_error(err: &InvocationError) -> bool {
     matches!(err, InvocationError::Rpc(e) if e.name.contains("FILE_REFERENCE"))
@@ -30,8 +39,10 @@ pub fn stored_document(track: &Track) -> AppResult<StoredDocument> {
 /// Downloads one aligned 128 KiB streaming part via pooled `upload.getFile`.
 pub(crate) async fn download_chunk(
     client: &Client,
+    coordinator: &MediaRequestCoordinator,
     document: &StoredDocument,
     chunk_index: usize,
+    active: Option<&AtomicBool>,
 ) -> Result<Vec<u8>, InvocationError> {
     let chunk_index = i64::try_from(chunk_index).map_err(|_| {
         InvocationError::Io(std::io::Error::new(
@@ -42,6 +53,15 @@ pub(crate) async fn download_chunk(
     let offset = chunk_index * i64::from(CHUNK_SIZE);
     get_file_bytes(
         client,
+        MediaRequestContext {
+            coordinator,
+            priority: if active.is_some() {
+                MediaPriority::Playback
+            } else {
+                MediaPriority::Background
+            },
+            active,
+        },
         document.dc_id,
         document.input_location(),
         offset,
@@ -72,7 +92,18 @@ pub async fn download_thumbnail(
     let part = with_part_extension(dest);
     let client = state.client().await?;
 
-    match download_location_bytes(&client, doc.dc_id, location.clone()).await {
+    match download_location_bytes(
+        &client,
+        MediaRequestContext {
+            coordinator: &state.media_requests,
+            priority: MediaPriority::Background,
+            active: None,
+        },
+        doc.dc_id,
+        location.clone(),
+    )
+    .await
+    {
         Ok(bytes) => {
             tokio::fs::write(&part, &bytes).await?;
         }
@@ -82,7 +113,17 @@ pub async fn download_thumbnail(
                 return Ok(false);
             };
             let client = state.client().await?;
-            let bytes = download_location_bytes(&client, refreshed.dc_id, location).await?;
+            let bytes = download_location_bytes(
+                &client,
+                MediaRequestContext {
+                    coordinator: &state.media_requests,
+                    priority: MediaPriority::Background,
+                    active: None,
+                },
+                refreshed.dc_id,
+                location,
+            )
+            .await?;
             tokio::fs::write(&part, &bytes).await?;
         }
         Err(err) => return Err(err.into()),
@@ -134,12 +175,23 @@ pub(crate) async fn refresh_file_reference(
 /// `dc_id` must be the file's real DC (e.g. `UserProfilePhoto.dc_id`). Do not
 /// pass `0`: [`Client::invoke_on_dc`] does not map 0 to the home DC.
 pub async fn download_location(
-    client: &Client,
+    state: &AppState,
     dc_id: i32,
     location: tl::enums::InputFileLocation,
     dest: &Path,
 ) -> AppResult<()> {
-    let bytes = download_location_bytes(client, dc_id, location).await?;
+    let client = state.client().await?;
+    let bytes = download_location_bytes(
+        &client,
+        MediaRequestContext {
+            coordinator: &state.media_requests,
+            priority: MediaPriority::Background,
+            active: None,
+        },
+        dc_id,
+        location,
+    )
+    .await?;
     let part = with_part_extension(dest);
     tokio::fs::write(&part, &bytes).await?;
     tokio::fs::rename(&part, dest).await?;
@@ -148,13 +200,15 @@ pub async fn download_location(
 
 async fn download_location_bytes(
     client: &Client,
+    context: MediaRequestContext<'_>,
     dc_id: i32,
     location: tl::enums::InputFileLocation,
 ) -> Result<Vec<u8>, InvocationError> {
     let mut offset = 0i64;
     let mut bytes = Vec::new();
     loop {
-        let chunk = get_file_bytes(client, dc_id, location.clone(), offset, CHUNK_SIZE).await?;
+        let chunk =
+            get_file_bytes(client, context, dc_id, location.clone(), offset, CHUNK_SIZE).await?;
         let n = chunk.len() as i32;
         bytes.extend_from_slice(&chunk);
         if n < CHUNK_SIZE {
@@ -168,6 +222,7 @@ async fn download_location_bytes(
 /// One `upload.getFile` on the pooled DC connection (with FILE_MIGRATE + CDN follow).
 async fn get_file_bytes(
     client: &Client,
+    context: MediaRequestContext<'_>,
     mut dc_id: i32,
     location: tl::enums::InputFileLocation,
     offset: i64,
@@ -182,10 +237,25 @@ async fn get_file_bytes(
             offset,
             limit,
         };
-        match client.invoke_on_dc(dc_id, &req).await {
+        let permit = context
+            .coordinator
+            .acquire(dc_id, context.priority, context.active)
+            .await?;
+        let result = client.invoke_on_dc(dc_id, &req).await;
+        if let Err(error) = &result {
+            if context.coordinator.observe_flood_wait(dc_id, error).await {
+                tracing::warn!(
+                    "Telegram media DC{dc_id} requested a flood wait ({error}); delaying media requests"
+                );
+                drop(permit);
+                continue;
+            }
+        }
+        drop(permit);
+        match result {
             Ok(tl::enums::upload::File::File(f)) => return Ok(f.bytes),
             Ok(tl::enums::upload::File::CdnRedirect(redir)) => {
-                return get_cdn_file_bytes(client, dc_id, redir, offset, limit).await;
+                return get_cdn_file_bytes(client, context, dc_id, redir, offset, limit).await;
             }
             Err(InvocationError::Rpc(rpc))
                 if rpc.name.contains("FILE_MIGRATE")
@@ -205,6 +275,7 @@ async fn get_file_bytes(
 /// Fetch one chunk after `upload.fileCdnRedirect` (AES-CTR CDN DC path).
 async fn get_cdn_file_bytes(
     client: &Client,
+    context: MediaRequestContext<'_>,
     media_dc_id: i32,
     redir: tl::types::upload::FileCdnRedirect,
     offset: i64,
@@ -244,20 +315,85 @@ async fn get_cdn_file_bytes(
     .await?;
 
     loop {
-        match downloader.download_chunk_raw(offset, cdn_limit).await? {
+        let permit = context
+            .coordinator
+            .acquire(redir.dc_id, context.priority, context.active)
+            .await?;
+        let result = downloader.download_chunk_raw(offset, cdn_limit).await;
+        if let Err(error) = &result {
+            if context
+                .coordinator
+                .observe_flood_wait(redir.dc_id, error)
+                .await
+            {
+                tracing::warn!(
+                    "Telegram CDN DC{} requested a flood wait ({error}); delaying media requests",
+                    redir.dc_id,
+                );
+                drop(permit);
+                continue;
+            }
+        }
+        drop(permit);
+        let chunk = match result {
+            Ok(chunk) => chunk,
+            Err(error) => return Err(error),
+        };
+        match chunk {
             CdnChunkResult::Data(bytes) => return Ok(bytes),
             CdnChunkResult::ReuploadNeeded(request_token) => {
-                client
-                    .invoke_on_dc(
-                        media_dc_id,
-                        &tl::functions::upload::ReuploadCdnFile {
-                            file_token: redir.file_token.clone(),
-                            request_token,
-                        },
-                    )
-                    .await?;
+                reupload_cdn_file(
+                    client,
+                    context,
+                    media_dc_id,
+                    redir.file_token.clone(),
+                    request_token,
+                )
+                .await?;
                 // Retry the same offset after reupload.
             }
+        }
+    }
+}
+
+async fn reupload_cdn_file(
+    client: &Client,
+    context: MediaRequestContext<'_>,
+    media_dc_id: i32,
+    file_token: Vec<u8>,
+    request_token: Vec<u8>,
+) -> Result<(), InvocationError> {
+    loop {
+        let permit = context
+            .coordinator
+            .acquire(media_dc_id, context.priority, context.active)
+            .await?;
+        let result = client
+            .invoke_on_dc(
+                media_dc_id,
+                &tl::functions::upload::ReuploadCdnFile {
+                    file_token: file_token.clone(),
+                    request_token: request_token.clone(),
+                },
+            )
+            .await;
+        if let Err(error) = &result {
+            if context
+                .coordinator
+                .observe_flood_wait(media_dc_id, error)
+                .await
+            {
+                tracing::warn!(
+                    "Telegram media DC{media_dc_id} requested a flood wait during CDN reupload ({error})"
+                );
+                drop(permit);
+                continue;
+            }
+        }
+        drop(permit);
+        match result {
+            Ok(_) => return Ok(()),
+            Err(error) => return Err(error),
         }
     }
 }

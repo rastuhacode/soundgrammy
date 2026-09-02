@@ -63,15 +63,21 @@ describe('canSyncMediaPlaybackState', () => {
 })
 
 describe('registerMediaSessionActions', () => {
+  const actions = [
+    'nexttrack',
+    'pause',
+    'play',
+    'previoustrack',
+    'seekto',
+    'stop',
+  ] as const
   const handlers = {
-    play: () => {},
-    pause: () => {},
-    stop: () => {},
-    seekto: () => {},
-    seekforward: () => {},
-    seekbackward: () => {},
     nexttrack: () => {},
+    pause: () => {},
+    play: () => {},
     previoustrack: () => {},
+    seekto: () => {},
+    stop: () => {},
   }
 
   it('registers native playback handlers and removes them on cleanup', () => {
@@ -87,11 +93,11 @@ describe('registerMediaSessionActions', () => {
       setActionHandler: (action, handler) => calls.push({ action, handler }),
     }, handlers)
 
-    expect(calls.map(call => call.action)).toEqual(Object.keys(handlers))
+    expect(calls.map(call => call.action)).toEqual(actions)
 
     cleanup()
-    expect(calls.slice(8)).toEqual(
-      Object.keys(handlers).map(action => ({ action, handler: null })),
+    expect(calls.slice(actions.length)).toEqual(
+      actions.map(action => ({ action, handler: null })),
     )
   })
 
@@ -108,7 +114,7 @@ describe('registerMediaSessionActions', () => {
       },
     }, handlers)
 
-    expect(registered).toEqual(Object.keys(handlers).filter(
+    expect(registered).toEqual(actions.filter(
       action => action !== 'previoustrack',
     ))
     expect(cleanup).not.toThrow()

@@ -21,6 +21,8 @@ interface SidebarPlaylistThumbnailProps {
   name: string
 }
 
+const THUMBNAIL_SIZE = 'size-5'
+
 const variantStyles: Record<
   SidebarPlaylistThumbnailVariant,
   { className: string, icon: React.ReactNode }
@@ -28,27 +30,27 @@ const variantStyles: Record<
   [ALL_TRACKS_PLAYLIST_ID]: {
     className:
       'bg-gradient-to-br from-sky-500 via-blue-600 to-indigo-700 text-white',
-    icon: <ListMusic className="size-4" strokeWidth={2.25} />,
+    icon: <ListMusic className={cn('', THUMBNAIL_SIZE)} strokeWidth={2.25} />,
   },
   [LIKED_PLAYLIST_ID]: {
     className:
       'bg-gradient-to-br from-fuchsia-500 via-purple-600 to-indigo-700 text-white',
-    icon: <Heart className="size-4 fill-current" strokeWidth={0} />,
+    icon: <Heart className={cn('fill-current', THUMBNAIL_SIZE)} strokeWidth={0} />,
   },
   [POPULAR_PLAYLIST_ID]: {
     className:
       'bg-gradient-to-br from-amber-500 via-orange-600 to-rose-700 text-white',
-    icon: <TrendingUp className="size-4" strokeWidth={2.25} />,
+    icon: <TrendingUp className={cn('', THUMBNAIL_SIZE)} strokeWidth={2.25} />,
   },
   [RECENT_PLAYLIST_ID]: {
     className:
       'bg-gradient-to-br from-emerald-500 via-teal-600 to-cyan-700 text-white',
-    icon: <Clock className="size-4" strokeWidth={2.25} />,
+    icon: <Clock className={cn('', THUMBNAIL_SIZE)} strokeWidth={2.25} />,
   },
   custom: {
     className:
       'bg-gradient-to-br from-slate-500 via-slate-600 to-slate-800 text-white/90',
-    icon: <Music className="size-4" strokeWidth={2.25} />,
+    icon: <Music className={cn('', THUMBNAIL_SIZE)} strokeWidth={2.25} />,
   },
 }
 
@@ -65,7 +67,7 @@ export function SidebarPlaylistThumbnail({
       role="img"
       aria-label={`${name} cover`}
       className={cn(
-        'relative size-12 shrink-0 overflow-hidden rounded-sm shadow-sm',
+        'relative size-9 shrink-0 overflow-hidden rounded-sm shadow-sm',
         coverTrackIds.length === 0 && style.className,
       )}
     >

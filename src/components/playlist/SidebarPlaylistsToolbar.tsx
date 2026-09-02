@@ -1,4 +1,4 @@
-import { Check, List, Search, X } from 'lucide-react'
+import { Check, Funnel, FunnelX, Search, X } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
@@ -44,23 +44,22 @@ export function SidebarPlaylistsToolbar({
   onUnhide,
 }: SidebarPlaylistsToolbarProps) {
   const hasActiveFilters = search.length > 0
-    || sortMode !== 'recency'
+    || sortMode !== 'custom'
     || sortReversed
+  const title = 'Playlists filters'
 
   return (
     <Popover>
       <PopoverTrigger
         render={(
           <Button
-            aria-label="Search, filter, and sort playlists"
+            aria-label={title}
+            title={title}
             variant="ghost"
             size="icon-sm"
-            className={cn(
-              'text-muted-foreground hover:text-foreground',
-              hasActiveFilters && 'text-foreground',
-            )}
+            className="text-muted-foreground hover:text-foreground"
           >
-            <List />
+            { hasActiveFilters ? <FunnelX /> : <Funnel />}
           </Button>
         )}
       />

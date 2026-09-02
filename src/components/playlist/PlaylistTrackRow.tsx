@@ -43,6 +43,8 @@ export function PlaylistTrackRowView({
   onToggleSelected,
 }: PlaylistTrackRowViewProps) {
   const showEqualizer = isActive && isPlaying
+  const trackTitle = track.title ?? 'Unknown Title'
+  const trackArtist = track.performer ?? 'Unknown Artist'
 
   return (
     <div
@@ -135,14 +137,15 @@ export function PlaylistTrackRowView({
             'max-w-full truncate text-sm font-medium',
             isActive ? 'text-primary' : 'text-foreground',
           )}
+          title={trackTitle}
         >
-          {track.title ?? 'Unknown Title'}
+          {trackTitle}
         </span>
       </div>
 
       <div role="cell" className="min-w-0">
-        <span className="block max-w-full truncate text-sm text-muted-foreground">
-          {track.performer ?? 'Unknown Artist'}
+        <span className="block max-w-full truncate text-sm text-muted-foreground" title={trackArtist}>
+          {trackArtist}
         </span>
       </div>
 

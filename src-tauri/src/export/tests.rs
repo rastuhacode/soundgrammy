@@ -10,6 +10,7 @@ fn sample_track(id: i64, title: Option<&str>, performer: Option<&str>) -> Track 
         file_id: format!("f{id}"),
         file_unique_id: format!("u{id}"),
         title: title.map(str::to_string),
+        title_source: "telegram_audio".into(),
         performer: performer.map(str::to_string),
         duration: Some(120),
         source: "mtproto".into(),

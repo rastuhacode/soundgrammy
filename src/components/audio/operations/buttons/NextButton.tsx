@@ -5,10 +5,13 @@ import { usePlayerStore } from '@/stores/player-store'
 export function NextButton() {
   const playNext = usePlayerStore(state => state.playNext)
 
+  const title = 'Next track'
+
   return (
     <button
       type="button"
-      aria-label="Next track"
+      aria-label={title}
+      title={title}
       className={
         cn(
           'flex items-center justify-center',

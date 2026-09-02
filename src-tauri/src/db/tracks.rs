@@ -7,7 +7,7 @@ impl Db {
     pub fn tracks_by_user(&self, tg_user_id: i64) -> AppResult<Vec<Track>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, tg_user_id, file_id, file_unique_id, title, performer, duration, \
+            "SELECT id, tg_user_id, file_id, file_unique_id, title, title_source, performer, duration, \
              source, mime_type, file_size, created_at, mtproto_document \
              FROM tracks WHERE tg_user_id = ?1 \
              ORDER BY track_position ASC, created_at DESC, id DESC",
@@ -22,7 +22,7 @@ impl Db {
         let conn = self.conn.lock().unwrap();
         let track = conn
             .query_row(
-                "SELECT id, tg_user_id, file_id, file_unique_id, title, performer, duration, \
+                "SELECT id, tg_user_id, file_id, file_unique_id, title, title_source, performer, duration, \
                  source, mime_type, file_size, created_at, mtproto_document \
                  FROM tracks WHERE id = ?1 AND tg_user_id = ?2",
                 params![id, tg_user_id],
@@ -66,11 +66,11 @@ impl Db {
     pub fn upsert_track(&self, t: &UpsertTrack) -> AppResult<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
-            "INSERT INTO tracks (tg_user_id, file_id, file_unique_id, title, performer, duration, \
+            "INSERT INTO tracks (tg_user_id, file_id, file_unique_id, title, title_source, performer, duration, \
              source, mime_type, file_size, track_position, mtproto_document) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'mtproto', ?7, ?8, ?9, ?10) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'mtproto', ?8, ?9, ?10, ?11) \
              ON CONFLICT (file_unique_id) DO UPDATE SET \
-               file_id = excluded.file_id, title = excluded.title, performer = excluded.performer, \
+               file_id = excluded.file_id, title = excluded.title, title_source = excluded.title_source, performer = excluded.performer, \
                duration = excluded.duration, mime_type = excluded.mime_type, \
                file_size = excluded.file_size, track_position = excluded.track_position, \
                mtproto_document = excluded.mtproto_document",
@@ -79,6 +79,7 @@ impl Db {
                 t.file_id,
                 t.file_unique_id,
                 t.title,
+                t.title_source,
                 t.performer,
                 t.duration,
                 t.mime_type,
@@ -147,12 +148,13 @@ pub(super) fn map_track(row: &rusqlite::Row<'_>) -> rusqlite::Result<Track> {
         file_id: row.get(2)?,
         file_unique_id: row.get(3)?,
         title: row.get(4)?,
-        performer: row.get(5)?,
-        duration: row.get(6)?,
-        source: row.get(7)?,
-        mime_type: row.get(8)?,
-        file_size: row.get(9)?,
-        created_at: row.get(10)?,
-        mtproto_document: row.get(11)?,
+        title_source: row.get(5)?,
+        performer: row.get(6)?,
+        duration: row.get(7)?,
+        source: row.get(8)?,
+        mime_type: row.get(9)?,
+        file_size: row.get(10)?,
+        created_at: row.get(11)?,
+        mtproto_document: row.get(12)?,
     })
 }

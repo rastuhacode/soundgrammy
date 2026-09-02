@@ -134,6 +134,7 @@ async fn sync_inner(state: &AppState, app: &AppHandle) -> AppResult<SyncResult> 
             file_id: parsed.file_id,
             file_unique_id: parsed.file_unique_id,
             title: parsed.title,
+            title_source: parsed.title_source,
             performer: parsed.performer,
             duration: parsed.duration,
             mime_type: Some(parsed.mime_type),

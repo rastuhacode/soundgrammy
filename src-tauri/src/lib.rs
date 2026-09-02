@@ -8,6 +8,7 @@ mod db;
 mod display_wake;
 mod error;
 mod export;
+mod lastfm;
 mod listen_stats;
 mod playlist_recipe;
 mod proxy_settings;
@@ -55,6 +56,9 @@ pub fn run() {
                 let _ = cache::enforce_ttl(&state, &handle).await;
             });
 
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(lastfm::LastFmService::worker_loop(handle));
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -76,6 +80,9 @@ pub fn run() {
             commands::get_track_bounce_profile,
             commands::read_stream_range,
             commands::ensure_stream_range,
+            commands::backfill_stream_id3,
+            commands::download_track_for_playback,
+            commands::close_stream_session,
             commands::download_track,
             commands::prefetch_track,
             commands::cache_track,
@@ -112,10 +119,43 @@ pub fn run() {
             commands::listen_stats::list_listen_stats,
             commands::listen_stats::rebuild_listen_stats,
             commands::listen_stats::clear_listen_statistics,
+            commands::lastfm::get_lastfm_status,
+            commands::lastfm::start_lastfm_auth,
+            commands::lastfm::complete_lastfm_auth,
+            commands::lastfm::cancel_lastfm_auth,
+            commands::lastfm::set_lastfm_enabled,
+            commands::lastfm::disconnect_lastfm,
+            commands::lastfm::open_lastfm_profile,
+            commands::lastfm::flush_lastfm_queue,
+            commands::lastfm::lastfm_attempt_started,
+            commands::lastfm::lastfm_attempt_qualified,
+            commands::lastfm::lastfm_attempt_ended,
             commands::get_proxy_settings,
             commands::set_proxy_settings,
             commands::parse_proxy_link,
         ])
         .run(tauri::generate_context!())
         .expect("error while running SoundGrammy");
+}
+
+#[cfg(test)]
+mod build_flavor_tests {
+    use serde_json::Value;
+
+    #[test]
+    fn development_build_uses_an_isolated_app_identity() {
+        let release: Value = serde_json::from_str(include_str!("../tauri.conf.json")).unwrap();
+        let development: Value =
+            serde_json::from_str(include_str!("../tauri.dev.conf.json")).unwrap();
+        let package: Value = serde_json::from_str(include_str!("../../package.json")).unwrap();
+
+        assert_eq!(release["identifier"], "com.soundgrammy.app");
+        assert_eq!(development["identifier"], "com.soundgrammy.app.dev");
+        assert_ne!(release["identifier"], development["identifier"]);
+        assert_eq!(development["productName"], "SoundGrammy Dev");
+        assert_eq!(
+            package["scripts"]["tauri:dev"],
+            "tauri dev --config src-tauri/tauri.dev.conf.json"
+        );
+    }
 }

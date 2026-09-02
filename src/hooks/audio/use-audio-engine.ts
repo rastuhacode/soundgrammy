@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react'
+import { useCallback, useState, type SyntheticEvent } from 'react'
 import { useCachedThumbnail } from '@/hooks/use-cached-thumbnail'
 import { usePlayerStore } from '@/stores/player-store'
 import { useRepeatStore } from '@/stores/repeat-store'
@@ -112,10 +112,13 @@ export function useAudioEngine() {
     playAudio,
   })
 
-  const { notifyCompleted } = useListenTracker({
+  const {
+    notifyPlaying,
+    notifyActivityStopped,
+    notifyCompleted,
+  } = useListenTracker({
     trackId: track?.id ?? null,
     durationSeconds: track?.duration,
-    isPlaying,
   })
 
   useAudioControls({
@@ -197,9 +200,19 @@ export function useAudioEngine() {
       onCanPlay,
       onTimeUpdate,
       onDurationChange,
-      onPause: onMediaPause,
+      onPlaying: notifyPlaying,
+      onWaiting: notifyActivityStopped,
+      onStalled: notifyActivityStopped,
+      onSeeking: notifyActivityStopped,
+      onPause: (event: SyntheticEvent<HTMLAudioElement>) => {
+        notifyActivityStopped()
+        onMediaPause(event)
+      },
       onEnded: handleTrackEnded,
-      onError: onMediaError,
+      onError: () => {
+        notifyActivityStopped()
+        onMediaError()
+      },
     },
     currentTime,
     duration,
