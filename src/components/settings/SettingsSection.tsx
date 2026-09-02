@@ -21,7 +21,7 @@ export function SettingsSection({
 
   return (
     <Collapsible open={open} onOpenChange={setOpen}>
-      <CollapsibleTrigger className="flex h-auto w-full items-center justify-between rounded-md px-2 py-2.5 text-sm font-medium hover:bg-muted/40">
+      <CollapsibleTrigger className="flex h-auto w-full items-center justify-between rounded-md px-2 py-2.5 text-sm font-medium hover:bg-sidebar-accent/80 transition-colors">
         {title}
         <ChevronDown
           className={`size-4 text-muted-foreground transition-transform ${open ? 'rotate-180' : ''}`}

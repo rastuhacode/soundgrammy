@@ -145,8 +145,8 @@ export function SidebarDrawer({ onLogout }: SidebarDrawerProps) {
         />
 
         <DrawerContent className="rounded-none border-y-0 border-l-0 bg-sidebar text-sidebar-foreground w-80 [--drawer-inset:0px]">
-          <DrawerHeader className="md:gap-4 gap-4 border-b border-sidebar-border p-4 text-left flex-row items-center">
-            <Avatar className="size-14 after:border-0">
+          <DrawerHeader className="md:gap-2 gap-2 p-4 text-left flex-row items-center">
+            <Avatar className="size-12 after:border-0">
               {avatarSrc
                 ? <AvatarImage src={avatarSrc} alt={displayName} />
                 : null}
@@ -154,11 +154,11 @@ export function SidebarDrawer({ onLogout }: SidebarDrawerProps) {
                 {initials}
               </AvatarFallback>
             </Avatar>
-            <div className="flex flex-col">
-              <DrawerTitle className="truncate text-lg font-semibold">
+            <div className="flex flex-col gap-0.5">
+              <DrawerTitle className="truncate">
                 {displayName}
               </DrawerTitle>
-              <DrawerDescription className="mt-0.5 truncate text-sm text-primary">
+              <DrawerDescription className="truncate text-xs text-primary">
                 {session.username ? `@${session.username}` : 'Telegram account'}
               </DrawerDescription>
             </div>
