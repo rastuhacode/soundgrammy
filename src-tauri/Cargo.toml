@@ -24,7 +24,6 @@ dotenvy = "0.15"
 tauri = { version = "2", features = ["protocol-asset"] }
 tauri-plugin-opener = "2"
 tauri-plugin-dialog = "2"
-keepawake = "=0.6.1"
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
@@ -60,6 +59,9 @@ dotenvy = "0.15"
 rustfft = "6.4"
 ruopus = "0.1.2"
 symphonia = { version = "0.6", default-features = false, features = ["aac", "alac", "flac", "isomp4", "mkv", "ogg", "pcm", "vorbis", "wav", "mpa"] }
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+keepawake = "=0.6.1"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["test-util"] }

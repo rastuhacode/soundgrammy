@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { toDataURL } from 'qrcode'
 import { api } from '@/lib/api'
+import { loginErrorMessage } from '@/lib/auth/login-error'
 import type { AuthUser, QrOutcome } from '@/types'
 
 export type LoginStep = 'qr' | 'phone' | 'code' | 'password' | 'qr-password'
@@ -9,10 +10,6 @@ const POLL_INTERVAL_MS = 2000
 const MAX_CONSECUTIVE_POLL_FAILURES = 3
 /** Refresh when the token is within this many seconds of expiry. */
 const EXPIRY_SLACK_SECONDS = 5
-
-function errorMessage(error: unknown, fallback: string): string {
-  return error instanceof Error ? error.message : fallback
-}
 
 function isExpiredOrNear(expires: number, nowSeconds = Date.now() / 1000): boolean {
   return expires <= nowSeconds + EXPIRY_SLACK_SECONDS
@@ -23,8 +20,6 @@ export function useMtprotoLogin(onAuthenticated: (user: AuthUser) => void) {
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
   const [qrLoading, setQrLoading] = useState(false)
   const [phoneNumber, setPhoneNumber] = useState('')
-  const [code, setCode] = useState('')
-  const [password, setPassword] = useState('')
   const [passwordHint, setPasswordHint] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
@@ -76,7 +71,6 @@ export function useMtprotoLogin(onAuthenticated: (user: AuthUser) => void) {
     }
 
     if (outcome.status === 'passwordRequired') {
-      setPassword('')
       setPasswordHint(outcome.hint)
       setStep('qr-password')
       return 'done'
@@ -86,7 +80,7 @@ export function useMtprotoLogin(onAuthenticated: (user: AuthUser) => void) {
     return 'done'
   }, [renderQr])
 
-  const startQrLogin = useCallback(async () => {
+  const beginQrLogin = useCallback(async (restart: boolean) => {
     const generation = ++generationRef.current
     setError(null)
     setQrLoading(true)
@@ -98,7 +92,7 @@ export function useMtprotoLogin(onAuthenticated: (user: AuthUser) => void) {
     setStep('qr')
 
     try {
-      const outcome = await api.qrStart()
+      const outcome = restart ? await api.qrRestart() : await api.qrStart()
       if (generation !== generationRef.current) return
 
       if (outcome.status === 'waiting' && isExpiredOrNear(outcome.expires)) {
@@ -113,7 +107,7 @@ export function useMtprotoLogin(onAuthenticated: (user: AuthUser) => void) {
     }
     catch (err) {
       if (generation !== generationRef.current) return
-      setError(errorMessage(err, 'Failed to start QR login'))
+      setError(loginErrorMessage(err, 'Failed to start QR login'))
     }
     finally {
       if (generation === generationRef.current) {
@@ -122,6 +116,9 @@ export function useMtprotoLogin(onAuthenticated: (user: AuthUser) => void) {
     }
   }, [applyQrOutcome])
 
+  const startQrLogin = useCallback(() => beginQrLogin(false), [beginQrLogin])
+  const restartQrLogin = useCallback(() => beginQrLogin(true), [beginQrLogin])
+
   useEffect(() => {
     // Kick off QR on mount; async progress writes live auth state, not derived render state.
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -129,9 +126,9 @@ export function useMtprotoLogin(onAuthenticated: (user: AuthUser) => void) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  // Poll while the QR step is visible. Deps intentionally exclude renderQr churn.
+  // Poll only after the initial/restart request has produced a QR token.
   useEffect(() => {
-    if (step !== 'qr') return
+    if (step !== 'qr' || qrLoading) return
     let cancelled = false
 
     const tick = async () => {
@@ -175,13 +172,11 @@ export function useMtprotoLogin(onAuthenticated: (user: AuthUser) => void) {
       cancelled = true
       clearInterval(interval)
     }
-  }, [step, applyQrOutcome, startQrLogin])
+  }, [step, qrLoading, applyQrOutcome, startQrLogin])
 
   const goToPhone = useCallback(() => {
     generationRef.current += 1
     setError(null)
-    setPassword('')
-    setCode('')
     setStep('phone')
   }, [])
 
@@ -192,10 +187,8 @@ export function useMtprotoLogin(onAuthenticated: (user: AuthUser) => void) {
   }, [goToPhone])
 
   const goToQr = useCallback(() => {
-    setPassword('')
-    setCode('')
-    startQrLogin()
-  }, [startQrLogin])
+    restartQrLogin()
+  }, [restartQrLogin])
 
   const setPhoneNumberValue = useCallback((value: string) => {
     setError(null)
@@ -205,14 +198,8 @@ export function useMtprotoLogin(onAuthenticated: (user: AuthUser) => void) {
     setPhoneNumber(value)
   }, [])
 
-  const setCodeValue = useCallback((value: string) => {
+  const clearError = useCallback(() => {
     setError(null)
-    setCode(value)
-  }, [])
-
-  const setPasswordValue = useCallback((value: string) => {
-    setError(null)
-    setPassword(value)
   }, [])
 
   const handleSendCode = useCallback(async (phone: string) => {
@@ -222,7 +209,6 @@ export function useMtprotoLogin(onAuthenticated: (user: AuthUser) => void) {
     // Returning from the code step with the same number: reuse the pending token
     // instead of calling sendCode again (Telegram often rejects that first attempt).
     if (codeSentForPhoneRef.current === phone) {
-      setCode('')
       setStep('code')
       return
     }
@@ -244,11 +230,10 @@ export function useMtprotoLogin(onAuthenticated: (user: AuthUser) => void) {
         return
       }
       codeSentForPhoneRef.current = phone
-      setCode('')
       setStep('code')
     }
     catch (err) {
-      setError(errorMessage(err, 'Failed to send code'))
+      setError(loginErrorMessage(err, 'Failed to send code'))
     }
     finally {
       setBusy(false)
@@ -257,14 +242,12 @@ export function useMtprotoLogin(onAuthenticated: (user: AuthUser) => void) {
 
   const handleSignIn = useCallback(async (loginCode: string) => {
     setError(null)
-    setCode(loginCode)
     setBusy(true)
     try {
       const outcome = await api.phoneSignIn(loginCode)
       if (outcome.status === 'passwordRequired') {
         // Phone token was consumed; a later "send code" must hit the API again.
         codeSentForPhoneRef.current = null
-        setPassword('')
         setPasswordHint(outcome.hint)
         setStep('password')
         return
@@ -273,7 +256,7 @@ export function useMtprotoLogin(onAuthenticated: (user: AuthUser) => void) {
       onAuthenticatedRef.current(outcome.user)
     }
     catch (err) {
-      setError(errorMessage(err, 'Failed to sign in'))
+      setError(loginErrorMessage(err, 'Failed to sign in'))
     }
     finally {
       setBusy(false)
@@ -282,7 +265,6 @@ export function useMtprotoLogin(onAuthenticated: (user: AuthUser) => void) {
 
   const handlePassword = useCallback(async (loginPassword: string) => {
     setError(null)
-    setPassword(loginPassword)
     setBusy(true)
     try {
       const user = step === 'qr-password'
@@ -291,7 +273,7 @@ export function useMtprotoLogin(onAuthenticated: (user: AuthUser) => void) {
       onAuthenticatedRef.current(user)
     }
     catch (err) {
-      setError(errorMessage(err, 'Invalid password'))
+      setError(loginErrorMessage(err, 'Invalid password'))
     }
     finally {
       setBusy(false)
@@ -304,12 +286,9 @@ export function useMtprotoLogin(onAuthenticated: (user: AuthUser) => void) {
     qrLoading,
     phoneNumber,
     setPhoneNumber: setPhoneNumberValue,
-    code,
-    setCode: setCodeValue,
-    password,
-    setPassword: setPasswordValue,
     passwordHint,
     error,
+    clearError,
     busy,
     startQrLogin,
     goToPhone,

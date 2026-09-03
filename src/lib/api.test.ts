@@ -52,4 +52,16 @@ describe('api diagnostics', () => {
       sessionId: 'playback-session',
     })
   })
+
+  it('uses the fresh-session command when restarting QR login', async () => {
+    tauriInvoke.mockResolvedValueOnce({
+      status: 'waiting',
+      url: 'tg://login?token=fresh',
+      expires: 123,
+    })
+
+    await api.qrRestart()
+
+    expect(tauriInvoke).toHaveBeenCalledWith('qr_restart', undefined)
+  })
 })

@@ -69,6 +69,7 @@ pub fn run() {
             commands::auth::phone_check_password,
             commands::auth::qr_start,
             commands::auth::qr_poll,
+            commands::auth::qr_restart,
             commands::auth::qr_check_password,
             commands::auth::logout,
             commands::sync_saved_music,

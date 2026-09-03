@@ -79,6 +79,7 @@ export const api = {
     invoke<AuthUser>('phone_check_password', { password }),
   qrStart: () => invoke<QrOutcome>('qr_start'),
   qrPoll: () => invoke<QrOutcome>('qr_poll'),
+  qrRestart: () => invoke<QrOutcome>('qr_restart'),
   qrCheckPassword: (password: string) =>
     invoke<AuthUser>('qr_check_password', { password }),
   logout: () => invoke<void>('logout'),

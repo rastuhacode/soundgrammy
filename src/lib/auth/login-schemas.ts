@@ -24,10 +24,3 @@ export const passwordLoginSchema = z.object({
 export type PhoneLoginValues = z.infer<typeof phoneLoginSchema>
 export type CodeLoginValues = z.infer<typeof codeLoginSchema>
 export type PasswordLoginValues = z.infer<typeof passwordLoginSchema>
-
-export function firstIssueMessage(
-  error: z.ZodError,
-  fallback = 'Invalid input',
-): string {
-  return error.issues[0]?.message ?? fallback
-}

@@ -261,6 +261,7 @@ pub async fn check_password(state: &AppState, password: &str) -> AppResult<AuthU
             .take()
             .ok_or_else(|| AppError::msg("no password step in progress"))?
     };
+    let retry_token = token.clone();
 
     let client = state.client().await?;
     match client
@@ -269,6 +270,11 @@ pub async fn check_password(state: &AppState, password: &str) -> AppResult<AuthU
     {
         Ok(_) => finalize(state).await,
         Err(InvocationError::Rpc(e)) if e.name.contains("PASSWORD") => {
+            // A failed attempt consumes our local token. Refresh the SRP
+            // parameters so the user can retry without restarting login.
+            let retry_token = load_password_token(&client).await.unwrap_or(retry_token);
+            let mut pending = state.pending.lock().await;
+            pending.password_token = Some(retry_token);
             Err(AppError::msg("incorrect password"))
         }
         Err(e) => Err(AppError::Telegram(e.to_string())),
@@ -311,18 +317,30 @@ pub async fn qr_export(state: &AppState) -> AppResult<QrOutcome> {
     }
 }
 
+/// Abandons an accepted QR challenge and starts over with a fresh auth key.
+pub async fn qr_restart(state: &AppState) -> AppResult<QrOutcome> {
+    state.disconnect_client().await;
+    crate::session::clear(&state.data_dir)?;
+    state.ensure_client().await?;
+    qr_export(state).await
+}
+
 /// Submits the 2FA password for the QR flow.
 pub async fn qr_check_password(state: &AppState, password: &str) -> AppResult<AuthUser> {
     check_password(state, password).await
 }
 
-async fn qr_password_required(state: &AppState) -> AppResult<QrOutcome> {
-    let client = state.client().await?;
+async fn load_password_token(client: &Client) -> AppResult<PasswordToken> {
     let password = client
         .invoke(&tl::functions::account::GetPassword {})
         .await?;
     let tl::enums::account::Password::Password(pw) = password;
-    let token = PasswordToken { password: pw };
+    Ok(PasswordToken { password: pw })
+}
+
+async fn qr_password_required(state: &AppState) -> AppResult<QrOutcome> {
+    let client = state.client().await?;
+    let token = load_password_token(&client).await?;
     let hint = token.hint().map(str::to_owned);
 
     let mut pending = state.pending.lock().await;
