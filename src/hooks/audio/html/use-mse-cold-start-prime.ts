@@ -37,7 +37,6 @@ interface UseMseColdStartPrimeOptions {
   isSeekingRef: RefObject<boolean>
   sourceErrorRef: RefObject<boolean>
   setCurrentTime: Dispatch<SetStateAction<number>>
-  setPlaying: (playing: boolean) => void
 }
 
 /** Pin and mute each cold MSE source until WKWebView's output path is ready. */
@@ -46,12 +45,7 @@ export function useMseColdStartPrime({
   trackId,
   isPlayingRef,
   loadGenerationRef,
-  loadedTrackIdRef,
-  pendingSeekRef,
-  isSeekingRef,
-  sourceErrorRef,
   setCurrentTime,
-  setPlaying,
 }: UseMseColdStartPrimeOptions) {
   const msePrimeRef = useRef<'idle' | 'priming' | 'done'>('idle')
 
@@ -59,6 +53,7 @@ export function useMseColdStartPrime({
     const audio = audioRef.current
     if (!audio) return
     msePrimeRef.current = 'idle'
+    let cleanupPrime: (() => void) | undefined
 
     const finishMsePrime = (generation: number, restoreMuted: boolean) => {
       if (msePrimeRef.current !== 'priming') return
@@ -78,23 +73,8 @@ export function useMseColdStartPrime({
 
     const onPlaying = () => {
       if (
-        canSyncMediaPlaybackState({
-          trackId,
-          loadedTrackId: loadedTrackIdRef.current,
-          pendingSeek: pendingSeekRef.current,
-          isSeeking: isSeekingRef.current,
-          sourceFailed: sourceErrorRef.current,
-        })
-        && !isPlayingRef.current
-      ) {
-        // Native media controls can resume the element without going through
-        // Zustand. Update the ref immediately so MSE priming sees the new state.
-        isPlayingRef.current = true
-        setPlaying(true)
-      }
-
-      if (
-        !audio.src.startsWith('blob:')
+        !isPlayingRef.current
+        || !audio.src.startsWith('blob:')
         || msePrimeRef.current !== 'idle'
         || audio.currentTime > 0.05
       ) {
@@ -129,14 +109,21 @@ export function useMseColdStartPrime({
           finishMsePrime(generation, restoreMuted)
         }
       }
+      cleanupPrime?.()
+      cleanupPrime = () => {
+        audio.removeEventListener('timeupdate', onPrimeTimeUpdate)
+        audio.muted = restoreMuted
+      }
       audio.addEventListener('timeupdate', onPrimeTimeUpdate)
     }
 
     audio.addEventListener('playing', onPlaying)
     return () => {
       audio.removeEventListener('playing', onPlaying)
+      cleanupPrime?.()
+      msePrimeRef.current = 'idle'
     }
-  }, [audioRef, isPlayingRef, isSeekingRef, loadGenerationRef, loadedTrackIdRef, pendingSeekRef, setCurrentTime, setPlaying, sourceErrorRef, trackId])
+  }, [audioRef, isPlayingRef, loadGenerationRef, setCurrentTime, trackId])
 
   return msePrimeRef
 }

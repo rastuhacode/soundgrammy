@@ -1,9 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import {
-  canSyncMediaPlaybackState,
-  isExpectedPlayInterruption,
-  registerMediaSessionActions,
-} from './use-audio-engine'
+import { canSyncMediaPlaybackState } from './html/use-mse-cold-start-prime'
+import { isExpectedPlayInterruption } from './html/audio-playback-state'
+import { registerMediaSessionActions } from './use-audio-controls'
 
 describe('isExpectedPlayInterruption', () => {
   it('recognizes pause/load AbortError as expected playback control flow', () => {

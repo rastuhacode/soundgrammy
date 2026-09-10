@@ -8,12 +8,10 @@ import {
   type SetStateAction,
 } from 'react'
 import type { DownloadProgress } from '@/lib/api'
-import { appendedEndTime, leadingPrefixEnd } from './mse-append-queue'
 import {
   computeBufferedRanges,
   landTimeOnRanges,
   snapTimeToRanges,
-  toCachedRanges,
   type TimeRange,
 } from './buffer-ranges'
 
@@ -125,36 +123,6 @@ export function useAudioSeek(options: UseAudioSeekOptions) {
     syncMediaRanges(audio)
   }, [appendedBytes, audioRef, bufferRevision, trackId])
 
-  const cachedRanges = useMemo(
-    () => toCachedRanges(downloadProgress, duration),
-    [downloadProgress, duration],
-  )
-
-  const playableEnd = useMemo(() => {
-    if (downloadProgress?.complete) return duration
-    if (mediaRanges.length > 0) {
-      return Math.min(
-        duration,
-        Math.max(...mediaRanges.map(range => range.end)),
-      )
-    }
-    // Mid-file append cursors must not paint a fake 0..t prefix.
-    if (downloadProgress?.total && appendedBytes > 0) {
-      const prefixEnd = leadingPrefixEnd(downloadProgress.ranges)
-      if (prefixEnd > 0 && appendedBytes <= prefixEnd) {
-        return appendedEndTime(
-          appendedBytes,
-          downloadProgress.total,
-          duration,
-        )
-      }
-    }
-    if (!downloadProgress && appendedBytes > 0 && duration > 0) {
-      return duration
-    }
-    return 0
-  }, [appendedBytes, downloadProgress, duration, mediaRanges])
-
   const bufferedRanges = useMemo(
     () => {
       // MSE: only paint honest SourceBuffer ranges. Download-mapped
@@ -174,14 +142,14 @@ export function useAudioSeek(options: UseAudioSeekOptions) {
       }
       return computeBufferedRanges({
         mediaRanges,
-        playableEnd,
+        playableEnd: 0,
         duration,
         currentTime,
-        cachedRanges,
+        cachedRanges: [],
         fullyCached: downloadProgress?.complete,
       })
     },
-    [cachedRanges, currentTime, downloadProgress?.complete, duration, isMseActive, mediaRanges, playableEnd, streamingMse],
+    [currentTime, downloadProgress?.complete, duration, isMseActive, mediaRanges, streamingMse],
   )
 
   const finishPendingSeek = (audio: HTMLAudioElement) => {
@@ -243,6 +211,7 @@ export function useAudioSeek(options: UseAudioSeekOptions) {
   const startDiscontinuitySeek = () => {
     if (discontinuitySeekRef.current) return
     discontinuitySeekRef.current = true
+    const generation = loadGenerationRef.current
 
     void (async () => {
       try {
@@ -252,6 +221,7 @@ export function useAudioSeek(options: UseAudioSeekOptions) {
           if (!el) return
 
           await seekMseToTime(target)
+          if (loadGenerationRef.current !== generation) return
 
           const audio = audioRef.current
           if (!audio || pendingSeekRef.current === null) return

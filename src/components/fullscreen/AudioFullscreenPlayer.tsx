@@ -33,7 +33,7 @@ interface AudioFullscreenPlayerProps {
   onSeek: (time: number) => void
   onSeekStart: () => void
   onSeekEnd: () => void
-  getAudioElement: () => HTMLAudioElement | null
+  isActuallyPlaying: boolean
 }
 
 export function AudioFullscreenPlayer(props: AudioFullscreenPlayerProps) {
@@ -50,7 +50,8 @@ export function AudioFullscreenPlayer(props: AudioFullscreenPlayerProps) {
   useArtworkBounce({
     trackId: props.track.id,
     elementRef: artworkBounceRef,
-    getAudioElement: props.getAudioElement,
+    currentTime: props.currentTime,
+    isActuallyPlaying: props.isActuallyPlaying,
   })
 
   useEffect(() => {

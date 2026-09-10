@@ -6,7 +6,6 @@ import {
   type RefObject,
   type SetStateAction,
 } from 'react'
-import type { Track } from '@/lib/db'
 import {
   api,
   fileSrc,
@@ -18,7 +17,6 @@ import {
   resolveMpegPayloadStart,
 } from './mp3-frame-sync'
 import { attachMseSession, resolveMseMimeType, type MseSession } from './mse-session'
-import { appLogger } from '@/lib/app-logger'
 
 /** Bytes of MPEG payload to probe for Xing/VBRI / CBR duration. */
 const MPEG_DURATION_PROBE_BYTES = 8 * 1024
@@ -37,7 +35,7 @@ function isMpegMime(mimeType: string): boolean {
 
 export interface UseAudioSourceOptions {
   audioRef: RefObject<HTMLAudioElement | null>
-  track: Track | null
+  track: { id: number, duration: number | null } | null
   applyVolume: () => void
   playAudio: (audio: HTMLAudioElement, generation: number) => void
   isPlayingRef: RefObject<boolean>
@@ -77,8 +75,8 @@ export function useAudioSource(options: UseAudioSourceOptions) {
   const [showInitialLoading, setShowInitialLoading] = useState(false)
   /** True once we know this track uses MSE — drives honest buffer chrome. */
   const [streamingMse, setStreamingMse] = useState(false)
-  const [sourceLoadEpoch, setSourceLoadEpoch] = useState(0)
   const mseSessionRef = useRef<MseSession | null>(null)
+  const disposeRef = useRef<() => void>(() => {})
 
   // Resolve a complete local file or attach an MSE-backed stream.
   useEffect(() => {
@@ -157,19 +155,19 @@ export function useAudioSource(options: UseAudioSourceOptions) {
 
     /** Full-file download when MSE cannot play (or duration is unknown). */
     const attachAfterFullDownload = async (totalHint: number) => {
-      // Paint download-mapped buffer chrome — leave MSE mode so progress is visible.
+      // Keep the loading indicator until the full file is available.
       setStreamingMse(false)
       setShowInitialLoading(true)
       const path = await api.downloadTrackForPlayback(track.id, sessionId)
       if (disposed || loadGenerationRef.current !== generation) return
-      const total = track.file_size ?? totalHint
+      const total = totalHint
       attachCached(path, total)
     }
 
     const initializeSource = async () => {
       try {
         // Optimistic: treat as MSE until getTrackSource proves cached.
-        // Otherwise download:progress during the await paints fake chrome.
+        // Until source resolution, downloaded bytes are not playable ranges.
         setStreamingMse(true)
 
         const stop = await onDownloadProgress((progress) => {
@@ -195,11 +193,15 @@ export function useAudioSource(options: UseAudioSourceOptions) {
 
         backendSessionMayExist = true
         const source = await api.getTrackSource(track.id, sessionId)
-        if (disposed || loadGenerationRef.current !== generation) return
+        if (disposed || loadGenerationRef.current !== generation) {
+          // The backend may finish opening after our earlier close request.
+          if (source.kind === 'stream') void api.closeStreamSession(sessionId).catch(() => {})
+          return
+        }
 
         if (source.kind === 'cached') {
           backendSessionMayExist = false
-          const total = track.file_size ?? 1
+          const total = 1
           attachCached(source.path, total)
           return
         }
@@ -313,30 +315,13 @@ export function useAudioSource(options: UseAudioSourceOptions) {
               setBufferRevision(value => value + 1)
             }
           },
-          onError: (failure) => {
+          onError: () => {
             if (
               !disposed
               && loadGenerationRef.current === generation
             ) {
               sourceErrorRef.current = true
-              appLogger.error({
-                source: 'audio',
-                title: 'MSE session failed',
-                description: `Streaming failed during ${failure.stage}.`,
-                error: failure.cause,
-                context: {
-                  trackId: track.id,
-                  generation,
-                  stage: failure.stage,
-                  mediaSource: {
-                    currentSrc: audio.currentSrc,
-                    networkState: audio.networkState,
-                    readyState: audio.readyState,
-                    errorCode: audio.error?.code ?? null,
-                    errorMessage: audio.error?.message ?? null,
-                  },
-                },
-              })
+
               setShowInitialLoading(false)
               setPlaying(false)
             }
@@ -348,19 +333,10 @@ export function useAudioSource(options: UseAudioSourceOptions) {
         }
         finishAttach(false)
       }
-      catch (error) {
+      catch {
         if (!disposed && loadGenerationRef.current === generation) {
           sourceErrorRef.current = true
-          appLogger.error({
-            source: 'audio',
-            title: 'Audio source initialization failed',
-            description: 'The player could not prepare the selected track source.',
-            error,
-            context: {
-              trackId: track.id,
-              generation,
-            },
-          })
+
           setShowInitialLoading(false)
           setPlaying(false)
         }
@@ -368,8 +344,14 @@ export function useAudioSource(options: UseAudioSourceOptions) {
     }
     initializeSource()
 
-    return () => {
+    const dispose = () => {
+      if (disposed) return
       disposed = true
+      ++loadGenerationRef.current
+      loadedTrackIdRef.current = null
+      audio.pause()
+      audio.removeAttribute('src')
+      audio.load()
       unlisten?.()
       mseSession?.dispose()
       if (backendSessionMayExist) {
@@ -377,14 +359,17 @@ export function useAudioSource(options: UseAudioSourceOptions) {
       }
       mseSession = null
       mseSessionRef.current = null
-      setStreamingMse(false)
+    }
+    disposeRef.current = dispose
+    window.addEventListener('pagehide', dispose)
+    window.addEventListener('beforeunload', dispose)
+    return () => {
+      window.removeEventListener('pagehide', dispose)
+      window.removeEventListener('beforeunload', dispose)
+      dispose()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sourceLoadEpoch, track?.id])
-
-  const retrySource = () => {
-    setSourceLoadEpoch(epoch => epoch + 1)
-  }
+  }, [track?.id])
 
   const seekMseToTime = (time: number) => {
     const session = mseSessionRef.current
@@ -407,6 +392,7 @@ export function useAudioSource(options: UseAudioSourceOptions) {
   const isMseActive = () => mseSessionRef.current !== null
 
   return {
+    disposeSource: () => disposeRef.current(),
     downloadProgress,
     appendedBytes,
     bufferRevision,
@@ -414,7 +400,6 @@ export function useAudioSource(options: UseAudioSourceOptions) {
     mseSnapToBufferedTime,
     mseLandToBufferedTime,
     isMseActive,
-    retrySource,
     streamingMse,
     showInitialLoading,
     setShowInitialLoading,

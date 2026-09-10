@@ -6,7 +6,7 @@ import {
   rangesCoverWindow,
   shouldEndOfStream,
   shouldRebuildFromPrefix,
-} from './mse-append-queue'
+} from './html/mse-append-queue'
 
 describe('rangesCoverWindow', () => {
   it('accepts exact, overlapping, adjacent, and unsorted coverage', () => {

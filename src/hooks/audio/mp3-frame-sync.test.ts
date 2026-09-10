@@ -7,7 +7,7 @@ import {
   parseMp3FrameAt,
   resolveFrameSyncOffset,
   resolveMpegPayloadStart,
-} from './mp3-frame-sync'
+} from './html/mp3-frame-sync'
 
 /** MPEG1 Layer III, 128 kbps, 44100 Hz, stereo, no padding — frame size 417. */
 function frameHeader(bitrateIndex = 0x9): Uint8Array {

@@ -28,13 +28,13 @@ Progressive `<audio src="stream:…">` under WKWebView/AVFoundation advertises a
 
 Primary frontend modules:
 
-- `src/hooks/audio/mse-session.ts` — MediaSource lifecycle + discontinuous `seekToTime`
-- `src/hooks/audio/mp3-frame-sync.ts` — MPEG frame sync for island appends
-- `src/hooks/audio/mse-append-queue.ts` — append window math
-- `src/hooks/audio/use-audio-source.ts` — attaches MSE vs cached
-- `src/hooks/audio/use-audio-seek.ts` — buffered vs discontinuous seek
+- `src/hooks/audio/html/mse-session.ts` — MediaSource lifecycle + discontinuous `seekToTime`
+- `src/hooks/audio/html/mp3-frame-sync.ts` — MPEG frame sync for island appends
+- `src/hooks/audio/html/mse-append-queue.ts` — append window math
+- `src/hooks/audio/html/use-audio-source.ts` — attaches MSE vs cached
+- `src/hooks/audio/html/use-audio-seek.ts` — buffered vs discontinuous seek
 
 ## Limits
 
 - Discontinuous mid-file *island* seeks target `audio/mpeg` (frame sync). WebM/MP4 seek ahead by rebuilding from the leading prefix.
-- WKWebView MSE cold start: the media clock can advance ~0.3–0.5s before audible output on each new `MediaSource`. `use-audio-engine` mutes and pins `currentTime` at 0 for 400ms, then unmutes (see `MSE_COLD_START_PRIME_MS`). Cached `asset:` playback is unaffected.
+- WKWebView MSE cold start: the media clock can advance ~0.3–0.5s before audible output on each new `MediaSource`. `html/use-mse-cold-start-prime` mutes and pins `currentTime` at 0 for 400ms, then unmutes (see `MSE_COLD_START_PRIME_MS`). Cached `asset:` playback is unaffected.

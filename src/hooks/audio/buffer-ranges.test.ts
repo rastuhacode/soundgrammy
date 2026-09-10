@@ -6,7 +6,7 @@ import {
   snapTimeToRanges,
   timeIsInRanges,
   toCachedRanges,
-} from './buffer-ranges'
+} from './html/buffer-ranges'
 
 function progress(
   partial: Partial<DownloadProgress> & Pick<DownloadProgress, 'ranges'>,

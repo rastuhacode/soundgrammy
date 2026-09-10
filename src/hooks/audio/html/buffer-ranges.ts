@@ -111,7 +111,9 @@ export function computeBufferedRanges(options: {
   // Chromium/WebView2 may initially expose only its current read-ahead window
   // through HTMLMediaElement.buffered for a local file. That is a decoder
   // implementation detail, not the availability of a file already in cache.
-  if (fullyCached) return [{ start: 0, end: duration }]
+  if (fullyCached) return [{
+    start: 0, end: duration,
+  }]
 
   if (mediaRanges.length > 0) {
     // Single coherent range around the playhead / active island.

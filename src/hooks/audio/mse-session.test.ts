@@ -13,7 +13,7 @@ import {
   resolveMseMimeType,
   type MseFailure,
   type MseSession,
-} from './mse-session'
+} from './html/mse-session'
 
 const { readStreamRange, ensureStreamRange, backfillStreamId3 } = vi.hoisted(() => ({
   readStreamRange: vi.fn(),
