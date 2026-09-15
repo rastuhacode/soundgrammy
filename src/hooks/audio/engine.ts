@@ -1,5 +1,5 @@
 /** Transport only. All values crossing this boundary are serializable. */
-export type AudioEngineKind = 'html' | 'native-rust' | 'test'
+export type AudioEngineKind = 'native-rust' | 'test'
 export type AudioEngineStatus = 'idle' | 'loading' | 'ready' | 'playing' | 'buffering' | 'paused' | 'ended' | 'error'
 export interface AudioTrackRequest {
   trackId: number
@@ -25,6 +25,8 @@ export interface AudioEngineSnapshot {
   error: AudioEngineError | null
   /** Initial source acquisition, distinct from later buffering. */
   initialLoading: boolean
+  /** Requested cursor is provisional until the transport lands. */
+  seeking?: boolean
 }
 export type AudioEngineEvent
   = { type: 'state', snapshot: AudioEngineSnapshot }

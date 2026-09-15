@@ -17,7 +17,7 @@ use super::{read_file_range, TrackStream};
 
 impl TrackStream {
     /// Download the file header and correct MIME when Telegram's label is wrong.
-    /// Must run before the frontend opens an MSE SourceBuffer.
+    /// Runs when opening a playback source to correct container metadata.
     pub async fn ensure_container_mime(
         self: &Arc<Self>,
         active: Option<Arc<AtomicBool>>,
@@ -173,7 +173,7 @@ impl TrackStream {
         // Snapshot the path under the finalize lock so we do not start a read
         // against a path that try_finalize is about to rename. If finalize
         // still races the IO (rename between snapshot and open), retry once
-        // with a fresh path — MSE keeps appending after download:complete and
+        // with a fresh path — playback keeps reading after download:complete and
         // a failed read would pause playback via onError.
         let path = {
             let _guard = self.finalize_lock.lock().await;

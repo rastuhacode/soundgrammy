@@ -122,6 +122,24 @@ describe('player engine integration', () => {
     h.disconnect()
   })
 
+  it('starts a new attempt after a completed native seek changes status to paused', async () => {
+    queue([a])
+    const h = setup()
+    await Promise.resolve()
+    h.driver.sessions[0]!.observer.ended()
+    await h.engine.seek(40)
+    // Native seeking leaves ended state while retaining the completed attempt.
+    vi.spyOn(h.engine, 'getSnapshot').mockReturnValueOnce({ ...h.engine.getSnapshot(), status: 'paused' })
+    usePlayerStore.getState().setPlaying(true)
+    await Promise.resolve()
+    expect(h.driver.sessions).toHaveLength(2)
+    expect(h.engine.getSnapshot().currentTimeSeconds).toBe(40)
+    h.driver.sessions[1]!.observer.ended()
+    expect(h.activity.notifyCompleted).toHaveBeenCalledTimes(2)
+    expect(usePlayerStore.getState().isPlaying).toBe(false)
+    h.disconnect()
+  })
+
   it('pauses intent on error without advancing, and unloads on clear', async () => {
     queue([a, b])
     const h = setup()

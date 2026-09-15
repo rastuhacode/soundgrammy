@@ -35,46 +35,6 @@ impl TrackStream {
         self.download_complete_with_active(None).await
     }
 
-    pub async fn download_complete_for_playback(
-        self: &Arc<Self>,
-        active: Arc<AtomicBool>,
-    ) -> AppResult<PathBuf> {
-        self.download_complete_with_active(Some(active)).await
-    }
-
-    /// Fill only the file prefix skipped by MPEG playback (typically ID3v2).
-    /// Requests are deliberately sequential and remain owned by the playback
-    /// session, so foreground audio never competes with a metadata burst.
-    pub async fn backfill_id3_for_playback(
-        self: &Arc<Self>,
-        active: Arc<AtomicBool>,
-    ) -> AppResult<()> {
-        let header_end = 9.min(self.total.saturating_sub(1));
-        if header_end < 9 {
-            return Ok(());
-        }
-        let header = self
-            .read_range(0, header_end, Some(Arc::clone(&active)))
-            .await?;
-        let Some(prefix_end) = id3v2_tag_byte_length(&header, self.total) else {
-            return Ok(());
-        };
-        let chunk_count = Self::prefix_chunk_count(prefix_end, self.total)?;
-        for index in 0..chunk_count {
-            Self::require_active(Some(&active))?;
-            self.ensure_chunk(index, Some(Arc::clone(&active))).await?;
-        }
-        Self::require_active(Some(&active))?;
-        Ok(())
-    }
-
-    pub(super) fn prefix_chunk_count(prefix_end: u64, total: u64) -> AppResult<usize> {
-        if prefix_end > total {
-            return Err(AppError::msg("metadata prefix range is invalid"));
-        }
-        Ok(prefix_end.div_ceil(CHUNK_SIZE) as usize)
-    }
-
     async fn download_complete_with_active(
         self: &Arc<Self>,
         active: Option<Arc<AtomicBool>>,
@@ -319,18 +279,4 @@ impl TrackStream {
         file.sync_data().await?;
         Ok(bytes.len() as u64)
     }
-}
-
-pub(super) fn id3v2_tag_byte_length(header: &[u8], total: u64) -> Option<u64> {
-    if header.len() < 10 || &header[..3] != b"ID3" {
-        return None;
-    }
-    let flags = header[5];
-    let size = ((u64::from(header[6] & 0x7f)) << 21)
-        | ((u64::from(header[7] & 0x7f)) << 14)
-        | ((u64::from(header[8] & 0x7f)) << 7)
-        | u64::from(header[9] & 0x7f);
-    let footer = if flags & 0x10 != 0 { 10 } else { 0 };
-    let tag_end = 10u64.checked_add(size)?.checked_add(footer)?;
-    (tag_end < total).then_some(tag_end)
 }

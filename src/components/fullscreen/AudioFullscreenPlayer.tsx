@@ -27,6 +27,7 @@ interface AudioFullscreenPlayerProps {
   duration: number
   bufferedRanges: AudioBufferedRange[]
   showInitialLoading: boolean
+  isSeeking?: boolean
   volume: number
   onVolumeChange: (volume: number) => void
   onMuteToggle: () => void
@@ -214,6 +215,7 @@ export function AudioFullscreenPlayer(props: AudioFullscreenPlayerProps) {
               duration={props.duration}
               bufferedRanges={props.bufferedRanges}
               showInitialLoading={props.showInitialLoading}
+              isSeeking={props.isSeeking}
               onSeek={props.onSeek}
               onSeekStart={props.onSeekStart}
               onSeekEnd={props.onSeekEnd}

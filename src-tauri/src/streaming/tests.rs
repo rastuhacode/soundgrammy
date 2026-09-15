@@ -79,7 +79,7 @@ async fn read_file_range_succeeds_after_partial_renamed_to_destination() {
     let payload = b"abcdefghijklmnopqrstuvwxyz";
     std::fs::write(&partial, payload).unwrap();
 
-    // Simulate the MSE race: path was snapshotted as .part, then finalize
+    // Simulate the playback read race: path was snapshotted as .part, then finalize
     // renamed it before open. Retry against the destination must succeed.
     std::fs::rename(&partial, &destination).unwrap();
     assert!(!partial.exists());
@@ -138,47 +138,6 @@ async fn partial_manifest_reports_only_durable_ready_chunks() {
     assert!(partial_cache_info(&partial).await.is_none());
 
     let _ = std::fs::remove_dir_all(&dir);
-}
-
-#[test]
-fn metadata_prefix_chunk_count_uses_an_exclusive_end() {
-    assert_eq!(
-        TrackStream::prefix_chunk_count(0, CHUNK_SIZE * 3).unwrap(),
-        0
-    );
-    assert_eq!(
-        TrackStream::prefix_chunk_count(CHUNK_SIZE, CHUNK_SIZE * 3).unwrap(),
-        1
-    );
-    assert_eq!(
-        TrackStream::prefix_chunk_count(CHUNK_SIZE + 1, CHUNK_SIZE * 3).unwrap(),
-        2
-    );
-    assert!(TrackStream::prefix_chunk_count(CHUNK_SIZE * 3 + 1, CHUNK_SIZE * 3).is_err());
-}
-
-#[test]
-fn parses_and_validates_id3v2_prefix_length() {
-    let header = [b'I', b'D', b'3', 4, 0, 0, 0, 0, 2, 0];
-    assert_eq!(
-        super::transfer::id3v2_tag_byte_length(&header, 1_000),
-        Some(266)
-    );
-
-    let with_footer = [b'I', b'D', b'3', 4, 0, 0x10, 0, 0, 0, 20];
-    assert_eq!(
-        super::transfer::id3v2_tag_byte_length(&with_footer, 1_000),
-        Some(40)
-    );
-    assert_eq!(
-        super::transfer::id3v2_tag_byte_length(&with_footer, 40),
-        None
-    );
-    assert_eq!(
-        super::transfer::id3v2_tag_byte_length(b"not-an-id3", 1_000),
-        None
-    );
-    assert_eq!(super::transfer::id3v2_tag_byte_length(b"ID3", 1_000), None);
 }
 
 #[test]

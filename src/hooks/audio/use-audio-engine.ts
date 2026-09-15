@@ -45,6 +45,7 @@ export function useAudioEngine() {
     duration: snapshot.durationSeconds,
     bufferedRanges: snapshot.bufferedRanges,
     showInitialLoading: snapshot.initialLoading,
+    isSeeking: snapshot.seeking ?? false,
     error: snapshot.error,
     ...volume,
     handleSeek, handleSeekStart, handleSeekEnd,

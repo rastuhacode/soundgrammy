@@ -11,16 +11,9 @@ import type { Track } from '@/types'
 import { AudioEngineProvider } from './engine-factory'
 import { useAudioEngine } from './use-audio-engine'
 import { createFakeAudioEngine } from './fake-engine'
-import { HtmlEngineHost } from './html/HtmlEngineHost'
-import { HtmlDriver } from './html/html-driver'
-import { TransportEngine } from './transport-engine'
-
-const mocks = vi.hoisted(() => ({ dispose: vi.fn(), unlisten: vi.fn() }))
 vi.mock('@/hooks/use-cached-thumbnail', () => ({ useCachedThumbnail: () => ({ url: null }) }))
 vi.mock('@/lib/api', () => ({
   api: {
-    getTrackSource: vi.fn(async (trackId: number) => ({ kind: 'stream', trackId, total: 1000, mimeType: 'audio/mpeg' })),
-    closeStreamSession: vi.fn(async () => {}),
     recordListenStart: vi.fn(async () => {}),
     recordListenEnd: vi.fn(async () => null),
     lastFmAttemptStarted: vi.fn(async () => {}),
@@ -28,16 +21,9 @@ vi.mock('@/lib/api', () => ({
     lastFmAttemptEnded: vi.fn(async () => {}),
   },
   fileSrc: () => 'https://asset.invalid/test.mp3',
-  onDownloadProgress: vi.fn(async () => mocks.unlisten),
+  onNativeAudioState: vi.fn(async () => () => {}),
+  onNativeAudioEvent: vi.fn(async () => () => {}),
 }))
-vi.mock('./html/mse-session', () => ({
-  resolveMseMimeType: () => 'audio/mpeg',
-  attachMseSession: () => ({
-    dispose: mocks.dispose, notifyProgress: vi.fn(),
-    seekToTime: async () => {}, snapToBufferedTime: () => null, landToBufferedTime: () => null,
-  }),
-}))
-
 const track = (id: number): Track => ({ id, duration: 120, title: 'Track', performer: null,
   tg_user_id: 1, file_id: '', file_unique_id: '', source: 'saved_music',
   mime_type: 'audio/mpeg', file_size: 100, created_at: '' })
@@ -51,10 +37,6 @@ function Probe() {
   })
   return createElement('output', null, `${current.status}:${current.currentTime}`)
 }
-const settle = () => act(async () => {
-  await Promise.resolve()
-})
-
 beforeEach(() => {
   vi.clearAllMocks()
   localStorage.clear()
@@ -66,9 +48,6 @@ beforeEach(() => {
   container = document.createElement('div')
   document.body.append(container)
   root = createRoot(container)
-  vi.spyOn(HTMLMediaElement.prototype, 'load').mockImplementation(() => {})
-  vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {})
-  vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined)
 })
 afterEach(async () => {
   await act(async () => {
@@ -91,7 +70,6 @@ describe('React engine composition', () => {
       usePlayerStore.setState({ currentTrack: a, isPlaying: true })
     })
     expect(container.querySelector('audio')).toBeNull()
-    expect(api.getTrackSource).not.toHaveBeenCalled()
     expect(model.isActuallyPlaying).toBe(true)
     expect(model.volume).toBe(37)
     await act(async () => {
@@ -178,54 +156,5 @@ describe('React engine composition', () => {
       finishDestroy()
     })
     expect(replacement).toHaveBeenCalledTimes(1)
-  })
-
-  it('closes a backend source that finishes opening after replacement', async () => {
-    let finishSource!: (source: Awaited<ReturnType<typeof api.getTrackSource>>) => void
-    vi.mocked(api.getTrackSource).mockImplementationOnce(() => new Promise((resolve) => {
-      finishSource = resolve
-    }))
-    const driver = new HtmlDriver()
-    const engine = new TransportEngine('html', driver)
-    await act(async () => {
-      root.render(createElement(HtmlEngineHost, { driver }))
-      await engine.load({ trackId: 1, attemptId: 'first', expectedDurationSeconds: 120 })
-    })
-    await settle()
-    const oldId = vi.mocked(api.getTrackSource).mock.calls[0]![1]
-    await act(async () => {
-      await engine.load({ trackId: 2, attemptId: 'second', expectedDurationSeconds: 120 })
-    })
-    await settle()
-    await act(async () => {
-      finishSource({ kind: 'stream', trackId: 1, sessionId: oldId, total: 1000, mimeType: 'audio/mpeg' })
-    })
-    expect(api.closeStreamSession).toHaveBeenCalledWith(oldId)
-    expect(engine.getSnapshot().trackId).toBe(2)
-    expect(container.querySelectorAll('audio')).toHaveLength(1)
-    await act(async () => {
-      await engine.destroy()
-    })
-  })
-
-  it('closes the active stream and listeners on pagehide and releases the host on destroy', async () => {
-    const driver = new HtmlDriver()
-    const engine = new TransportEngine('html', driver)
-    await act(async () => {
-      root.render(createElement(StrictMode, null, createElement(HtmlEngineHost, { driver })))
-      await engine.load({ trackId: 1, attemptId: 'one', expectedDurationSeconds: 120 })
-    })
-    await settle()
-    expect(container.querySelectorAll('audio')).toHaveLength(1)
-    const sessionId = vi.mocked(api.getTrackSource).mock.calls.at(-1)![1]
-    window.dispatchEvent(new Event('pagehide'))
-    expect(api.closeStreamSession).toHaveBeenCalledWith(sessionId)
-    expect(mocks.dispose).toHaveBeenCalledTimes(1)
-    expect(mocks.unlisten).toHaveBeenCalled()
-    await act(async () => {
-      await engine.destroy()
-    })
-    expect(container.querySelector('audio')).toBeNull()
-    expect(mocks.dispose).toHaveBeenCalledTimes(1)
   })
 })

@@ -20,6 +20,7 @@ function AudioPlayerContent() {
     duration,
     bufferedRanges,
     showInitialLoading,
+    isSeeking,
     volume,
     handleSeek,
     handleSeekStart,
@@ -44,6 +45,7 @@ function AudioPlayerContent() {
               duration={duration}
               bufferedRanges={bufferedRanges}
               showInitialLoading={showInitialLoading}
+              isSeeking={isSeeking}
               volume={volume}
               onVolumeChange={handleVolumeChange}
               onMuteToggle={handleMuteToggle}
@@ -63,6 +65,7 @@ function AudioPlayerContent() {
               duration={duration}
               bufferedRanges={bufferedRanges}
               showInitialLoading={showInitialLoading}
+              isSeeking={isSeeking}
               volume={volume}
               onSeek={handleSeek}
               onSeekStart={handleSeekStart}

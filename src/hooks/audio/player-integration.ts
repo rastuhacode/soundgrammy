@@ -87,7 +87,7 @@ export function connectPlayerEngine(engine: AudioEngine, activity: PlaybackActiv
     else if (player.isPlaying !== previous.isPlaying) {
       if (player.isPlaying) {
         const snapshot = engine.getSnapshot()
-        if (snapshot.status === 'ended') {
+        if (snapshot.status === 'ended' || completedAttempt === attemptId) {
           loadCurrent()
           // Preserve an explicit seek made after completion when opening the next attempt.
           if (snapshot.currentTimeSeconds < snapshot.durationSeconds) void engine.seek(snapshot.currentTimeSeconds)

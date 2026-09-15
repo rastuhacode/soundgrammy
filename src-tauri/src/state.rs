@@ -37,6 +37,8 @@ struct LiveTelegram {
 }
 
 pub struct AppState {
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+    pub audio: crate::audio::NativeAudioService,
     pub config: Config,
     pub db: Db,
     telegram: RwLock<Option<LiveTelegram>>,
@@ -79,6 +81,8 @@ impl AppState {
         let telegram = client.map(|(client, shutdown)| LiveTelegram { client, shutdown });
         let lastfm = LastFmService::new(&config, &db);
         Self {
+            #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+            audio: Default::default(),
             config,
             db,
             telegram: RwLock::new(telegram),

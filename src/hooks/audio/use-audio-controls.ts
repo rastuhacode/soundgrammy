@@ -328,7 +328,7 @@ export function useAudioControls({
       navigator.mediaSession.setPositionState(position ?? undefined)
     }
     catch {
-      // Duration can change while a streamed MediaSource is being rebuilt.
+      // Duration can change when the decoder discovers container metadata.
     }
   }, [currentTime, duration, track])
 }

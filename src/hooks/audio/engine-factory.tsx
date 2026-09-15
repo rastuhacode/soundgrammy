@@ -1,13 +1,9 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
-import { appLogger } from '@/lib/app-logger'
+import { NativeRustAudioEngine } from './native-engine'
 import type { AudioEngine } from './engine'
-import { TransportEngine } from './transport-engine'
-import { HtmlDriver } from './html/html-driver'
-import { HtmlEngineHost } from './html/HtmlEngineHost'
 
 export interface AudioEngineComposition {
   engine: AudioEngine
-  host?: ReactNode
 }
 export type AudioEngineFactory = () => AudioEngineComposition
 
@@ -19,7 +15,7 @@ export class AudioEngineCreationError extends Error {
   }
 }
 
-/** A future Rust proxy is selected here; consumers depend only on AudioEngine. */
+/** Desktop playback always uses the native Rust service. */
 export function createAudioEngine(override?: AudioEngineFactory): AudioEngineComposition {
   if (override) {
     try {
@@ -30,12 +26,7 @@ export function createAudioEngine(override?: AudioEngineFactory): AudioEngineCom
       throw new AudioEngineCreationError()
     }
   }
-  const driver = new HtmlDriver()
-  const engine = new TransportEngine('html', driver, context => appLogger.error({
-    source: 'audio', title: 'Audio playback failed',
-    description: 'The audio engine could not play the selected track.', context,
-  }))
-  return { engine, host: <HtmlEngineHost driver={driver} /> }
+  return { engine: new NativeRustAudioEngine() }
 }
 
 const EngineContext = createContext<AudioEngine | null>(null)
@@ -78,7 +69,6 @@ export function AudioEngineProvider({ children, factory }: {
   if (!composition) return null
   return (
     <EngineContext.Provider value={composition.engine}>
-      {composition.host}
       {children}
     </EngineContext.Provider>
   )
