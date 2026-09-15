@@ -129,12 +129,15 @@ pub(super) fn path_is_protected(path: &Path, protected: &HashSet<PathBuf>) -> bo
 }
 
 pub(super) async fn protected_path_set(state: &AppState) -> HashSet<PathBuf> {
-    state
+    let mut paths: HashSet<PathBuf> = state
         .streaming
         .protected_audio_paths()
         .await
         .into_iter()
-        .collect()
+        .collect();
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+    paths.extend(state.audio.protected_paths());
+    paths
 }
 
 /// Remove audio older than the configured TTL (skipping active playback files).

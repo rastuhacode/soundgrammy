@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import { AudioEngineProvider } from '@/hooks/audio/engine-factory'
 import { useAudioEngine } from '@/hooks/use-audio-engine'
 import { useFullscreenStore } from '@/stores/fullscreen-store'
 import { usePlayerStore } from '@/stores/player-store'
@@ -6,24 +7,27 @@ import { AudioFullscreenPlayer } from '../fullscreen/AudioFullscreenPlayer'
 import { AudioPlayerBar } from './AudioPlayerBar'
 
 export function AudioPlayer() {
+  return <AudioEngineProvider><AudioPlayerContent /></AudioEngineProvider>
+}
+
+function AudioPlayerContent() {
   const track = usePlayerStore(state => state.currentTrack)
   const hydratePreferences = usePlayerStore(state => state.hydratePreferences)
   const isFullscreen = useFullscreenStore(state => state.isFullscreen)
   const exitFullscreen = useFullscreenStore(state => state.exitFullscreen)
   const {
-    audioRefCallback,
-    audioProps,
     currentTime,
     duration,
     bufferedRanges,
     showInitialLoading,
+    isSeeking,
     volume,
     handleSeek,
     handleSeekStart,
     handleSeekEnd,
     handleVolumeChange,
     handleMuteToggle,
-    getAudioElement,
+    isActuallyPlaying,
   } = useAudioEngine()
 
   useEffect(hydratePreferences, [hydratePreferences])
@@ -33,12 +37,6 @@ export function AudioPlayer() {
 
   return (
     <>
-      <audio
-        ref={audioRefCallback}
-        className="hidden"
-        {...audioProps}
-      />
-
       {track && isFullscreen
         ? (
             <AudioFullscreenPlayer
@@ -47,13 +45,14 @@ export function AudioPlayer() {
               duration={duration}
               bufferedRanges={bufferedRanges}
               showInitialLoading={showInitialLoading}
+              isSeeking={isSeeking}
               volume={volume}
               onVolumeChange={handleVolumeChange}
               onMuteToggle={handleMuteToggle}
               onSeek={handleSeek}
               onSeekStart={handleSeekStart}
               onSeekEnd={handleSeekEnd}
-              getAudioElement={getAudioElement}
+              isActuallyPlaying={isActuallyPlaying}
             />
           )
         : null}
@@ -66,6 +65,7 @@ export function AudioPlayer() {
               duration={duration}
               bufferedRanges={bufferedRanges}
               showInitialLoading={showInitialLoading}
+              isSeeking={isSeeking}
               volume={volume}
               onSeek={handleSeek}
               onSeekStart={handleSeekStart}

@@ -48,7 +48,6 @@ export function useListenTracker(options: {
   notifyCompleted: (restartSameTrack?: boolean) => void
 } {
   const { trackId, durationSeconds } = options
-  const listenAttemptEpoch = usePlayerStore(state => state.listenAttemptEpoch)
   const statisticsEnabled = useListenStatsStore(state => state.enabled)
   const statisticsClearEpoch = useListenStatsStore(state => state.clearEpoch)
   const lastFmStatus = useLastFmStore(state => state.status)
@@ -58,7 +57,7 @@ export function useListenTracker(options: {
   const actuallyPlayingRef = useRef(false)
   const qualificationTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const trackIdRef = useRef(trackId)
-  const listenAttemptEpochRef = useRef(listenAttemptEpoch)
+  const listenAttemptEpochRef = useRef(usePlayerStore.getState().listenAttemptEpoch)
   const statisticsClearEpochRef = useRef(statisticsClearEpoch)
   const statisticsEnabledRef = useRef(statisticsEnabled)
   const lastFmReadyRef = useRef(lastFmReady)
@@ -244,24 +243,28 @@ export function useListenTracker(options: {
   }, [statisticsClearEpoch, statisticsEnabled])
 
   useEffect(() => {
-    const attempt = attemptRef.current
-    if (attempt && attempt.trackId !== trackId) {
-      closeAttempt(takePendingListenEndReason(trackId == null ? 'stopped' : 'replaced'))
+    // Observe intent before the engine integration does. React may batch A → B
+    // → A into one render, but each queue transition still closes its attempt.
+    const synchronizeAttempt = () => {
+      const player = usePlayerStore.getState()
+      const next = player.currentTrack
+      const id = next?.id ?? null
+      const changedEpoch = listenAttemptEpochRef.current !== player.listenAttemptEpoch
+      listenAttemptEpochRef.current = player.listenAttemptEpoch
+      trackIdRef.current = id
+      const attempt = attemptRef.current
+      if (attempt && (attempt.trackId !== id || changedEpoch)) {
+        closeAttempt(takePendingListenEndReason(id == null ? 'stopped' : changedEpoch ? 'skipped' : 'replaced'))
+      }
+      if (next && attemptRef.current?.trackId !== id) startAttempt(next.id, next.duration)
     }
-    if (trackId != null && attemptRef.current?.trackId !== trackId) {
-      startAttempt(trackId, durationSeconds)
-    }
+    synchronizeAttempt()
+    return usePlayerStore.subscribe((next, previous) => {
+      if (next.currentTrack?.id !== previous.currentTrack?.id
+        || next.listenAttemptEpoch !== previous.listenAttemptEpoch) synchronizeAttempt()
+    })
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [trackId])
-
-  useEffect(() => {
-    if (listenAttemptEpochRef.current === listenAttemptEpoch) return
-    listenAttemptEpochRef.current = listenAttemptEpoch
-    if (trackId == null || attemptRef.current?.trackId !== trackId) return
-    closeAttempt(takePendingListenEndReason('skipped'))
-    startAttempt(trackId, durationSeconds)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [listenAttemptEpoch])
+  }, [])
 
   useEffect(() => {
     const attempt = attemptRef.current
@@ -284,12 +287,16 @@ export function useListenTracker(options: {
     return () => {
       window.removeEventListener('pagehide', onPageHide)
       window.removeEventListener('beforeunload', onPageHide)
+      closeAttempt('interrupted')
       clearQualificationTimer()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const notifyPlaying = () => {
+    // Play after the final natural end opens a new listen attempt.
+    const current = usePlayerStore.getState().currentTrack
+    if (!attemptRef.current && current) startAttempt(current.id, current.duration)
     const attempt = attemptRef.current
     if (!attempt) return
     actuallyPlayingRef.current = true

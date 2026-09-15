@@ -1,5 +1,8 @@
 //! SoundGrammy desktop backend: Tauri builder, state, and command registration.
 
+#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+mod audio;
+
 mod bounce_analysis;
 mod cache;
 mod commands;
@@ -25,11 +28,15 @@ use crate::state::AppState;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .register_asynchronous_uri_scheme_protocol("stream", |context, request, responder| {
-            let app = context.app_handle().clone();
-            tauri::async_runtime::spawn(async move {
-                responder.respond(streaming::protocol_response(&app, request).await);
-            });
+        .on_page_load(|webview, payload| {
+            #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+            if webview.label() == "main"
+                && payload.event() == tauri::webview::PageLoadEvent::Started
+            {
+                if let Some(state) = webview.try_state::<AppState>() {
+                    state.audio.page_loading();
+                }
+            }
         })
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -62,6 +69,22 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+            commands::audio::native_audio_capabilities,
+            #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+            commands::audio::native_audio_snapshot,
+            #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+            commands::audio::native_audio_load,
+            #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+            commands::audio::native_audio_unload,
+            #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+            commands::audio::native_audio_play,
+            #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+            commands::audio::native_audio_pause,
+            #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+            commands::audio::native_audio_seek,
+            #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+            commands::audio::native_audio_set_volume,
             commands::auth::auth_status,
             commands::auth::refresh_auth,
             commands::auth::phone_send_code,
@@ -77,13 +100,7 @@ pub fn run() {
             commands::get_profile,
             commands::sync_status,
             commands::set_fullscreen_display_awake,
-            commands::get_track_source,
             commands::get_track_bounce_profile,
-            commands::read_stream_range,
-            commands::ensure_stream_range,
-            commands::backfill_stream_id3,
-            commands::download_track_for_playback,
-            commands::close_stream_session,
             commands::download_track,
             commands::prefetch_track,
             commands::cache_track,
@@ -135,8 +152,14 @@ pub fn run() {
             commands::set_proxy_settings,
             commands::parse_proxy_link,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running SoundGrammy");
+        .build(tauri::generate_context!())
+        .expect("error while building SoundGrammy")
+        .run(|app, event| {
+            #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+            if matches!(event, tauri::RunEvent::Exit) {
+                app.state::<AppState>().audio.shutdown();
+            }
+        });
 }
 
 #[cfg(test)]

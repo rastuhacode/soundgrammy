@@ -43,11 +43,11 @@ Optional **MTProto proxy** (tg-ws-proxy compatible: server / port / secret or `t
 - **App cache**: audio under the app cache dir (`audio/{file_unique_id}.{ext}`). Used for in-app playback. Subject to Settings size limit / TTL / clear. Thumbnail border (greyish → primary) reflects cache status.
 - **Download (export)**: copies a track into the system Downloads folder (`SoundGrammy/…`). Not removed by clear cache or eviction. Bulk export uses a dated subfolder.
 - **Download playlist** (`download_playlist`): writes `Downloads/SoundGrammy/<playlist name>/` with audio files plus a UTF-8 `.m3u8` (relative paths). Allowed for All tracks, Liked, and custom playlists (not Popular/Recent). Sequential per-track `ensure_audio` → copy (same as single-track download); does **not** use the bulk Cache size pre-check. Partial success: failures are skipped and reported; M3U lists only files that landed. If the M3U write fails after audio copies succeed, the command still returns the per-track result (folder + succeeded/failed) so the UI can show the summary. Job progress is keyed by `jobId` so parallel playlist downloads and playlist switches keep correct UI state (`playlist-jobs-store`).
-- **Cached playback path**: absolute path → `fileSrc()` (`asset:` URL) for `<audio>` / images.
-- **Uncached (streamed)**: `get_track_source` returns `stream`; the UI attaches `<audio>` to a MediaSource object URL and appends bytes via `read_stream_range` as the download ledger grows (`src/hooks/audio/mse-session.ts`). Full track duration is set on the `MediaSource` from metadata. Buffer UI uses `download:progress` ranges, not WebKit's optimistic `HTMLMediaElement.buffered`.
-- Completing a stream finalize marks the track cached (Telegram-like). Explicit **Cache** also fills app cache without writing to Downloads.
-- The `stream:` protocol in `streaming.rs` remains as the byte backend / range fetcher; playback must not assign `stream:` directly as `audio.src` (that progressive path lies about buffer and clock under WebKit).
-- See [MSE-integration.md](./MSE-integration.md) for the why and transport notes.
+- **Cached playback path**: Rust opens the local audio file directly. Images continue using `fileSrc()` (`asset:` URLs).
+- **Uncached (streamed)**: the Rust audio source reads verified byte ranges from `TrackStream`. Symphonia decodes audio and CPAL sends PCM to the output device. No audio bytes cross frontend IPC.
+- The native engine publishes presentation time and timestamp-mapped downloaded ranges to the UI. Missing bytes remain unavailable until the downloader verifies them.
+- Completing a stream marks the track cached. Explicit **Cache** also fills app cache without writing to Downloads.
+- See [native audio](./native-audio.md) and [streaming](./streaming.md) for playback and download lifetimes.
 
 ## Events
 
@@ -91,3 +91,5 @@ Listeners live in `src/lib/api.ts`.
 - **Custom playlists** — editable membership; the same track may appear more than once as distinct ordered entries. Context menu and bulk actions may show “Remove from playlist” (removes one occurrence by position). Track order persisted with `reorder_playlist_tracks`.
 
 Tracklist actions are gated in `src/components/playlist/track-actions.ts` so non-custom playlists never expose remove-from-playlist. Drag-reorder is enabled only for Liked/custom when search and column sort are clear and selection mode is off.
+
+See [Audio engine boundary](audio-engine.md) for transport ownership, implementation selection, and the native proxy contract.

@@ -15,19 +15,19 @@ use crate::telegram::document::StoredDocument;
 pub const CHUNK_SIZE: u64 = 128 * 1024;
 pub(super) const FOREGROUND_CONCURRENCY: usize = 4;
 
+mod file;
 mod finalize;
 mod manager;
 mod partial_cache;
 mod paths;
 mod progress;
-mod protocol;
 #[cfg(test)]
 mod tests;
 mod transfer;
 
+pub use file::read_file_range;
 pub use manager::StreamingManager;
 pub use partial_cache::partial_cache_info;
-pub use protocol::{protocol_response, read_file_range};
 
 use paths::partial_metadata_temp_path;
 use progress::StreamState;
@@ -54,10 +54,6 @@ pub struct TrackStream {
 }
 
 impl TrackStream {
-    pub fn track_id(&self) -> i64 {
-        self.track.id
-    }
-
     pub fn total(&self) -> u64 {
         self.total
     }
@@ -90,5 +86,33 @@ impl TrackStream {
             paths.push(final_path);
         }
         paths
+    }
+}
+
+impl TrackStream {
+    /// Storage-only observer: waits for verified chunks without scheduling downloads.
+    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+    pub async fn read_downloaded_range(
+        self: &std::sync::Arc<Self>,
+        start: u64,
+        end: u64,
+        active: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    ) -> crate::error::AppResult<Vec<u8>> {
+        if start > end || end >= self.total {
+            return Err(crate::error::AppError::msg("invalid observer range"));
+        }
+        loop {
+            Self::require_active(Some(&active))?;
+            let ready = {
+                let state = self.state.lock().await;
+                state.chunks[(start / CHUNK_SIZE) as usize..=(end / CHUNK_SIZE) as usize]
+                    .iter()
+                    .all(|slot| slot.status == progress::ChunkStatus::Ready)
+            };
+            if ready {
+                return self.read_range(start, end, Some(active)).await;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+        }
     }
 }
