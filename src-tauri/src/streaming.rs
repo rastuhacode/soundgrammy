@@ -91,7 +91,6 @@ impl TrackStream {
 
 impl TrackStream {
     /// Storage-only observer: waits for verified chunks without scheduling downloads.
-    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
     pub async fn read_downloaded_range(
         self: &std::sync::Arc<Self>,
         start: u64,

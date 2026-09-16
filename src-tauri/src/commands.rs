@@ -341,5 +341,4 @@ fn require_uid(state: &AppState) -> AppResult<i64> {
         .ok_or(crate::error::AppError::NotAuthorized)
 }
 
-#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 pub mod audio;

@@ -62,13 +62,18 @@ rand = "0.10"
 chrono = { version = "0.4", default-features = false, features = ["std"] }
 symphonia = { version = "0.6", default-features = false, features = ["aac", "alac", "flac", "isomp4", "mkv", "ogg", "pcm", "vorbis", "wav", "mpa"] }
 
+# Shared desktop and mobile audio output, PCM buffering, and resampling.
+cpal = { version = "0.18", default-features = false }
+ringbuf = "0.5"
+rubato = "0.16.2"
+
+[target.'cfg(target_os = "android")'.dependencies]
+# Match Tauri/Wry's JNI handle; CPAL consumes the shared ndk-context pointers.
+jni = "0.21"
+ndk-context = "0.1"
+
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 keepawake = "=0.6.1"
 
 [dev-dependencies]
 tokio = { version = "1", features = ["test-util"] }
-
-[target.'cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))'.dependencies]
-cpal = { version = "0.18", default-features = false }
-ringbuf = "0.5"
-rubato = "0.16.2"

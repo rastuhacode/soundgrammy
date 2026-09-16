@@ -114,7 +114,6 @@ pub(crate) fn is_auth_revoked_message(message: &str) -> bool {
 }
 
 fn clear_local_session(state: &AppState) -> AppResult<()> {
-    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
     state.audio.clear_session();
     if let Ok(Some(profile)) = state.db.load_profile() {
         state.db.clear_active_profile(profile.tg_user_id)?;

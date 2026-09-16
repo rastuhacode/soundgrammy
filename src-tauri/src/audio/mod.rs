@@ -1,4 +1,6 @@
 //! Native transport and authoritative playback session.
+#[cfg(target_os = "android")]
+mod android;
 mod availability;
 mod convert;
 mod decode;
@@ -161,6 +163,8 @@ impl NativeAudioService {
             .unwrap_or_default()
     }
     pub async fn command(&self, app: AppHandle, control: Control) -> Result<Snapshot, String> {
+        #[cfg(target_os = "android")]
+        android::initialize(&app).await?;
         if self.stopping.load(Ordering::Acquire) {
             return Err("interrupted".into());
         }

@@ -1,4 +1,4 @@
-# Native desktop audio
+# Native audio
 
 ## Run
 
@@ -8,11 +8,13 @@ bun tauri:dev
 
 Rust is the only desktop playback engine in development and release builds.
 No environment variable is required.
-The native service and its output dependencies compile only on macOS, Windows,
-and Linux. Initialization is lazy; a missing device does not prevent startup.
+The native service and its output dependencies are enabled on desktop, Android,
+and iOS. Android requires API 26 or newer for CPAL’s AAudio backend. Initialization
+is lazy; a missing device does not prevent startup. Mobile foreground playback
+still requires device verification; enabling compilation does not establish parity.
 
-This implements desktop playback. Android/iOS background playback still needs
-platform audio lifecycle integration and mobile output support. Queue progression,
+Android/iOS background playback still needs
+platform audio lifecycle integration. Queue progression,
 repeat/shuffle, and playback intent now belong to the native service and survive
 WebView suspension/recreation within the process. Listening statistics, Last.fm
 attempt accounting, shortcuts, and browser Media Session controls still use the
@@ -20,6 +22,8 @@ frontend. See [audio engine boundary](audio-engine.md) for the ownership contrac
 
 ## Implementation
 
+- `audio/android.rs`: initializes CPAL’s NDK context from a retained Android Application
+  before the first audio command; no Activity is retained.
 - `audio/mod.rs`: bounded 32-command control queue and output ownership on one
   dedicated thread; per-generation decode workers and bounded message channels.
 - `audio/session.rs`: native queue and mode policy, attempt identity, serial user
@@ -72,7 +76,7 @@ owners retain their independent lifetime.
 
 | Dependency | Purpose | License / compatibility |
 | --- | --- | --- |
-| CPAL 0.18.2 | Desktop host/device selection and sample output | Apache-2.0; desktop target dependency; default optional hosts disabled |
+| CPAL 0.18.2 | Desktop/mobile host/device selection and sample output | Apache-2.0; default optional hosts disabled |
 | ringbuf 0.5.2 | Bounded lock-free SPSC PCM transfer | MIT/Apache-2.0; no platform audio dependencies |
 | Rubato 0.16.2 | Stateful, band-limited FFT sample-rate conversion | MIT; portable Rust; mature API compatible with the current Rust 1.97 toolchain |
 
@@ -163,3 +167,17 @@ MP3 landing time can be approximate, especially for variable bitrate files;
 container-indexed formats use their demuxer's seek implementation. A two-minute
 MP3 regression checks playable output at 75% with the middle chunks untouched.
 Real-device CPU and network playback still require a follow-up run.
+
+### Mobile target enablement (2026-09-17)
+
+Removed desktop-only audio gates, including command registration, streaming
+observation, active-cache protection, and logout cleanup. Shared dependency
+versions are unchanged. Android minimum SDK is 26 in both Tauri configuration
+and the generated Gradle project. CPAL’s Android context is initialized lazily
+using a process-lifetime Application global reference before any output access.
+
+Validation: desktop `cargo check`, Android ARM64 `cargo check` using NDK 29/API 26,
+Rust formatting, and 45 desktop audio tests passed. No phone playback was tested.
+iOS compilation was not checked: this environment lacks the iOS Rust target and
+full Xcode/iOS SDK. Native media controls and background lifecycle remain future
+work; Android foreground-service support is not included in this change.
