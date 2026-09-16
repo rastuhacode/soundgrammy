@@ -12,14 +12,20 @@ The native service and its output dependencies compile only on macOS, Windows,
 and Linux. Initialization is lazy; a missing device does not prevent startup.
 
 This implements desktop playback. Android/iOS background playback still needs
-platform audio lifecycle integration and a queue owner that survives WebView
-suspension. Queue, repeat/shuffle, listening statistics, Last.fm, shortcuts, and
-browser Media Session controls continue through the existing adapter.
+platform audio lifecycle integration and mobile output support. Queue progression,
+repeat/shuffle, and playback intent now belong to the native service and survive
+WebView suspension/recreation within the process. Listening statistics, Last.fm
+attempt accounting, shortcuts, and browser Media Session controls still use the
+frontend. See [audio engine boundary](audio-engine.md) for the ownership contract.
 
 ## Implementation
 
 - `audio/mod.rs`: bounded 32-command control queue and output ownership on one
   dedicated thread; per-generation decode workers and bounded message channels.
+- `audio/session.rs`: native queue and mode policy, attempt identity, serial user
+  commands and natural-end transitions, and revisioned UI snapshots.
+- `audio/shuffle.rs`: native random, variety, rediscover, smart, fresh, and duration
+  permutations, with current-membership pinning and base-order restoration.
 - `audio/source.rs`: cached files or an independent seek cursor with a 128 KiB
   verified range cache. Missing blocks use the existing `TrackStream` downloader;
   blocking decoders wait on bounded replies, checking cancellation every 25 ms.
@@ -35,7 +41,7 @@ browser Media Session controls continue through the existing adapter.
   network requests, or event emission. CPAL timestamps account for device delay;
   natural completion waits for the final queued frames to be presented.
 - `native-engine.ts`: command serialization, payload validation, identity and
-  revision filtering, startup subscription/snapshot reconciliation, and scrubbing.
+  revision filtering, startup/resume snapshot reconciliation, and scrubbing.
 - `engine-factory.tsx`: creates the native adapter for each provider lifetime.
   Format and output errors are surfaced without switching playback engines.
 
@@ -83,6 +89,15 @@ Linux needs ALSA development headers (`libasound2-dev` on Ubuntu), in addition t
 the existing Tauri packages. CI now checks macOS, Windows, and Linux headlessly.
 
 ## Verification record
+
+Native session migration automated validation (2026-09-16): 258 frontend tests
+and 142 Rust tests passed, including 3,000 native state transitions, all shuffle
+modes, duplicate memberships, stale commands/seeks, and UI reattachment races.
+Review regressions cover unpinned playlist shuffle and delayed completion events
+after the native session has advanced, including duplicate-track attempts.
+Frontend lint, TypeScript/production build, Clippy with warnings denied, and Rust
+formatting passed. This is headless validation; audible hardware playback and
+mobile background execution were not exercised by this migration.
 
 Local macOS automated validation (2026-09-15): frontend tests, Rust tests,
 ESLint, Clippy with warnings denied, TypeScript, Rust formatting/check, and the
@@ -136,8 +151,10 @@ Record device verification results separately from automated checks.
 ### Playback regression fixes
 
 Play acknowledges a buffering state before output resumes, so the frontend does
-not interpret the command reply as another Pause. Main WebView navigation stops
-native playback and invalidates commands from the previous page.
+not interpret the command reply as another Pause. Main WebView navigation stopped
+native playback in the original transport-only implementation. The native-session
+migration now keeps playback running and only invalidates queued old-page commands;
+logout/revocation explicitly clears the session.
 
 Canceled reads return ConnectionAborted, not Interrupted (which read_exact
 retries indefinitely). This prevents canceled decoder/coverage workers spinning.

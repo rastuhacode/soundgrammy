@@ -70,6 +70,8 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+            commands::audio::native_player_command,
+            #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
             commands::audio::native_audio_capabilities,
             #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
             commands::audio::native_audio_snapshot,

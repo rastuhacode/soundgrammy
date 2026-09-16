@@ -46,18 +46,6 @@ async function loadLibrary(firstLoad: boolean) {
   useListenStatsStore.getState().hydrate(listenStatsEnabled, listenStats)
   await useCacheStore.getState().hydrate()
 
-  // Keep the current track reference fresh (mirrors PlayerTracksHydrator).
-  const { currentTrack } = usePlayerStore.getState()
-  if (currentTrack) {
-    const refreshed = library.find(t => t.id === currentTrack.id) ?? null
-    if (refreshed !== currentTrack) {
-      usePlayerStore.setState({
-        currentTrack: refreshed,
-        ...(refreshed ? {} : { isPlaying: false }),
-      })
-    }
-  }
-
   if (firstLoad) {
     usePlaylistsStore.getState().hydrate(playlists)
   }

@@ -31,7 +31,7 @@ export function createAudioEngine(override?: AudioEngineFactory): AudioEngineCom
 
 const EngineContext = createContext<AudioEngine | null>(null)
 
-/** Each effect lifetime owns exactly one engine, including Strict Mode replays. */
+/** Each effect owns one adapter; native playback outlives the view. */
 export function AudioEngineProvider({ children, factory }: {
   children?: ReactNode
   factory?: AudioEngineFactory
@@ -46,7 +46,7 @@ export function AudioEngineProvider({ children, factory }: {
     setComposition(null)
     void (async () => {
       try {
-        // Native teardown can be asynchronous. Never create its replacement early.
+        // Finish detaching old subscriptions before attaching a replacement.
         await teardownRef.current
         if (cancelled) return
         next = createAudioEngine(factory)
@@ -61,7 +61,7 @@ export function AudioEngineProvider({ children, factory }: {
       cancelled = true
       if (!next) return
       teardownRef.current = next.engine.destroy()
-      // Preserve rejection for any replacement, without leaking an unhandled promise on unmount.
+      // Preserve cleanup failures for a replacement without leaking a rejection on unmount.
       void teardownRef.current.catch(() => {})
     }
   }, [factory])

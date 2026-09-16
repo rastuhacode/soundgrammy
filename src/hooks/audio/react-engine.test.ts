@@ -68,6 +68,8 @@ describe('React engine composition', () => {
     const a = track(1)
     await act(async () => {
       usePlayerStore.setState({ currentTrack: a, isPlaying: true })
+      await fake.engine.load({ trackId: 1, attemptId: 'native:1' })
+      await fake.engine.play()
     })
     expect(container.querySelector('audio')).toBeNull()
     expect(model.isActuallyPlaying).toBe(true)
@@ -98,6 +100,9 @@ describe('React engine composition', () => {
     })
     await act(async () => {
       usePlayerStore.setState({ currentTrack: track(1), isPlaying: true })
+      const engine = instances.at(-1)!.engine
+      await engine.load({ trackId: 1, attemptId: 'native:1' })
+      await engine.play()
     })
     const count = instances.length
     await act(async () => {
@@ -122,10 +127,16 @@ describe('React engine composition', () => {
     })
     await act(async () => {
       usePlayerStore.setState({ currentTrack: track(1), isPlaying: true })
+      const engine = fake.engine
+      await engine.load({ trackId: 1, attemptId: 'native:1' })
+      await engine.play()
     })
     await act(async () => {
       usePlayerStore.setState({ currentTrack: track(2) })
+      await fake.engine.load({ trackId: 2, attemptId: 'native:2' })
       usePlayerStore.setState({ currentTrack: track(1) })
+      await fake.engine.load({ trackId: 1, attemptId: 'native:3' })
+      await fake.engine.play()
     })
     expect(vi.mocked(api.recordListenStart).mock.calls.map(args => args[0])).toEqual([1, 2, 1])
     expect(api.lastFmAttemptStarted).toHaveBeenCalledTimes(2)

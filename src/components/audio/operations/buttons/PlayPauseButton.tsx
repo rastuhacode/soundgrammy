@@ -5,14 +5,14 @@ import { usePlayerStore } from '@/stores/player-store'
 
 export function PlayPauseButton() {
   const isPlaying = usePlayerStore(state => state.isPlaying)
-  const setPlaying = usePlayerStore(state => state.setPlaying)
+  const togglePlaying = usePlayerStore(state => state.togglePlaying)
   const track = usePlayerStore(state => state.currentTrack)
 
   const title = isPlaying ? 'Pause' : 'Play'
 
   function handleToggle() {
     if (!track) return
-    setPlaying(!isPlaying)
+    togglePlaying()
   }
 
   return (

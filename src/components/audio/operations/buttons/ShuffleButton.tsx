@@ -40,7 +40,7 @@ export function ShuffleButton() {
   const buttonRef = useRef<HTMLButtonElement>(null)
   const shuffleState = useShuffleStore(state => state.shuffle)
   const shuffleMode = useShuffleStore(state => state.mode)
-  const setShuffle = usePlayerStore(state => state.setShuffle)
+  const toggleShuffle = usePlayerStore(state => state.toggleShuffle)
   const setShuffleMode = usePlayerStore(state => state.setShuffleMode)
   const activeLabel = SHUFFLE_MODE_OPTIONS.find(
     option => option.id === shuffleMode,
@@ -49,10 +49,6 @@ export function ShuffleButton() {
   const selectMode = (mode: ShuffleMode) => {
     setShuffleMode(mode)
     setOpen(false)
-  }
-
-  const toggleShuffle = () => {
-    setShuffle(shuffleState === 'on' ? 'off' : 'on')
   }
 
   return (

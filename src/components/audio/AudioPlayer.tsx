@@ -12,7 +12,7 @@ export function AudioPlayer() {
 
 function AudioPlayerContent() {
   const track = usePlayerStore(state => state.currentTrack)
-  const hydratePreferences = usePlayerStore(state => state.hydratePreferences)
+  const commandError = usePlayerStore(state => state.commandError)
   const isFullscreen = useFullscreenStore(state => state.isFullscreen)
   const exitFullscreen = useFullscreenStore(state => state.exitFullscreen)
   const {
@@ -30,13 +30,13 @@ function AudioPlayerContent() {
     isActuallyPlaying,
   } = useAudioEngine()
 
-  useEffect(hydratePreferences, [hydratePreferences])
   useEffect(() => {
     if (!track && isFullscreen) exitFullscreen()
   }, [exitFullscreen, isFullscreen, track])
 
   return (
     <>
+      {commandError && <p role="alert" className="px-4 py-2 text-sm text-destructive">{commandError}</p>}
       {track && isFullscreen
         ? (
             <AudioFullscreenPlayer

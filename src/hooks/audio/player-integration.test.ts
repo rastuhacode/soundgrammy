@@ -1,156 +1,107 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { usePlayerStore } from '@/stores/player-store'
-import { useRepeatStore } from '@/stores/repeat-store'
-import type { Track } from '@/types'
+import { acceptPlayerResponse, usePlayerStore } from '@/stores/player-store'
+import type { AudioEngine, AudioEngineEvent, AudioEngineSnapshot } from './engine'
 import { connectPlayerEngine } from './player-integration'
-import { createFakeAudioEngine } from './fake-engine'
+import type { Track } from '@/types'
 
-const track = (id: number): Track => ({ id, duration: 120, title: 'Track', performer: null,
-  tg_user_id: 1, file_id: '', file_unique_id: '', source: 'saved_music',
-  mime_type: 'audio/mpeg', file_size: 100, created_at: '' })
-const a = track(1)
-const b = track(2)
-function queue(tracks: Track[], cursor = 0) {
-  usePlayerStore.setState({
-    queue: { tracks, cursor, source: null, sourceIndices: null, baseEntries: null },
-    currentTrack: tracks[cursor] ?? null, isPlaying: tracks.length > 0,
-  })
+const track = (id: number): Track => ({ id, duration: 120, title: 'Track', performer: null, tg_user_id: 1, file_id: '', file_unique_id: '', source: 'saved_music', mime_type: 'audio/mpeg', file_size: 100, created_at: '' })
+function snapshot(attempt = 1, cursor = 0, status: AudioEngineSnapshot['status'] = 'playing'): AudioEngineSnapshot {
+  return { revision: attempt, kind: 'native-rust', status, trackId: 1, attemptId: `native:${attempt}`, currentTimeSeconds: 12, durationSeconds: 120,
+    volumePercent: 100, error: null, initialLoading: false, bufferedRanges: [],
+    player: { revision: attempt, attempt, endReason: 'completed', isPlaying: status === 'playing', preferences: { repeat: 'none', shuffle: 'off', mode: 'random' },
+      queue: { tracks: [track(1), track(1)], cursor, source: null, sourceIndices: null, baseEntries: null } } }
 }
-function setup() {
-  const fake = createFakeAudioEngine()
+function harness(initial = snapshot()) {
+  let state = initial
+  const listeners = new Set<(event: AudioEngineEvent) => void>()
+  const engine = {
+    kind: 'native-rust',
+    getSnapshot: () => state,
+    subscribe: (fn: (e: AudioEngineEvent) => void) => {
+      listeners.add(fn)
+      return () => {
+        listeners.delete(fn)
+      }
+    },
+    load: vi.fn(), unload: vi.fn(), play: vi.fn(), pause: vi.fn(), destroy: vi.fn() } as unknown as AudioEngine
   const activity = { notifyPlaying: vi.fn(), notifyActivityStopped: vi.fn(), notifyCompleted: vi.fn() }
-  return { ...fake, activity, disconnect: connectPlayerEngine(fake.engine, activity) }
+  return { engine, activity,
+    state: (next: AudioEngineSnapshot) => {
+      state = next
+      listeners.forEach(fn => fn({ type: 'state', snapshot: next }))
+    },
+    end: (attemptId: string) => listeners.forEach(fn => fn({ type: 'ended', trackId: state.trackId!, attemptId, revision: state.revision })),
+  }
 }
-beforeEach(() => {
-  usePlayerStore.setState({ listenAttemptEpoch: 0 })
-  queue([])
-  useRepeatStore.setState({ repeat: 'none' })
-})
-
-describe('player engine integration', () => {
-  it('retains rapid A → B → A transitions and ignores late state and queue advancement', async () => {
-    const h = setup()
-    queue([a, b])
-    usePlayerStore.getState().playNext()
-    usePlayerStore.getState().playPrevious()
-    await Promise.resolve()
-    expect(h.driver.sessions.map(session => session.request.trackId)).toEqual([1, 2, 1])
-    expect(new Set(h.driver.sessions.map(session => session.request.attemptId)).size).toBe(3)
-    const final = h.engine.getSnapshot()
-    h.driver.sessions[0]!.observer.state({ status: 'paused', currentTimeSeconds: 100 })
-    h.driver.sessions[1]!.observer.failed({ code: 'unknown', message: 'Late', recoverable: true })
-    h.driver.sessions[0]!.observer.ended()
-    h.driver.sessions[1]!.observer.ended()
-    expect(h.engine.getSnapshot()).toBe(final)
-    expect(usePlayerStore.getState().queue.cursor).toBe(0)
-    expect(usePlayerStore.getState().isPlaying).toBe(true)
-    expect(h.activity.notifyCompleted).not.toHaveBeenCalled()
-    h.disconnect()
-  })
-
-  it('keeps buffering as intent to play, counts only actual playing, and syncs external pause', async () => {
-    queue([a, b])
-    const h = setup()
-    await Promise.resolve()
+beforeEach(() => usePlayerStore.setState({ nativeRevision: -1 }))
+describe('native player integration', () => {
+  it('reattaches to the existing native session without loading or seeking', () => {
+    const h = harness(snapshot(7, 1))
+    const disconnect = connectPlayerEngine(h.engine, h.activity)
+    expect(usePlayerStore.getState().queue.cursor).toBe(1)
+    expect(usePlayerStore.getState().listenAttemptEpoch).toBe(7)
     expect(h.activity.notifyPlaying).toHaveBeenCalledTimes(1)
-    h.driver.sessions[0]!.observer.state({ status: 'buffering' })
-    expect(usePlayerStore.getState().isPlaying).toBe(true)
+    expect(h.engine.load).not.toHaveBeenCalled()
+    disconnect()
+    expect(h.engine.unload).not.toHaveBeenCalled()
+    expect(h.engine.pause).not.toHaveBeenCalled()
+  })
+  it('never advances on ended; only native snapshots move the queue', () => {
+    const h = harness()
+    const disconnect = connectPlayerEngine(h.engine, h.activity)
+    h.end('native:1')
+    h.end('native:1')
+    h.end('old')
+    expect(h.activity.notifyCompleted).toHaveBeenCalledExactlyOnceWith(false)
+    expect(usePlayerStore.getState().queue.cursor).toBe(0)
+    h.state(snapshot(2, 1))
+    expect(usePlayerStore.getState().queue.cursor).toBe(1)
+    expect(h.engine.load).not.toHaveBeenCalled()
+    disconnect()
+  })
+  it('tracks actual activity without writing pause/play commands back to Rust', () => {
+    const h = harness()
+    const disconnect = connectPlayerEngine(h.engine, h.activity)
+    h.state({ ...snapshot(), status: 'buffering' })
+    h.state({ ...snapshot(), status: 'playing' })
+    h.state(snapshot(2, 0, 'paused'))
     expect(h.activity.notifyActivityStopped).toHaveBeenCalledTimes(1)
-    h.driver.sessions[0]!.observer.state({ status: 'playing' })
-    h.driver.sessions[0]!.observer.state({ status: 'paused' })
-    expect(usePlayerStore.getState().isPlaying).toBe(false)
-    expect(h.driver.sessions).toHaveLength(1)
-    usePlayerStore.getState().setPlaying(true)
-    expect(h.engine.getSnapshot().attemptId).toBe(h.driver.sessions[0]!.request.attemptId)
-    h.disconnect()
+    expect(h.activity.notifyPlaying).toHaveBeenCalledTimes(2)
+    expect(h.engine.play).not.toHaveBeenCalled()
+    expect(h.engine.pause).not.toHaveBeenCalled()
+    disconnect()
   })
-
-  it('restarts duplicate rows on skip and completion as fresh transport attempts', async () => {
-    queue([a, a, a])
-    const h = setup()
-    await Promise.resolve()
-    await h.engine.seek(45)
-    usePlayerStore.getState().playNext()
-    await Promise.resolve()
-    expect(h.engine.getSnapshot().currentTimeSeconds).toBe(0)
-    h.driver.sessions[1]!.observer.ended()
-    await Promise.resolve()
-    expect(usePlayerStore.getState().queue.cursor).toBe(2)
-    expect(h.driver.sessions).toHaveLength(3)
-    expect(h.activity.notifyCompleted).toHaveBeenCalledExactlyOnceWith(true)
-    h.disconnect()
-  })
-
-  it('repeats one with a new attempt, and does not advance the queue twice', async () => {
-    queue([a, b])
-    useRepeatStore.setState({ repeat: 'one' })
-    const h = setup()
-    await Promise.resolve()
-    h.driver.sessions[0]!.observer.ended()
-    h.driver.sessions[0]!.observer.ended()
-    await Promise.resolve()
-    expect(h.driver.sessions).toHaveLength(2)
-    expect(h.driver.sessions[0]!.request.attemptId).not.toBe(h.driver.sessions[1]!.request.attemptId)
-    expect(usePlayerStore.getState().queue.cursor).toBe(0)
-    expect(h.activity.notifyCompleted).toHaveBeenCalledExactlyOnceWith(true)
-    h.disconnect()
-  })
-
-  it('stops at the queue end, then starts a fresh attempt on Play', async () => {
-    queue([a])
-    const h = setup()
-    await Promise.resolve()
-    h.driver.sessions[0]!.observer.ended()
-    expect(usePlayerStore.getState().isPlaying).toBe(false)
-    usePlayerStore.getState().setPlaying(true)
-    await Promise.resolve()
-    expect(h.driver.sessions).toHaveLength(2)
-    expect(h.engine.getSnapshot().status).toBe('playing')
-    h.disconnect()
-  })
-
-  it('preserves an explicit seek after completion when Play opens the next attempt', async () => {
-    queue([a])
-    const h = setup()
-    await Promise.resolve()
-    h.driver.sessions[0]!.observer.ended()
-    await h.engine.seek(40)
-    usePlayerStore.getState().setPlaying(true)
-    await Promise.resolve()
-    expect(h.driver.sessions).toHaveLength(2)
-    expect(h.engine.getSnapshot().currentTimeSeconds).toBe(40)
-    h.disconnect()
-  })
-
-  it('starts a new attempt after a completed native seek changes status to paused', async () => {
-    queue([a])
-    const h = setup()
-    await Promise.resolve()
-    h.driver.sessions[0]!.observer.ended()
-    await h.engine.seek(40)
-    // Native seeking leaves ended state while retaining the completed attempt.
-    vi.spyOn(h.engine, 'getSnapshot').mockReturnValueOnce({ ...h.engine.getSnapshot(), status: 'paused' })
-    usePlayerStore.getState().setPlaying(true)
-    await Promise.resolve()
-    expect(h.driver.sessions).toHaveLength(2)
-    expect(h.engine.getSnapshot().currentTimeSeconds).toBe(40)
-    h.driver.sessions[1]!.observer.ended()
-    expect(h.activity.notifyCompleted).toHaveBeenCalledTimes(2)
-    expect(usePlayerStore.getState().isPlaying).toBe(false)
-    h.disconnect()
-  })
-
-  it('pauses intent on error without advancing, and unloads on clear', async () => {
-    queue([a, b])
-    const h = setup()
-    await Promise.resolve()
-    h.driver.sessions[0]!.observer.failed({ code: 'decode-failed', message: 'Failed', recoverable: true })
-    expect(usePlayerStore.getState().isPlaying).toBe(false)
-    expect(usePlayerStore.getState().queue.cursor).toBe(0)
+  it.each([1, 2])('ignores delayed completion after the store advances to track %s', (nextTrackId) => {
+    const h = harness()
+    const disconnect = connectPlayerEngine(h.engine, h.activity)
+    const next = snapshot(2, 1)
+    next.trackId = nextTrackId
+    next.player!.queue.tracks[1] = track(nextTrackId)
+    // Command replies can advance the mirror before old transport events arrive.
+    acceptPlayerResponse(next)
+    h.state({ ...snapshot(), status: 'ended' })
+    h.end('native:1')
     expect(h.activity.notifyCompleted).not.toHaveBeenCalled()
-    queue([])
-    expect(h.engine.getSnapshot().status).toBe('idle')
-    expect(h.driver.sessions[0]!.disposed).toBe(true)
-    h.disconnect()
+    expect(usePlayerStore.getState().listenAttemptEpoch).toBe(2)
+    h.state(next)
+    h.end('native:2')
+    expect(h.activity.notifyCompleted).toHaveBeenCalledExactlyOnceWith(false)
+    disconnect()
+  })
+
+  it('does not mistake a newer merged session for the old transport attempt', () => {
+    const h = harness()
+    const disconnect = connectPlayerEngine(h.engine, h.activity)
+    const next = snapshot(2, 1)
+    acceptPlayerResponse(next)
+    // Queue and transport revisions reconcile independently. A late full queue
+    // snapshot can temporarily coexist with the old duplicate's audio identity.
+    h.state({ ...snapshot(), player: next.player, status: 'ended' })
+    h.end('native:1')
+    expect(h.activity.notifyCompleted).not.toHaveBeenCalled()
+    expect(h.activity.notifyActivityStopped).not.toHaveBeenCalled()
+    h.state(next)
+    expect(h.activity.notifyPlaying).toHaveBeenCalledTimes(2)
+    disconnect()
   })
 })

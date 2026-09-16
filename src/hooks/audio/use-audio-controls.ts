@@ -1,7 +1,6 @@
 import { useEffect, useRef } from 'react'
 import {
   previousOrRestart,
-  registerPlaybackController,
 } from '@/lib/playback-controller'
 import type { Track } from '@/lib/db'
 import { usePlayerStore } from '@/stores/player-store'
@@ -199,15 +198,6 @@ export function useAudioControls({
   }, [handleSeek])
 
   useEffect(() => {
-    return registerPlaybackController({
-      getCurrentTime: () => currentTimeRef.current,
-      seekTo: (time) => {
-        handleSeekRef.current(time)
-      },
-    })
-  }, [])
-
-  useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
       const shortcut = resolvePlaybackShortcut(event)
       if (!shortcut) return
@@ -217,7 +207,7 @@ export function useAudioControls({
 
       event.preventDefault()
       if (shortcut === 'toggle') {
-        player.setPlaying(!player.isPlaying)
+        player.togglePlaying()
       }
       else if (shortcut === 'next') {
         player.playNext()

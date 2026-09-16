@@ -55,7 +55,6 @@ export function usePlaylistView() {
   const queue = usePlayerStore(state => state.queue)
   const isPlaying = usePlayerStore(state => state.isPlaying)
   const playPlaylist = usePlayerStore(state => state.playPlaylist)
-  const setPlaying = usePlayerStore(state => state.setPlaying)
   const enqueueNext = usePlayerStore(state => state.enqueueNext)
   const appendToQueue = usePlayerStore(state => state.appendToQueue)
   const data = usePlaylistsStore(state => state.data)
@@ -173,19 +172,13 @@ export function usePlaylistView() {
   const customPlaylists = data?.custom ?? []
 
   const handleTrackSelect = (track: Track, sourceIndex: number) => {
-    // Same membership row + same track id: toggle pause/resume instead of restarting.
-    // Require both so a stale sourceIndex after playlist edits cannot pause the wrong row.
-    if (playingSourceIndex === sourceIndex && currentTrackId === track.id) {
-      setPlaying(!isPlaying)
-      return
-    }
-
     // Search filters the table only — queue is still the full playlist.
     // Column sort does apply to playback order; start at this membership slot.
     const startIndex = playableEntries.findIndex(
       entry => entry.sourceIndex === sourceIndex,
     )
     playPlaylist(selectedPlaylist, {
+      toggleIfCurrent: true,
       start: track,
       startIndex: startIndex >= 0 ? startIndex : 0,
       orderedEntries: playableEntries,
