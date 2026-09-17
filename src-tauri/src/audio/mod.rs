@@ -36,6 +36,8 @@ pub struct AudioError {
     pub code: String,
     pub message: String,
     pub recoverable: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub diagnostic: Option<String>,
 }
 #[derive(Clone, Debug, Serialize)]
 pub struct Range {
@@ -45,6 +47,7 @@ pub struct Range {
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Snapshot {
+    last_control: Option<String>,
     pub revision: u64,
     kind: &'static str,
     status: &'static str,
@@ -63,6 +66,7 @@ pub struct Snapshot {
 impl Default for Snapshot {
     fn default() -> Self {
         Self {
+            last_control: None,
             revision: 0,
             kind: "native-rust",
             status: "idle",
@@ -95,7 +99,7 @@ pub struct Capabilities {
 }
 pub enum Control {
     Player(Box<session::Command>),
-    Remote(media::RemoteCommand),
+    Remote(media::QueuedRemote),
     Stop,
     Complete(u64),
     Sync,
@@ -209,7 +213,7 @@ impl NativeAudioService {
                         if result.is_err() && !stopping.load(Ordering::Acquire) {
                             let snapshot = {
                                 let mut snapshot = shared.lock().unwrap_or_else(|p| p.into_inner());
-                                fail(&mut snapshot, "interrupted");
+                                fail(&mut snapshot, "interrupted", None);
                                 snapshot.revision += 1;
                                 snapshot.clone()
                             };
@@ -239,6 +243,7 @@ impl NativeAudioService {
         if self.stopping.load(Ordering::Acquire) || self.clearing.load(Ordering::Acquire) {
             return Err("interrupted".into());
         }
+        let command = media::QueuedRemote::capture(command, &self.snapshot());
         let (reply, _) = tokio::sync::oneshot::channel();
         self.worker
             .lock()
@@ -267,11 +272,12 @@ impl NativeAudioService {
         }
     }
 }
-fn fail(snapshot: &mut Snapshot, code: &str) {
+fn fail(snapshot: &mut Snapshot, code: &str, diagnostic: Option<String>) {
     tracing::warn!(
         engine = "native-rust",
         track_id = snapshot.track_id,
         code,
+        diagnostic,
         "audio playback failed"
     );
     snapshot.seeking = false;
@@ -281,9 +287,11 @@ fn fail(snapshot: &mut Snapshot, code: &str) {
         code: code.into(),
         message: "Native audio playback failed. Try playing the track again.".into(),
         recoverable: true,
+        diagnostic,
     });
 }
 struct Pipeline {
+    diagnostic_stage: String,
     output: output::Output,
     active: Arc<AtomicBool>,
     decoder: Option<JoinHandle<()>>,
@@ -296,6 +304,7 @@ struct Pipeline {
     waiting_seek: bool,
     seek_started: Option<Instant>,
     availability: Arc<availability::Availability>,
+    source_diagnostic: Arc<Mutex<Option<String>>>,
 }
 impl Drop for Pipeline {
     fn drop(&mut self) {
@@ -331,8 +340,10 @@ fn pipeline(
     let clock = output.clock.clone();
     let seek = Arc::new(seek::SeekControl::default());
     let availability = Arc::new(availability::Availability::default());
+    let source_diagnostic = Arc::new(Mutex::new(None));
     let decoder_seek = seek.clone();
     let decoder_availability = availability.clone();
+    let decoder_diagnostic = source_diagnostic.clone();
     let decoder = std::thread::Builder::new()
         .name("native-audio-decode".into())
         .spawn(move || {
@@ -344,6 +355,7 @@ fn pipeline(
                     token.clone(),
                     decoder_seek.clone(),
                     decoder_availability.clone(),
+                    decoder_diagnostic,
                 )
                 .map_err(|_| "source-unavailable")?;
                 decode::decode_inner(
@@ -369,6 +381,7 @@ fn pipeline(
         })
         .map_err(|_| "interrupted")?;
     Ok(Pipeline {
+        diagnostic_stage: "opening source".into(),
         output,
         active,
         decoder: Some(decoder),
@@ -381,6 +394,7 @@ fn pipeline(
         waiting_seek: false,
         seek_started: None,
         availability,
+        source_diagnostic,
     })
 }
 fn update_session(snapshot: &mut Snapshot, session: &mut session::Session, desired: bool) {
@@ -490,13 +504,30 @@ fn run(
         let mut dirty = envelope.is_some();
         if let Some(envelope) = envelope {
             let mut restart = None;
+            let from_remote = matches!(&envelope.control, Control::Remote(_));
             let incoming = match envelope.control {
-                Control::Remote(command) => command.control(&snapshot).unwrap_or(Control::Sync),
+                Control::Remote(command) => {
+                    snapshot.last_control = Some(format!("remote: {command:?}"));
+                    command.control(&snapshot).unwrap_or(Control::Sync)
+                }
                 other => other,
             };
             let control = match incoming {
                 Control::Player(command) => {
                     let command = *command;
+                    // Record only the variant name; queue payloads contain Telegram metadata.
+                    let name = match &command {
+                        session::Command::Playing { playing: true } => "play",
+                        session::Command::Playing { playing: false } => "pause",
+                        session::Command::Toggle => "toggle",
+                        session::Command::Next => "next",
+                        session::Command::Previous { .. } => "previous",
+                        session::Command::Attach { .. } => "attach",
+                        _ => "queue/preferences",
+                    };
+                    if name != "attach" && !from_remote {
+                        snapshot.last_control = Some(format!("ui: {name}"));
+                    }
                     let saves_preferences = command.saves_preferences();
                     let effect =
                         session.apply(command, snapshot.current_time_seconds, |entries, mode| {
@@ -519,6 +550,8 @@ fn run(
                     session_control(effect, &session, &snapshot)
                 }
                 Control::SeekAttempt(seconds, attempt) => {
+                    snapshot.last_control =
+                        Some(format!("ui seek: seconds={seconds}, attempt={attempt:?}"));
                     if attempt.is_some() && attempt != snapshot.attempt_id {
                         let _ = envelope
                             .reply
@@ -528,6 +561,7 @@ fn run(
                     Control::Seek(seconds)
                 }
                 Control::Complete(attempt) => {
+                    snapshot.last_control = Some(format!("natural completion: {attempt}"));
                     let effect = session.complete(attempt);
                     session_control(effect, &session, &snapshot)
                 }
@@ -670,7 +704,7 @@ fn run(
                 ) {
                     Ok(p) => current = Some(p),
                     Err(code) => {
-                        fail(&mut snapshot, code);
+                        fail(&mut snapshot, code, None);
                         desired = false;
                     }
                 }
@@ -687,6 +721,7 @@ fn run(
             while let Ok(message) = p.messages.try_recv() {
                 dirty = true;
                 match message {
+                    decode::Message::Diagnostic(stage) => p.diagnostic_stage = stage,
                     decode::Message::Duration(d) if d.is_finite() && d > 0.0 => {
                         snapshot.duration_seconds = d
                     }
@@ -697,12 +732,28 @@ fn run(
                         stalled_since = Instant::now();
                     }
                     decode::Message::Eof(_) | decode::Message::Seeked(_) => {}
-                    decode::Message::Failed(code) => error = Some(code),
+                    decode::Message::Failed(code) => {
+                        let diagnostic = p
+                            .source_diagnostic
+                            .lock()
+                            .unwrap_or_else(|poisoned| poisoned.into_inner())
+                            .take();
+                        error = Some((
+                            code,
+                            Some(format!(
+                                "stage={}; source={}",
+                                p.diagnostic_stage,
+                                diagnostic
+                                    .as_deref()
+                                    .unwrap_or("no source IO error recorded")
+                            )),
+                        ));
+                    }
                 }
             }
             let clock = &p.output.clock;
             if clock.failed.load(Ordering::Acquire) {
-                error = Some("output-unavailable");
+                error = Some(("output-unavailable", None));
             }
             let consumed = clock.consumed.load(Ordering::Relaxed);
             let queued = clock
@@ -804,10 +855,10 @@ fn run(
                 }
             }
         }
-        if let Some(code) = error {
+        if let Some((code, diagnostic)) = error {
             current = None;
             desired = false;
-            fail(&mut snapshot, code);
+            fail(&mut snapshot, code, diagnostic);
             dirty = true;
         }
         if dirty || (current.is_some() && last_emit.elapsed() >= Duration::from_millis(150)) {
@@ -844,10 +895,18 @@ mod tests {
             }
         };
         assert!(!envelope(Control::Play).valid_for(2, 0));
-        assert!(envelope(Control::Remote(media::RemoteCommand::Next)).valid_for(2, 0));
+        assert!(envelope(Control::Remote(media::QueuedRemote::capture(
+            media::RemoteCommand::Next,
+            &Snapshot::default(),
+        )))
+        .valid_for(2, 0));
         assert!(envelope(Control::Complete(3)).valid_for(2, 0));
         assert!(envelope(Control::from(session::Command::Clear)).valid_for(2, 0));
-        assert!(!envelope(Control::Remote(media::RemoteCommand::Next)).valid_for(2, 1));
+        assert!(!envelope(Control::Remote(media::QueuedRemote::capture(
+            media::RemoteCommand::Next,
+            &Snapshot::default(),
+        )))
+        .valid_for(2, 1));
         let service = NativeAudioService::default();
         service.page_loading();
         assert!(!service.clearing.load(Ordering::Acquire));
@@ -865,14 +924,8 @@ mod tests {
         service.remote_command(media::RemoteCommand::Pause).unwrap();
         let first = rx.try_recv().unwrap();
         let second = rx.try_recv().unwrap();
-        assert!(matches!(
-            first.control,
-            Control::Remote(media::RemoteCommand::Next)
-        ));
-        assert!(matches!(
-            second.control,
-            Control::Remote(media::RemoteCommand::Pause)
-        ));
+        assert!(matches!(first.control, Control::Remote(_)));
+        assert!(matches!(second.control, Control::Remote(_)));
         assert!(first.valid_for(1, 0));
         assert!(second.valid_for(1, 0));
         service.clear_session();

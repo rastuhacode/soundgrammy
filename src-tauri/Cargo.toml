@@ -60,7 +60,7 @@ rustfft = "6.4"
 ruopus = "0.1.2"
 rand = "0.10"
 chrono = { version = "0.4", default-features = false, features = ["std"] }
-symphonia = { version = "0.6", default-features = false, features = ["aac", "alac", "flac", "isomp4", "mkv", "ogg", "pcm", "vorbis", "wav", "mpa"] }
+symphonia = { version = "0.6", default-features = false, features = ["aac", "alac", "flac", "id3v2", "isomp4", "mkv", "ogg", "pcm", "vorbis", "wav", "mpa"] }
 
 # Shared desktop and mobile audio output, PCM buffering, and resampling.
 cpal = { version = "0.18", default-features = false }

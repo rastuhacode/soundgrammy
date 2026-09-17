@@ -5,7 +5,9 @@ import { NativeRustAudioEngine, type NativeTransport } from './native-engine'
 import { TransportEngine } from './transport-engine'
 import type { AudioEngineSnapshot, AudioEngineStatus } from './engine'
 
+const { logError } = vi.hoisted(() => ({ logError: vi.fn() }))
 vi.mock('@/lib/api', () => ({ api: {}, onNativeAudioState: vi.fn(), onNativeAudioEvent: vi.fn() }))
+vi.mock('@/lib/app-logger', () => ({ appLogger: { error: logError } }))
 function harness() {
   const driver = new FakeAudioDriver()
   const backend = new TransportEngine('native-rust', driver)
@@ -51,6 +53,37 @@ function harness() {
 audioEngineContract('native proxy with mocked Tauri', async () => harness())
 
 describe('native event ordering', () => {
+  it('logs only a new native failure and preserves its diagnostic details', async () => {
+    logError.mockClear()
+    const h = harness()
+    await h.engine.load({ trackId: 1, attemptId: 'a' })
+    const current = h.backend.getSnapshot()
+    h.send({ ...current, revision: 99, status: 'playing', error: null })
+    expect(logError).not.toHaveBeenCalled()
+    h.send({
+      ...current,
+      revision: 100,
+      status: 'error',
+      error: {
+        code: 'source-unavailable',
+        message: 'Native audio playback failed. Try playing the track again.',
+        recoverable: true,
+        diagnostic: 'range 1179648..=1310719: telegram error: test failure',
+      },
+    })
+    expect(h.engine.getSnapshot().error?.diagnostic).toContain('range 1179648')
+    expect(logError).toHaveBeenCalledTimes(1)
+    expect(logError).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'Native audio playback failed',
+      context: expect.objectContaining({
+        errorCode: 'source-unavailable',
+        errorDiagnostic: expect.stringContaining('range 1179648'),
+      }),
+    }))
+    h.send({ ...h.engine.getSnapshot(), revision: 101 })
+    expect(logError).toHaveBeenCalledTimes(1)
+    await h.cleanup()
+  })
   it('rejects malformed payloads and old revisions across native identities', async () => {
     const h = harness()
     await h.engine.load({ trackId: 1, attemptId: 'new' })

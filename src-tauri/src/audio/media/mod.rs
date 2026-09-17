@@ -139,6 +139,38 @@ pub enum RemoteCommand {
     SeekBy(f64),
     SeekFor(Identity, f64),
 }
+
+/// An OS command is meaningful only for the playback attempt that was presented
+/// when its callback arrived. Natural completion is processed ahead of callbacks,
+/// so carrying this identity prevents a late pause/next from affecting its successor.
+#[derive(Clone, Debug)]
+pub struct QueuedRemote {
+    command: RemoteCommand,
+    identity: Option<Identity>,
+}
+impl QueuedRemote {
+    pub fn capture(command: RemoteCommand, snapshot: &Snapshot) -> Self {
+        let identity = Presentation::from_snapshot(snapshot).identity;
+        tracing::debug!(?command, ?identity, "queued native media command");
+        Self { command, identity }
+    }
+
+    pub(super) fn control(self, snapshot: &Snapshot) -> Option<Control> {
+        let current = Presentation::from_snapshot(snapshot).identity;
+        if self.identity != current {
+            tracing::info!(
+                command = ?self.command,
+                queued_for = ?self.identity,
+                current = ?current,
+                "ignored stale native media command"
+            );
+            return None;
+        }
+        tracing::debug!(command = ?self.command, identity = ?current, "applying native media command");
+        self.command.control(snapshot)
+    }
+}
+
 impl RemoteCommand {
     pub(super) fn control(self, snapshot: &Snapshot) -> Option<Control> {
         let p = Presentation::from_snapshot(snapshot);
@@ -389,6 +421,26 @@ mod tests {
         let empty = Presentation::from_snapshot(&Snapshot::default());
         assert_eq!(empty.actions, Actions::default());
         assert!(empty.identity.is_none());
+    }
+
+    #[test]
+    fn pause_queued_for_completed_attempt_cannot_pause_loading_successor() {
+        let ending = snapshot();
+        let queued = QueuedRemote::capture(RemoteCommand::Pause, &ending);
+
+        let mut successor = ending.clone();
+        let session = Arc::make_mut(successor.player.as_mut().unwrap());
+        assert_eq!(session.complete(session.attempt), session::Effect::Load);
+        successor.track_id = session.queue.current().map(|track| track.id);
+        successor.attempt_id = Some(format!("native:{}", session.attempt));
+        successor.status = "loading";
+
+        assert!(queued.control(&successor).is_none());
+        assert!(matches!(
+            QueuedRemote::capture(RemoteCommand::Pause, &successor).control(&successor),
+            Some(Control::Player(command))
+                if matches!(*command, session::Command::Playing { playing: false })
+        ));
     }
     #[test]
     fn native_mapping_reuses_session_semantics_and_duplicate_attempts() {

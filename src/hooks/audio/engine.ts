@@ -12,6 +12,8 @@ export interface AudioEngineError {
   code: 'source-unavailable' | 'unsupported-format' | 'decode-failed' | 'output-unavailable' | 'interrupted' | 'unknown'
   message: string
   recoverable: boolean
+  /** Sanitized backend detail retained for opt-in diagnostic logs. */
+  diagnostic?: string
 }
 export interface AudioEngineSnapshot {
   revision: number
