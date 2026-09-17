@@ -55,6 +55,8 @@ pub fn run() {
                 config, db, None, data_dir, cache_dir, false, None,
             ));
 
+            audio::media::initialize(app.handle());
+
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 let state = handle.state::<AppState>();
@@ -148,6 +150,7 @@ pub fn run() {
         .run(|app, event| {
             if matches!(event, tauri::RunEvent::Exit) {
                 app.state::<AppState>().audio.shutdown();
+                audio::media::shutdown(app);
             }
         });
 }

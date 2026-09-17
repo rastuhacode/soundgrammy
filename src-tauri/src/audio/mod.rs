@@ -4,6 +4,7 @@ mod android;
 mod availability;
 mod convert;
 mod decode;
+pub mod media;
 mod output;
 mod seek;
 pub mod session;
@@ -94,6 +95,8 @@ pub struct Capabilities {
 }
 pub enum Control {
     Player(Box<session::Command>),
+    Remote(media::RemoteCommand),
+    Stop,
     Complete(u64),
     Sync,
     Start(Request, bool, f64),
@@ -112,15 +115,25 @@ impl From<session::Command> for Control {
 }
 struct Envelope {
     page_epoch: u64,
+    session_epoch: u64,
     control: Control,
     reply: tokio::sync::oneshot::Sender<Result<Snapshot, String>>,
 }
 impl Envelope {
-    fn valid_for_page(&self, page: u64) -> bool {
-        self.page_epoch == page
+    fn valid_for(&self, page: u64, session: u64) -> bool {
+        if self.session_epoch != session {
+            return false;
+        }
+        matches!(self.control, Control::Remote(_))
+            || self.page_epoch == page
             || matches!(self.control, Control::Complete(_))
             || matches!(&self.control, Control::Player(command) if matches!(command.as_ref(), session::Command::Clear))
     }
+}
+#[derive(Default)]
+struct CommandEpochs {
+    page: AtomicU64,
+    session: AtomicU64,
 }
 #[derive(Default)]
 pub struct NativeAudioService {
@@ -128,16 +141,17 @@ pub struct NativeAudioService {
     snapshot: Arc<Mutex<Snapshot>>,
     stopping: Arc<AtomicBool>,
     clearing: Arc<AtomicBool>,
-    page_epoch: Arc<AtomicU64>,
+    epochs: Arc<CommandEpochs>,
     protection: Arc<Mutex<Option<(u64, PathBuf)>>>,
 }
 impl NativeAudioService {
     pub fn clear_session(&self) {
-        self.page_epoch.fetch_add(1, Ordering::AcqRel);
+        self.epochs.session.fetch_add(1, Ordering::AcqRel);
+        self.epochs.page.fetch_add(1, Ordering::AcqRel);
         self.clearing.store(true, Ordering::Release);
     }
     pub fn page_loading(&self) {
-        self.page_epoch.fetch_add(1, Ordering::AcqRel);
+        self.epochs.page.fetch_add(1, Ordering::AcqRel);
     }
     pub fn snapshot(&self) -> Snapshot {
         self.snapshot
@@ -176,7 +190,7 @@ impl NativeAudioService {
                 let shared = self.snapshot.clone();
                 let stopping = self.stopping.clone();
                 let clearing = self.clearing.clone();
-                let page_epoch = self.page_epoch.clone();
+                let epochs = self.epochs.clone();
                 let protection = self.protection.clone();
                 let thread = std::thread::Builder::new()
                     .name("native-audio-control".into())
@@ -188,14 +202,18 @@ impl NativeAudioService {
                                 shared.clone(),
                                 stopping.clone(),
                                 clearing,
-                                page_epoch,
+                                epochs,
                                 protection,
                             )
                         }));
                         if result.is_err() && !stopping.load(Ordering::Acquire) {
-                            let mut snapshot = shared.lock().unwrap_or_else(|p| p.into_inner());
-                            fail(&mut snapshot, "interrupted");
-                            snapshot.revision += 1;
+                            let snapshot = {
+                                let mut snapshot = shared.lock().unwrap_or_else(|p| p.into_inner());
+                                fail(&mut snapshot, "interrupted");
+                                snapshot.revision += 1;
+                                snapshot.clone()
+                            };
+                            media::publish(&app, &snapshot, true);
                             let _ = app.emit("audio:state", snapshot.clone());
                         }
                     })
@@ -209,11 +227,32 @@ impl NativeAudioService {
                 .try_send(Envelope {
                     control,
                     reply,
-                    page_epoch: self.page_epoch.load(Ordering::Acquire),
+                    page_epoch: self.epochs.page.load(Ordering::Acquire),
+                    session_epoch: self.epochs.session.load(Ordering::Acquire),
                 })
                 .map_err(|_| "audio command queue unavailable")?;
         }
         receive.await.map_err(|_| "interrupted".to_string())?
+    }
+    /// Enqueue synchronously from native callbacks, preserving arrival order with UI commands.
+    pub fn remote_command(&self, command: media::RemoteCommand) -> Result<(), String> {
+        if self.stopping.load(Ordering::Acquire) || self.clearing.load(Ordering::Acquire) {
+            return Err("interrupted".into());
+        }
+        let (reply, _) = tokio::sync::oneshot::channel();
+        self.worker
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .as_ref()
+            .ok_or("audio worker unavailable")?
+            .0
+            .try_send(Envelope {
+                page_epoch: self.epochs.page.load(Ordering::Acquire),
+                session_epoch: self.epochs.session.load(Ordering::Acquire),
+                control: Control::Remote(command),
+                reply,
+            })
+            .map_err(|_| "audio command queue unavailable".into())
     }
     pub fn shutdown(&self) {
         self.stopping.store(true, Ordering::Release);
@@ -399,7 +438,7 @@ fn run(
     shared: Arc<Mutex<Snapshot>>,
     stopping: Arc<AtomicBool>,
     clearing: Arc<AtomicBool>,
-    page_epoch: Arc<AtomicU64>,
+    epochs: Arc<CommandEpochs>,
     protection: Arc<Mutex<Option<(u64, PathBuf)>>>,
 ) {
     let mut snapshot = Snapshot::default();
@@ -423,33 +462,39 @@ fn run(
             Some(Envelope {
                 control: Control::from(session::Command::Clear),
                 reply,
-                page_epoch: page_epoch.load(Ordering::Acquire),
+                page_epoch: epochs.page.load(Ordering::Acquire),
+                session_epoch: epochs.session.load(Ordering::Acquire),
             })
         } else if let Some(attempt) = pending_completion.take() {
             let (reply, _) = tokio::sync::oneshot::channel();
             Some(Envelope {
                 control: Control::Complete(attempt),
                 reply,
-                page_epoch: page_epoch.load(Ordering::Acquire),
+                page_epoch: epochs.page.load(Ordering::Acquire),
+                session_epoch: epochs.session.load(Ordering::Acquire),
             })
         } else {
             rx.recv_timeout(Duration::from_millis(20)).ok()
         };
-        let page = page_epoch.load(Ordering::Acquire);
+        let page = epochs.page.load(Ordering::Acquire);
         // Navigation invalidates queued UI commands, not the native session.
         if page != current_page {
             current_page = page;
         }
         if envelope
             .as_ref()
-            .is_some_and(|e| !e.valid_for_page(current_page))
+            .is_some_and(|e| !e.valid_for(current_page, epochs.session.load(Ordering::Acquire)))
         {
             envelope = None;
         }
         let mut dirty = envelope.is_some();
         if let Some(envelope) = envelope {
             let mut restart = None;
-            let control = match envelope.control {
+            let incoming = match envelope.control {
+                Control::Remote(command) => command.control(&snapshot).unwrap_or(Control::Sync),
+                other => other,
+            };
+            let control = match incoming {
                 Control::Player(command) => {
                     let command = *command;
                     let saves_preferences = command.saves_preferences();
@@ -489,8 +534,21 @@ fn run(
                 other => other,
             };
             match control {
-                Control::Player(_) | Control::Complete(_) | Control::SeekAttempt(_, _) => {
+                Control::Remote(_)
+                | Control::Player(_)
+                | Control::Complete(_)
+                | Control::SeekAttempt(_, _) => {
                     unreachable!()
+                }
+                Control::Stop => {
+                    desired = false;
+                    current = None;
+                    snapshot.current_time_seconds = 0.0;
+                    snapshot.status = "paused";
+                    snapshot.seeking = false;
+                    snapshot.initial_loading = false;
+                    snapshot.error = None;
+                    snapshot.buffered_ranges.clear();
                 }
                 Control::Sync => {}
                 Control::Start(next, playing, origin) => {
@@ -620,6 +678,7 @@ fn run(
             update_session(&mut snapshot, &mut session, desired);
             snapshot.revision += 1;
             *shared.lock().unwrap_or_else(|p| p.into_inner()) = snapshot.clone();
+            media::publish(&app, &snapshot, true);
             let _ = app.emit("audio:state", snapshot.clone());
             let _ = envelope.reply.send(Ok(snapshot.clone()));
         }
@@ -731,6 +790,7 @@ fn run(
                     dirty = true;
                     snapshot.revision += 1;
                     *shared.lock().unwrap_or_else(|p| p.into_inner()) = snapshot.clone();
+                    media::publish(&app, &snapshot, true);
                     let _ = app.emit("audio:state", snapshot.clone());
                     let _ = app.emit(
                         "audio:event",
@@ -760,6 +820,7 @@ fn run(
             if !dirty {
                 event.player = None;
             }
+            media::publish(&app, &snapshot, dirty);
             let _ = app.emit("audio:state", event);
             last_emit = Instant::now();
         }
@@ -777,19 +838,49 @@ mod tests {
             let (reply, _) = tokio::sync::oneshot::channel();
             Envelope {
                 page_epoch: 1,
+                session_epoch: 0,
                 control,
                 reply,
             }
         };
-        assert!(!envelope(Control::Play).valid_for_page(2));
-        assert!(envelope(Control::Complete(3)).valid_for_page(2));
-        assert!(envelope(Control::from(session::Command::Clear)).valid_for_page(2));
+        assert!(!envelope(Control::Play).valid_for(2, 0));
+        assert!(envelope(Control::Remote(media::RemoteCommand::Next)).valid_for(2, 0));
+        assert!(envelope(Control::Complete(3)).valid_for(2, 0));
+        assert!(envelope(Control::from(session::Command::Clear)).valid_for(2, 0));
+        assert!(!envelope(Control::Remote(media::RemoteCommand::Next)).valid_for(2, 1));
         let service = NativeAudioService::default();
         service.page_loading();
         assert!(!service.clearing.load(Ordering::Acquire));
         assert!(!service.stopping.load(Ordering::Acquire));
         service.clear_session();
         assert!(service.clearing.load(Ordering::Acquire));
+    }
+    #[test]
+    fn native_callbacks_queue_in_order_and_stop_after_logout_or_shutdown() {
+        let service = NativeAudioService::default();
+        let (tx, rx) = mpsc::sync_channel(4);
+        *service.worker.lock().unwrap() = Some((tx, std::thread::spawn(|| {})));
+        service.remote_command(media::RemoteCommand::Next).unwrap();
+        service.page_loading();
+        service.remote_command(media::RemoteCommand::Pause).unwrap();
+        let first = rx.try_recv().unwrap();
+        let second = rx.try_recv().unwrap();
+        assert!(matches!(
+            first.control,
+            Control::Remote(media::RemoteCommand::Next)
+        ));
+        assert!(matches!(
+            second.control,
+            Control::Remote(media::RemoteCommand::Pause)
+        ));
+        assert!(first.valid_for(1, 0));
+        assert!(second.valid_for(1, 0));
+        service.clear_session();
+        assert!(!first.valid_for(1, service.epochs.session.load(Ordering::Acquire)));
+        assert!(service.remote_command(media::RemoteCommand::Play).is_err());
+        service.shutdown();
+        assert!(service.remote_command(media::RemoteCommand::Next).is_err());
+        assert!(service.worker.lock().unwrap().is_none());
     }
     #[test]
     fn completed_replay_preserves_only_an_explicit_post_end_seek() {

@@ -31,7 +31,7 @@ Optional **MTProto proxy** (tg-ws-proxy compatible: server / port / secret or `t
 | Saved / profile music | Telegram | SQLite tracks (synced) |
 | Custom playlists | App | SQLite |
 | Liked playlist | App | SQLite |
-| Playback queue / UI state | App | Zustand (ephemeral session order; not restored across restart) |
+| Playback queue / transport | Rust audio session | Native in-memory queue; Zustand mirrors snapshots (not restored across restart) |
 | Listen statistics | App (listen behaviour) | SQLite events + aggregates ([listen-statistics.md](./listen-statistics.md)) |
 | Last.fm account | Last.fm | Session key in OS keyring; username/settings in SQLite |
 | Pending Last.fm scrobbles | App (qualified playback attempts) | SQLite immutable queue |
@@ -93,3 +93,7 @@ Listeners live in `src/lib/api.ts`.
 Tracklist actions are gated in `src/components/playlist/track-actions.ts` so non-custom playlists never expose remove-from-playlist. Drag-reorder is enabled only for Liked/custom when search and column sort are clear and selection mode is off.
 
 See [Audio engine boundary](audio-engine.md) for transport ownership, implementation selection, and the native proxy contract.
+
+## OS media controls
+
+The [native media bridge](./native-media-bridge.md) publishes Rust playback state to macOS MediaPlayer, Windows SMTC, Linux MPRIS, and Android MediaSession. Native callbacks share the Rust command queue with UI actions and continue across WebView reloads.

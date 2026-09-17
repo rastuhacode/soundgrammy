@@ -15,11 +15,17 @@ pub(super) async fn initialize(app: &AppHandle) -> Result<(), String> {
         .get_webview_window("main")
         .ok_or("Android audio initialization requires the main WebView")?;
     let (send, receive) = tokio::sync::oneshot::channel();
+    let app = app.clone();
     webview
         .with_webview(move |webview| {
             webview.jni_handle().exec(move |env, activity, _| {
                 let result = CONTEXT.get_or_init(|| {
                     let mut initialize = || -> jni::errors::Result<GlobalRef> {
+                        if let Err(error) = super::media::platform::initialize(env, activity, &app)
+                        {
+                            tracing::warn!(%error, "Android media session unavailable");
+                            let _ = env.exception_clear();
+                        }
                         let application = env
                             .call_method(
                                 activity,

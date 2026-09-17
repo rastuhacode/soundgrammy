@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useSyncExternalStore } from 'react'
-import { useCachedThumbnail } from '@/hooks/use-cached-thumbnail'
 import { usePlayerStore } from '@/stores/player-store'
 import { useAudioControls } from './use-audio-controls'
 import { useAudioVolume } from './use-audio-volume'
@@ -12,8 +11,6 @@ export function useAudioEngine() {
   const subscribe = useCallback((notify: () => void) => engine.subscribe(notify), [engine])
   const snapshot = useSyncExternalStore(subscribe, engine.getSnapshot.bind(engine))
   const track = usePlayerStore(state => state.currentTrack)
-  const isPlaying = usePlayerStore(state => state.isPlaying)
-  const { url: artworkUrl } = useCachedThumbnail(track?.id ?? 0, { enabled: track !== null })
   const activity = useListenTracker({ trackId: track?.id ?? null, durationSeconds: track?.duration })
   const activityRef = useRef(activity)
   useEffect(() => {
@@ -35,7 +32,6 @@ export function useAudioEngine() {
   }, [engine])
   const volume = useAudioVolume(engine)
   useAudioControls({
-    track, artworkUrl, isPlaying,
     currentTime: snapshot.currentTimeSeconds, duration: snapshot.durationSeconds, handleSeek,
   })
   return {
