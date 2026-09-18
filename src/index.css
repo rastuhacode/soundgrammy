@@ -236,19 +236,19 @@
 @property --fullscreen-color-one {
   syntax: "<color>";
   inherits: true;
-  initial-value: #075985;
+  initial-value: #141414;
 }
 
 @property --fullscreen-color-two {
   syntax: "<color>";
   inherits: true;
-  initial-value: #172554;
+  initial-value: #202020;
 }
 
 @property --fullscreen-color-three {
   syntax: "<color>";
   inherits: true;
-  initial-value: #164e63;
+  initial-value: #272727;
 }
 
 .fullscreen-player {

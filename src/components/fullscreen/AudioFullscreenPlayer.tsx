@@ -111,7 +111,7 @@ export function AudioFullscreenPlayer(props: AudioFullscreenPlayerProps) {
       onPointerMove={showControls}
       onFocusCapture={showControls}
       className={cn(
-        'fullscreen-player fixed inset-0 z-200 h-dvh w-dvw overflow-hidden bg-black text-white',
+        'fullscreen-player fixed inset-0 z-200 h-dvh w-dvw overflow-hidden bg-[#141414] text-white',
         !controlsVisible && 'cursor-none',
       )}
       style={{
@@ -129,7 +129,7 @@ export function AudioFullscreenPlayer(props: AudioFullscreenPlayerProps) {
               style={{ backgroundImage: `url("${url}")` }}
             />
           )
-        : <div className="absolute inset-0 bg-neutral-950" />}
+        : <div className="absolute inset-0 bg-[#141414]" />}
       <div
         key={`palette:${props.track.id}:${url ?? 'fallback'}`}
         className="fullscreen-palette absolute inset-0"
