@@ -140,6 +140,10 @@ impl LastFmService {
             runtime.last_error = None;
             runtime.active_attempts.clear();
         }
+        app.state::<AppState>()
+            .audio
+            .lastfm_epoch
+            .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
         self.wake();
         self.emit_status(db, app).await;
         self.status(db).await

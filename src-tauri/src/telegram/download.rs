@@ -3,7 +3,8 @@
 //! Chunk fetches go through [`Client::invoke_on_dc`] with `upload.getFile`
 
 use std::path::Path;
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 
 use ferogram::cdn_download::{CdnChunkResult, CdnDownloader, CDN_CHUNK_SIZE};
 use ferogram::tl;
@@ -51,22 +52,24 @@ pub(crate) async fn download_chunk(
         ))
     })?;
     let offset = chunk_index * i64::from(CHUNK_SIZE);
-    get_file_bytes(
-        client,
-        MediaRequestContext {
-            coordinator,
-            priority: if active.is_some() {
-                MediaPriority::Playback
-            } else {
-                MediaPriority::Background
+    retry_playback(active, || {
+        get_file_bytes(
+            client,
+            MediaRequestContext {
+                coordinator,
+                priority: if active.is_some() {
+                    MediaPriority::Playback
+                } else {
+                    MediaPriority::Background
+                },
+                active,
             },
-            active,
-        },
-        document.dc_id,
-        document.input_location(),
-        offset,
-        CHUNK_SIZE,
-    )
+            document.dc_id,
+            document.input_location(),
+            offset,
+            CHUNK_SIZE,
+        )
+    })
     .await
 }
 
@@ -402,4 +405,117 @@ fn with_part_extension(path: &Path) -> std::path::PathBuf {
     let mut os = path.as_os_str().to_owned();
     os.push(".part");
     std::path::PathBuf::from(os)
+}
+
+fn transient_network_error(error: &InvocationError) -> bool {
+    matches!(error, InvocationError::Io(_) | InvocationError::Dropped)
+        || matches!(error, InvocationError::Rpc(rpc) if rpc.code >= 500 || rpc.code == -503)
+}
+async fn retry_playback<T, F, Fut>(
+    active: Option<&AtomicBool>,
+    mut request: F,
+) -> Result<T, InvocationError>
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = Result<T, InvocationError>>,
+{
+    for retry in 0..=8 {
+        if active.is_some_and(|a| !a.load(Ordering::Acquire)) {
+            return Err(InvocationError::Dropped);
+        }
+        let operation = request();
+        tokio::pin!(operation);
+        let mut cancellation = tokio::time::interval(Duration::from_millis(100));
+        let result = loop {
+            tokio::select! {
+                result = &mut operation => break result,
+                _ = cancellation.tick() => {
+                    if active.is_some_and(|a| !a.load(Ordering::Acquire)) { return Err(InvocationError::Dropped); }
+                }
+            }
+        };
+        match result {
+            Err(error) if active.is_some() && retry < 8 && transient_network_error(&error) => {
+                // ferogram owns transport/DC reconnection; never replace its client here.
+                let delay = Duration::from_millis((250u64 << retry).min(8_000));
+                let until = tokio::time::Instant::now() + delay;
+                while tokio::time::Instant::now() < until {
+                    if active.is_some_and(|a| !a.load(Ordering::Acquire)) {
+                        return Err(InvocationError::Dropped);
+                    }
+                    tokio::time::sleep(
+                        Duration::from_millis(100)
+                            .min(until.saturating_duration_since(tokio::time::Instant::now())),
+                    )
+                    .await;
+                }
+            }
+            result => return result,
+        }
+    }
+    unreachable!()
+}
+
+#[cfg(test)]
+mod background_tests {
+    use super::*;
+    #[tokio::test(start_paused = true)]
+    async fn playback_retries_network_failure_without_javascript() {
+        let active = AtomicBool::new(true);
+        let mut calls = 0;
+        let bytes = retry_playback(Some(&active), || {
+            calls += 1;
+            std::future::ready(if calls < 3 {
+                Err(InvocationError::Io(
+                    std::io::ErrorKind::ConnectionReset.into(),
+                ))
+            } else {
+                Ok(vec![1, 2])
+            })
+        })
+        .await
+        .unwrap();
+        assert_eq!(bytes, vec![1, 2]);
+        assert_eq!(calls, 3);
+    }
+    #[tokio::test(start_paused = true)]
+    async fn cancellation_stops_a_hung_request_and_background_is_not_retried() {
+        let active = AtomicBool::new(true);
+        let cancel = async {
+            tokio::time::sleep(Duration::from_millis(150)).await;
+            active.store(false, Ordering::Release);
+        };
+        let request = retry_playback(
+            Some(&active),
+            std::future::pending::<Result<(), InvocationError>>,
+        );
+        let (_, result) = tokio::join!(cancel, request);
+        assert!(matches!(result, Err(InvocationError::Dropped)));
+        let mut calls = 0;
+        let result = retry_playback(None, || {
+            calls += 1;
+            std::future::ready(Err::<(), _>(InvocationError::Dropped))
+        })
+        .await;
+        assert!(result.is_err());
+        assert_eq!(calls, 1);
+    }
+    #[tokio::test(start_paused = true)]
+    async fn malformed_responses_are_not_retried_and_network_retries_are_bounded() {
+        let active = AtomicBool::new(true);
+        let mut calls = 0;
+        let _ = retry_playback(Some(&active), || {
+            calls += 1;
+            std::future::ready(Err::<(), _>(InvocationError::Deserialize("bad".into())))
+        })
+        .await;
+        assert_eq!(calls, 1);
+        calls = 0;
+        let _ = retry_playback(Some(&active), || {
+            calls += 1;
+            std::future::ready(Err::<(), _>(InvocationError::Dropped))
+        })
+        .await;
+        assert_eq!(calls, 9);
+    }
 }

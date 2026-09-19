@@ -72,7 +72,7 @@ Listeners live in `src/lib/api.ts`.
 | Telegram sync | `telegram/saved_music.rs` |
 | Auth flows | `telegram/auth.rs` + login UI |
 | Player UI / queue | `stores/player-store.ts`, `lib/queue/`, `components/audio/` (queue popover under `components/audio/queue/`) |
-| Listen statistics | `listen_stats.rs`, `db.rs`, `hooks/audio/use-listen-tracker.ts`, `stores/listen-stats-store.ts` |
+| Listen statistics | `listen_stats.rs`, `db.rs`, `audio/activity.rs`, `stores/listen-stats-store.ts` |
 | Playlist tracklist (table, sort, selection, context menu) | `components/playlist/` (`PlaylistView`, `PlaylistTracksTable`, `track-actions`) |
 
 ## Playback queue

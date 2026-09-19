@@ -324,3 +324,6 @@ export const onNativeAudioState = (callback: (value: unknown) => void) =>
   listen<unknown>('audio:state', event => callback(event.payload))
 export const onNativeAudioEvent = (callback: (value: unknown) => void) =>
   listen<unknown>('audio:event', event => callback(event.payload))
+
+export const onNativeListenStats = (callback: (stats: TrackListenStats) => void) =>
+  listen<TrackListenStats>('listen:stats', event => callback(event.payload))

@@ -6,7 +6,7 @@ use jni::{
     JNIEnv, JavaVM,
 };
 use std::sync::OnceLock;
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 static SESSION: OnceLock<(JavaVM, GlobalRef)> = OnceLock::new();
 static APP: OnceLock<AppHandle> = OnceLock::new();
 pub fn initialize(
@@ -96,5 +96,43 @@ pub extern "system" fn Java_com_soundgrammy_app_NativeMediaSession_nativeCommand
     };
     if let Some(app) = APP.get() {
         dispatch(app, command);
+    }
+}
+
+/// Start the foreground lifetime and obtain focus before rendering any PCM.
+pub fn acquire() -> bool {
+    let Some((vm, session)) = SESSION.get() else {
+        return false;
+    };
+    let Ok(mut env) = vm.attach_current_thread() else {
+        return false;
+    };
+    let result = env
+        .call_method(session.as_obj(), "acquire", "()Z", &[])
+        .and_then(|v| v.z());
+    if result.is_err() {
+        let _ = env.exception_clear();
+    }
+    result.unwrap_or(false)
+}
+#[no_mangle]
+pub extern "system" fn Java_com_soundgrammy_app_NativeMediaSession_nativeLifecycle(
+    _env: JNIEnv<'_>,
+    _class: JClass<'_>,
+    event: jint,
+    token: jni::sys::jlong,
+) {
+    use crate::audio::lifecycle::Event;
+    let event = match event {
+        0 if token > 0 => Event::Begin(token as u64),
+        1 if token > 0 => Event::End(token as u64, true),
+        2 => Event::PermanentLoss,
+        _ => return,
+    };
+    if let Some(app) = APP.get() {
+        let _ = app
+            .state::<crate::state::AppState>()
+            .audio
+            .lifecycle_event(event);
     }
 }

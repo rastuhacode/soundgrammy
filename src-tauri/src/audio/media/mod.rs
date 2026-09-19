@@ -9,7 +9,7 @@ use std::{
 };
 use tauri::{AppHandle, Manager};
 
-#[cfg(target_os = "macos")]
+#[cfg(any(target_os = "macos", target_os = "ios"))]
 #[path = "apple.rs"]
 mod platform;
 #[cfg(target_os = "windows")]
@@ -23,6 +23,7 @@ mod platform;
 pub(super) mod platform;
 #[cfg(not(any(
     target_os = "macos",
+    target_os = "ios",
     target_os = "windows",
     target_os = "linux",
     target_os = "android"
@@ -61,6 +62,8 @@ pub struct Presentation {
     pub artist: String,
     pub artwork: Option<PathBuf>,
     pub status: String,
+    /// Includes the natural-end handoff while the native queue chooses its successor.
+    pub background_active: bool,
     pub duration: f64,
     pub position: f64,
     pub rate: f64,
@@ -97,6 +100,9 @@ impl Presentation {
                 .unwrap_or_else(|| "Unknown Artist".into()),
             artwork: None,
             status: s.status.into(),
+            background_active: active
+                && s.player.as_ref().is_some_and(|p| p.is_playing)
+                && !matches!(s.status, "error" | "idle"),
             duration: finite(s.duration_seconds),
             position: finite(s.current_time_seconds),
             rate: if s.status == "playing" { 1.0 } else { 0.0 },
@@ -423,6 +429,18 @@ mod tests {
         assert!(empty.identity.is_none());
     }
 
+    #[test]
+    fn foreground_lifetime_survives_queue_handoff_and_transient_interruption() {
+        let mut s = snapshot();
+        s.status = "paused"; // OS interruption, user still intends playback.
+        assert!(Presentation::from_snapshot(&s).background_active);
+        s.status = "ended"; // Next queue item has not been selected yet.
+        assert!(Presentation::from_snapshot(&s).background_active);
+        Arc::make_mut(s.player.as_mut().unwrap()).is_playing = false;
+        assert!(!Presentation::from_snapshot(&s).background_active);
+        s.status = "error";
+        assert!(!Presentation::from_snapshot(&s).background_active);
+    }
     #[test]
     fn pause_queued_for_completed_attempt_cannot_pause_loading_successor() {
         let ending = snapshot();

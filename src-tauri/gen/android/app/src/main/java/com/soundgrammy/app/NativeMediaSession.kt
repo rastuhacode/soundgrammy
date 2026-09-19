@@ -11,8 +11,9 @@ import android.os.SystemClock
 import org.json.JSONObject
 import java.util.concurrent.Executors
 
-/** One process-owned session. Step 3's foreground service must reuse token/session ownership. */
+/** Process-owned session shared with the playback foreground service. */
 class NativeMediaSession private constructor(context: Context) {
+    private val application = context.applicationContext
     private val handler = Handler(Looper.getMainLooper())
     private val artworkWorker = Executors.newSingleThreadExecutor()
     private val session = MediaSession(context.applicationContext, "SoundGrammy")
@@ -23,7 +24,7 @@ class NativeMediaSession private constructor(context: Context) {
     private var artwork: android.graphics.Bitmap? = null
     private var current: JSONObject? = null
 
-    // A future foreground service uses this token; it must not create a second session.
+    // The foreground service reuses this token.
     val token: MediaSession.Token get() = session.sessionToken
 
     init {
@@ -36,6 +37,8 @@ class NativeMediaSession private constructor(context: Context) {
             override fun onSeekTo(pos: Long) = nativeCommand(5, pos / 1000.0)
         }, handler)
     }
+
+    fun acquire(): Boolean = PlaybackService.acquire(application)
 
     fun update(json: String) {
         val receivedAt = SystemClock.elapsedRealtime()
@@ -51,6 +54,7 @@ class NativeMediaSession private constructor(context: Context) {
             identity = nextIdentity
             artworkPath = path
             current = p
+            PlaybackService.update(p)
             if (artworkChanged) artwork = null
             session.isActive = identity != null
             publishMetadata()
@@ -101,6 +105,7 @@ class NativeMediaSession private constructor(context: Context) {
     fun release() {
         handler.post {
             if (released) return@post
+            PlaybackService.shutdown()
             released = true
             current = null
             identity = null
@@ -117,6 +122,9 @@ class NativeMediaSession private constructor(context: Context) {
         @Volatile private var instance: NativeMediaSession? = null
         @JvmStatic @Synchronized fun getOrCreate(context: Context): NativeMediaSession =
             instance ?: NativeMediaSession(context.applicationContext).also { instance = it }
+        fun command(command: Int) = nativeCommand(command, 0.0)
+        fun lifecycle(event: Int, token: Long) = nativeLifecycle(event, token)
+        @JvmStatic private external fun nativeLifecycle(event: Int, token: Long)
         @JvmStatic private external fun nativeCommand(command: Int, seconds: Double)
     }
 }

@@ -2,13 +2,18 @@
 use super::{dispatch, Presentation, RemoteCommand};
 use block2::RcBlock;
 use objc2::{rc::Retained, runtime::AnyObject, AnyThread};
+#[cfg(target_os = "macos")]
 use objc2_app_kit::NSImage;
 use objc2_foundation::{NSDictionary, NSNumber, NSString};
 use objc2_media_player::*;
+#[cfg(target_os = "ios")]
+use objc2_ui_kit::UIImage as NSImage;
 use std::ptr::NonNull;
 use tauri::AppHandle;
 
 pub struct Adapter {
+    #[cfg(target_os = "ios")]
+    _observer: super::super::ios::Observer,
     center: Retained<MPNowPlayingInfoCenter>,
     targets: Vec<(Retained<MPRemoteCommand>, Retained<AnyObject>)>,
     artwork_path: Option<std::path::PathBuf>,
@@ -21,6 +26,8 @@ impl Adapter {
         unsafe {
             let commands = MPRemoteCommandCenter::sharedCommandCenter();
             let mut adapter = Self {
+                #[cfg(target_os = "ios")]
+                _observer: super::super::ios::Observer::new(app)?,
                 center: MPNowPlayingInfoCenter::defaultCenter(),
                 targets: vec![],
                 artwork_path: None,
@@ -82,6 +89,7 @@ impl Adapter {
             }
             if p.identity.is_none() {
                 self.center.setNowPlayingInfo(None);
+                #[cfg(target_os = "macos")]
                 self.center
                     .setPlaybackState(MPNowPlayingPlaybackState::Stopped);
                 self.artwork = None;
@@ -126,6 +134,7 @@ impl Adapter {
             }
             self.center
                 .setNowPlayingInfo(Some(&NSDictionary::from_slices(&keys, &values)));
+            #[cfg(target_os = "macos")]
             self.center.setPlaybackState(match p.status.as_str() {
                 "playing" => MPNowPlayingPlaybackState::Playing,
                 "loading" | "buffering" => MPNowPlayingPlaybackState::Interrupted,
@@ -144,6 +153,7 @@ impl Drop for Adapter {
                 command.removeTarget(Some(token));
             }
             self.center.setNowPlayingInfo(None);
+            #[cfg(target_os = "macos")]
             self.center
                 .setPlaybackState(MPNowPlayingPlaybackState::Stopped);
         }

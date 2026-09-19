@@ -1,9 +1,13 @@
 //! Native transport and authoritative playback session.
+mod activity;
 #[cfg(target_os = "android")]
 mod android;
 mod availability;
 mod convert;
 mod decode;
+#[cfg(target_os = "ios")]
+mod ios;
+pub mod lifecycle;
 pub mod media;
 mod output;
 mod seek;
@@ -100,6 +104,12 @@ pub struct Capabilities {
 pub enum Control {
     Player(Box<session::Command>),
     Remote(media::QueuedRemote),
+    #[allow(dead_code)] // OS callbacks are mobile-only.
+    Lifecycle(lifecycle::Event),
+    ListenSettings {
+        enabled: Option<bool>,
+        clear: bool,
+    },
     Stop,
     Complete(u64),
     Sync,
@@ -128,7 +138,7 @@ impl Envelope {
         if self.session_epoch != session {
             return false;
         }
-        matches!(self.control, Control::Remote(_))
+        matches!(self.control, Control::Remote(_) | Control::Lifecycle(_))
             || self.page_epoch == page
             || matches!(self.control, Control::Complete(_))
             || matches!(&self.control, Control::Player(command) if matches!(command.as_ref(), session::Command::Clear))
@@ -141,6 +151,8 @@ struct CommandEpochs {
 }
 #[derive(Default)]
 pub struct NativeAudioService {
+    pub accounting_epoch: AtomicU64,
+    pub lastfm_epoch: AtomicU64,
     worker: Mutex<Option<(SyncSender<Envelope>, JoinHandle<()>)>>,
     snapshot: Arc<Mutex<Snapshot>>,
     stopping: Arc<AtomicBool>,
@@ -255,6 +267,27 @@ impl NativeAudioService {
                 page_epoch: self.epochs.page.load(Ordering::Acquire),
                 session_epoch: self.epochs.session.load(Ordering::Acquire),
                 control: Control::Remote(command),
+                reply,
+            })
+            .map_err(|_| "audio command queue unavailable".into())
+    }
+    /// Native OS callbacks are process-owned and survive WebView replacement.
+    #[allow(dead_code)] // OS callbacks are mobile-only.
+    pub fn lifecycle_event(&self, event: lifecycle::Event) -> Result<(), String> {
+        if self.stopping.load(Ordering::Acquire) || self.clearing.load(Ordering::Acquire) {
+            return Err("interrupted".into());
+        }
+        let (reply, _) = tokio::sync::oneshot::channel();
+        self.worker
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .as_ref()
+            .ok_or("audio worker unavailable")?
+            .0
+            .try_send(Envelope {
+                page_epoch: self.epochs.page.load(Ordering::Acquire),
+                session_epoch: self.epochs.session.load(Ordering::Acquire),
+                control: Control::Lifecycle(event),
                 reply,
             })
             .map_err(|_| "audio command queue unavailable".into())
@@ -460,6 +493,7 @@ fn run(
     let mut current: Option<Pipeline> = None;
     let mut generation = 0;
     let mut desired = false;
+    let mut lifecycle = lifecycle::Policy::default();
     let mut ended = false;
     let mut last_emit = Instant::now();
     let mut last_consumed = 0;
@@ -468,8 +502,15 @@ fn run(
     let state = app.state::<crate::state::AppState>();
     let stored_preferences = state.db.get_setting("playback_preferences").ok().flatten();
     let mut session = session::Session::with_preferences(stored_preferences.as_deref());
+    let mut activity = activity::Activity::new(&app);
     let mut pending_completion = None;
     while !stopping.load(Ordering::Acquire) {
+        activity.sample(
+            &app,
+            current.as_ref(),
+            generation,
+            snapshot.duration_seconds,
+        );
         let mut envelope = if clearing.swap(false, Ordering::AcqRel) {
             pending_completion = None;
             let (reply, _) = tokio::sync::oneshot::channel();
@@ -575,6 +616,8 @@ fn run(
                     unreachable!()
                 }
                 Control::Stop => {
+                    lifecycle.apply(lifecycle::Event::PermanentLoss);
+                    activity.finish(&app, crate::listen_stats::EndReason::Stopped);
                     desired = false;
                     current = None;
                     snapshot.current_time_seconds = 0.0;
@@ -584,8 +627,51 @@ fn run(
                     snapshot.error = None;
                     snapshot.buffered_ranges.clear();
                 }
-                Control::Sync => {}
+                Control::Lifecycle(event) => {
+                    if lifecycle.apply(event) {
+                        desired = false;
+                        current = None;
+                    }
+                    if !lifecycle.blocked() && desired && current.is_none() {
+                        restart = Some(snapshot.current_time_seconds);
+                    }
+                    if lifecycle.blocked() || !desired {
+                        if let Some(p) = current.as_ref() {
+                            p.output.clock.playing.store(false, Ordering::Release);
+                        }
+                        snapshot.status = "paused";
+                    }
+                }
+                Control::ListenSettings { enabled, clear } => {
+                    let result = if clear {
+                        state.db.clear_listen_stats()
+                    } else if let Some(enabled) = enabled {
+                        state.db.set_setting(
+                            crate::db::SETTING_LISTEN_STATS_ENABLED,
+                            if enabled { "true" } else { "false" },
+                        )
+                    } else {
+                        Ok(())
+                    };
+                    if let Err(error) = result {
+                        let _ = envelope.reply.send(Err(error.to_string()));
+                        continue;
+                    }
+                    state.audio.accounting_epoch.fetch_add(1, Ordering::AcqRel);
+                    activity.settings(&app);
+                }
+                Control::Sync => {
+                    if snapshot.status == "ended" && !session.is_playing {
+                        current = None;
+                    }
+                }
                 Control::Start(next, playing, origin) => {
+                    activity.finish(
+                        &app,
+                        crate::listen_stats::EndReason::parse(session.end_reason)
+                            .unwrap_or(crate::listen_stats::EndReason::Replaced),
+                    );
+                    activity.start(&app, &next);
                     desired = playing;
                     ended = false;
                     snapshot.track_id = Some(next.track_id);
@@ -604,10 +690,16 @@ fn run(
                             .map(|_| snapshot.clone())
                             .map_err(str::to_string)
                     };
+                    #[cfg(target_os = "ios")]
+                    if current.is_none() {
+                        ios::deactivate();
+                    }
                     let _ = envelope.reply.send(result);
                     continue;
                 }
                 Control::Unload => {
+                    lifecycle.apply(lifecycle::Event::PermanentLoss);
+                    activity.finish(&app, crate::listen_stats::EndReason::Stopped);
                     current = None;
                     request = None;
                     desired = false;
@@ -620,7 +712,8 @@ fn run(
                     *protection.lock().unwrap_or_else(|p| p.into_inner()) = None;
                 }
                 Control::Play => {
-                    if request.is_some() {
+                    if let Some(request) = request.as_ref() {
+                        activity.ensure_started(&app, request);
                         desired = true;
                         if snapshot.status == "error" || current.is_none() {
                             restart = Some(snapshot.current_time_seconds);
@@ -630,10 +723,14 @@ fn run(
                 }
                 Control::Pause => {
                     desired = false;
+                    #[cfg(target_os = "android")]
+                    lifecycle.apply(lifecycle::Event::PermanentLoss);
                     if let Some(p) = current.as_ref() {
                         p.output.clock.playing.store(false, Ordering::Release);
                     }
-                    if matches!(snapshot.status, "loading" | "buffering") {
+                    if cfg!(any(target_os = "android", target_os = "ios"))
+                        || matches!(snapshot.status, "loading" | "buffering")
+                    {
                         current = None;
                     }
                     if request.is_some() && snapshot.status != "error" {
@@ -679,6 +776,18 @@ fn run(
                     }
                 }
             }
+            #[cfg(target_os = "android")]
+            if desired && !lifecycle.blocked() && !media::platform::acquire() {
+                desired = false;
+                current = None;
+                restart = None;
+                activity.finish(&app, crate::listen_stats::EndReason::Interrupted);
+                fail(
+                    &mut snapshot,
+                    "output-unavailable",
+                    Some("Android foreground service or audio focus unavailable".into()),
+                );
+            }
             if let Some(origin) = restart {
                 current = None;
                 generation += 1;
@@ -709,6 +818,10 @@ fn run(
                     }
                 }
             }
+            #[cfg(target_os = "ios")]
+            if current.is_none() && !desired {
+                ios::deactivate();
+            }
             update_session(&mut snapshot, &mut session, desired);
             snapshot.revision += 1;
             *shared.lock().unwrap_or_else(|p| p.into_inner()) = snapshot.clone();
@@ -717,6 +830,7 @@ fn run(
             let _ = envelope.reply.send(Ok(snapshot.clone()));
         }
         let mut error = None;
+        let audible = desired && !lifecycle.blocked();
         if let Some(p) = current.as_mut() {
             while let Ok(message) = p.messages.try_recv() {
                 dirty = true;
@@ -784,17 +898,17 @@ fn run(
                     }
                     snapshot.seeking = false;
                 }
-                if desired && ready && snapshot.status != "playing" {
+                if audible && ready && snapshot.status != "playing" {
                     clock.playing.store(true, Ordering::Release);
                 }
-                if desired && presented > 0 && stalled_since.elapsed() < Duration::from_millis(150)
+                if audible && presented > 0 && stalled_since.elapsed() < Duration::from_millis(150)
                 {
                     if snapshot.status != "playing" {
                         dirty = true;
                     }
                     snapshot.status = "playing";
                     snapshot.initial_loading = false;
-                } else if desired && stalled_since.elapsed() >= Duration::from_millis(150) {
+                } else if audible && stalled_since.elapsed() >= Duration::from_millis(150) {
                     if snapshot.status != "buffering" {
                         dirty = true;
                     }
@@ -802,7 +916,7 @@ fn run(
                     if !ready {
                         clock.playing.store(false, Ordering::Release);
                     }
-                } else if !desired && ready && matches!(snapshot.status, "loading" | "buffering") {
+                } else if !audible && ready && matches!(snapshot.status, "loading" | "buffering") {
                     snapshot.status = if snapshot.initial_loading {
                         "ready"
                     } else {
@@ -811,7 +925,7 @@ fn run(
                     snapshot.initial_loading = false;
                     dirty = true;
                 }
-                if (desired && presented > 0) || (!p.landed && ready) {
+                if (audible && presented > 0) || (!p.landed && ready) {
                     let position = p.origin + presented as f64 / p.output.rate as f64;
                     snapshot.current_time_seconds = if !p.landed {
                         position
@@ -828,10 +942,12 @@ fn run(
                     && queued == 0
                     && consumed > 0
                     && presented >= consumed
-                    && desired
+                    && audible
                     && !ended
                     && error.is_none()
                 {
+                    activity.sample(&app, Some(p), generation, snapshot.duration_seconds);
+                    activity.finish(&app, crate::listen_stats::EndReason::Completed);
                     ended = true;
                     pending_completion = Some(session.attempt);
                     desired = false;
@@ -858,7 +974,10 @@ fn run(
         if let Some((code, diagnostic)) = error {
             current = None;
             desired = false;
+            activity.finish(&app, crate::listen_stats::EndReason::Interrupted);
             fail(&mut snapshot, code, diagnostic);
+            #[cfg(target_os = "ios")]
+            ios::deactivate();
             dirty = true;
         }
         if dirty || (current.is_some() && last_emit.elapsed() >= Duration::from_millis(150)) {
@@ -876,7 +995,16 @@ fn run(
             last_emit = Instant::now();
         }
     }
+    activity.sample(
+        &app,
+        current.as_ref(),
+        generation,
+        snapshot.duration_seconds,
+    );
+    activity.finish(&app, crate::listen_stats::EndReason::Interrupted);
     drop(current);
+    #[cfg(target_os = "ios")]
+    ios::deactivate();
     *protection.lock().unwrap_or_else(|p| p.into_inner()) = None;
 }
 
@@ -934,6 +1062,39 @@ mod tests {
         service.shutdown();
         assert!(service.remote_command(media::RemoteCommand::Next).is_err());
         assert!(service.worker.lock().unwrap().is_none());
+    }
+    #[test]
+    fn lifecycle_callbacks_survive_page_recreation_but_not_logout() {
+        let service = NativeAudioService::default();
+        let (tx, rx) = mpsc::sync_channel(4);
+        *service.worker.lock().unwrap() = Some((tx, std::thread::spawn(|| {})));
+        service.lifecycle_event(lifecycle::Event::Begin(1)).unwrap();
+        service.page_loading();
+        service.remote_command(media::RemoteCommand::Pause).unwrap();
+        service
+            .lifecycle_event(lifecycle::Event::End(1, true))
+            .unwrap();
+        let begin = rx.try_recv().unwrap();
+        let pause = rx.try_recv().unwrap();
+        let end = rx.try_recv().unwrap();
+        assert!(begin.valid_for(1, 0));
+        assert!(pause.valid_for(1, 0));
+        assert!(end.valid_for(1, 0));
+        assert!(matches!(
+            begin.control,
+            Control::Lifecycle(lifecycle::Event::Begin(1))
+        ));
+        assert!(matches!(pause.control, Control::Remote(_)));
+        assert!(matches!(
+            end.control,
+            Control::Lifecycle(lifecycle::Event::End(1, true))
+        ));
+        service.clear_session();
+        assert!(!end.valid_for(1, 1));
+        assert!(service
+            .lifecycle_event(lifecycle::Event::End(1, true))
+            .is_err());
+        service.shutdown();
     }
     #[test]
     fn completed_replay_preserves_only_an_explicit_post_end_seek() {

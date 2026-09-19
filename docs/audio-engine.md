@@ -1,6 +1,6 @@
 # Audio engine boundary
 
-Desktop playback uses `NativeRustAudioEngine`, created by `engine-factory.tsx`. The provider owns an IPC adapter and subscriptions, not the native playback lifetime. Tests can inject a fake engine.
+Desktop and mobile playback use `NativeRustAudioEngine`, created by `engine-factory.tsx`. The provider owns an IPC adapter and subscriptions, not the native playback lifetime. Tests can inject a fake engine.
 
 `audio/session.rs` is the authoritative queue state machine. It owns current membership, queue edits, repeat/shuffle, desired playback, and monotonic attempt identifiers. `audio/shuffle.rs` implements the six shuffle modes using native library statistics. The transport control thread processes user commands and natural completion serially; advancing or repeating a track does not need JavaScript. Duplicate track IDs remain distinct memberships, and reshuffling/reordering preserves the current attempt.
 
@@ -10,7 +10,7 @@ The native adapter subscribes before attaching, validates payloads, and rejects 
 
 Adapter destruction and React integration cleanup only detach subscriptions. Main WebView navigation invalidates queued commands from the old page without stopping playback. Explicit clear/unload, sign-out/session revocation, and process exit still stop playback. Queue state survives WebView recreation within the same native process; restoring a queue after process termination is not implemented. Repeat/shuffle preferences persist in SQLite, with a one-time import from the previous localStorage preferences.
 
-Listening statistics and Last.fm attempt accounting still use `use-listen-tracker.ts`; OS media actions still use browser Media Session. Moving those responsibilities and implementing mobile output/background services are subsequent migration steps. Native audio remains desktop-targeted at this stage.
+Listening statistics and Last.fm qualification run in `audio/activity.rs` from PCM consumption. OS media actions reach Rust directly. Mobile lifecycle integration and the outstanding device acceptance checks are documented in [mobile-background-playback.md](mobile-background-playback.md).
 
 Tests cover the native queue policy without a frontend, all six shuffle modes, stale index rejection, duplicate completion delivery, repeat boundaries, queue edits while paused, sorted shuffle restoration, native snapshot adoption, reattachment, late seek rejection, and transport/queue revision races. Existing decoder, streaming, presentation-clock, React, and transport tests remain in the full suites. Audible output and mobile background execution require device verification.
 

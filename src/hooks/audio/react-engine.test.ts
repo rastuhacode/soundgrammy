@@ -14,6 +14,7 @@ import { createFakeAudioEngine } from './fake-engine'
 vi.mock('@/hooks/use-cached-thumbnail', () => ({ useCachedThumbnail: () => ({ url: null }) }))
 vi.mock('@/lib/api', () => ({
   api: {
+    listListenStats: vi.fn(async () => []),
     recordListenStart: vi.fn(async () => {}),
     recordListenEnd: vi.fn(async () => null),
     lastFmAttemptStarted: vi.fn(async () => {}),
@@ -21,6 +22,7 @@ vi.mock('@/lib/api', () => ({
     lastFmAttemptEnded: vi.fn(async () => {}),
   },
   fileSrc: () => 'https://asset.invalid/test.mp3',
+  onNativeListenStats: vi.fn(async () => () => {}),
   onNativeAudioState: vi.fn(async () => () => {}),
   onNativeAudioEvent: vi.fn(async () => () => {}),
 }))
@@ -117,7 +119,7 @@ describe('React engine composition', () => {
     // afterEach can safely unmount again.
   })
 
-  it('records rapid track attempts and closes local and Last.fm activity on unmount', async () => {
+  it('never starts or closes native listen attempts on UI transitions or unmount', async () => {
     useLastFmStore.setState({ status: { state: 'connected', username: 'test', enabled: true,
       pendingCount: 0, retainedQueues: [], lastScrobbleAtMs: null, lastError: null, lastMetadataWarning: null } })
     const fake = createFakeAudioEngine()
@@ -138,14 +140,13 @@ describe('React engine composition', () => {
       await fake.engine.load({ trackId: 1, attemptId: 'native:3' })
       await fake.engine.play()
     })
-    expect(vi.mocked(api.recordListenStart).mock.calls.map(args => args[0])).toEqual([1, 2, 1])
-    expect(api.lastFmAttemptStarted).toHaveBeenCalledTimes(2)
+    expect(api.recordListenStart).not.toHaveBeenCalled()
+    expect(api.lastFmAttemptStarted).not.toHaveBeenCalled()
     await act(async () => {
       root.unmount()
     })
-    expect(api.recordListenEnd).toHaveBeenCalledTimes(3)
-    expect(api.lastFmAttemptEnded).toHaveBeenCalledTimes(2)
-    expect(vi.mocked(api.recordListenEnd).mock.calls.at(-1)?.[0].endReason).toBe('interrupted')
+    expect(api.recordListenEnd).not.toHaveBeenCalled()
+    expect(api.lastFmAttemptEnded).not.toHaveBeenCalled()
   })
 
   it('waits for asynchronous destruction before creating a replacement engine', async () => {

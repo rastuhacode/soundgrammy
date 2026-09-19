@@ -47,6 +47,9 @@
     },
     "macOS": {
       "signingIdentity": "-"
+    },
+    "iOS": {
+      "infoPlist": "Info.ios.plist"
     }
   }
 }

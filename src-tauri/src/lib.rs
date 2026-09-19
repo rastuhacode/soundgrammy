@@ -148,6 +148,17 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building SoundGrammy")
         .run(|app, event| {
+            // Activity/WebView destruction must not tear down the process-owned player.
+            // Explicit app exit remains honored; the OS may still terminate the process.
+            #[cfg(any(target_os = "android", target_os = "ios"))]
+            if let tauri::RunEvent::ExitRequested {
+                code: None,
+                ref api,
+                ..
+            } = event
+            {
+                api.prevent_exit();
+            }
             if matches!(event, tauri::RunEvent::Exit) {
                 app.state::<AppState>().audio.shutdown();
                 audio::media::shutdown(app);
