@@ -46,5 +46,22 @@ fn main() {
     println!("cargo:rerun-if-env-changed=LASTFM_API_SECRET");
     println!("cargo:rerun-if-changed=.env.local");
 
-    tauri_build::build()
+    // Cargo's unit-test executables need the same Common Controls v6 manifest
+    // as the app. On MSVC, supply it at link time instead of through winres so
+    // both get exactly one manifest.
+    if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows")
+        && std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc")
+    {
+        tauri_build::try_build(
+            tauri_build::Attributes::new()
+                .windows_attributes(tauri_build::WindowsAttributes::new_without_app_manifest()),
+        )
+        .expect("failed to run tauri-build");
+        let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("windows-app.manifest");
+        println!("cargo:rerun-if-changed={}", manifest.display());
+        println!("cargo:rustc-link-arg=/MANIFEST:EMBED");
+        println!("cargo:rustc-link-arg=/MANIFESTINPUT:{}", manifest.display());
+    } else {
+        tauri_build::build();
+    }
 }
