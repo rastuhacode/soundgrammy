@@ -1,5 +1,29 @@
 # Changelog
 
+## [3.0.0](https://github.com/rastuhacode/soundgrammy/compare/v2.0.0...v3.0.0) (2026-09-20)
+
+
+### ⚠ BREAKING CHANGES
+
+* remake the audio engine to use native playback instead of HTML
+
+### Features
+
+* add Android build to CI ([46d77bd](https://github.com/rastuhacode/soundgrammy/commit/46d77bda5a76406dc308f1f8261ccc4751f3f38a))
+* add responsive design for small screens ([b1f193d](https://github.com/rastuhacode/soundgrammy/commit/b1f193d90178b4afe0ef73011a78edecd4fc1bfd))
+* enable native audio support for Android and iOS ([9be6e09](https://github.com/rastuhacode/soundgrammy/commit/9be6e0916033c3a6d2078a02ccf7253e0e85be93))
+* enhance audio error handling with diagnostic details ([26269ce](https://github.com/rastuhacode/soundgrammy/commit/26269cee864ad74164dc452356e22c507108ea57))
+* enhance mobile background behavior ([8c2c1d3](https://github.com/rastuhacode/soundgrammy/commit/8c2c1d370a7e7ac8221efb6310f961450b054638))
+* implement native media controls across platforms ([b5a4054](https://github.com/rastuhacode/soundgrammy/commit/b5a40542450c9ea69d52589f2d7fe90aedebc45c))
+* remake the audio engine to use native playback instead of HTML ([3a65e15](https://github.com/rastuhacode/soundgrammy/commit/3a65e15ef02ef64d726f24f032dde31bb08c82d3))
+
+
+### Bug Fixes
+
+* add Windows Common Controls v6 manifest support ([302cf73](https://github.com/rastuhacode/soundgrammy/commit/302cf7323d80c14949e648d31d0ab3bd7816e11e))
+* fix multiple login page bugs ([0353105](https://github.com/rastuhacode/soundgrammy/commit/035310513f418eb40f29b7c6efc8e9d3469444e4))
+* fixed clippy error ([b3cdc73](https://github.com/rastuhacode/soundgrammy/commit/b3cdc73f7c98d93019709e1f6e3aa5d31054d6c1))
+
 ## [2.0.0](https://github.com/rastuhacode/soundgrammy/compare/v1.2.0...v2.0.0) (2026-09-02)
 
 
