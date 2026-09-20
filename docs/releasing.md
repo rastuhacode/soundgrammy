@@ -1,23 +1,19 @@
 # Releasing SoundGrammy
 
-SoundGrammy uses [Release Please](https://github.com/googleapis/release-please) to turn Conventional Commits on `main` into a versioned release pull request, changelog entries, a Git tag, and a draft GitHub Release. The Tauri build workflow then uploads macOS and Windows artifacts to that draft.
+SoundGrammy uses [Release Please](https://github.com/googleapis/release-please) to turn Conventional Commits on `main` into a versioned release pull request, changelog entries, a Git tag, and a draft GitHub Release. The Tauri build workflow then uploads macOS, Windows, and Android arm64 artifacts to that draft.
 
-## One-time repository setup
-
-In **Settings → Actions → General → Workflow permissions**, grant GitHub Actions read and write access and enable **Allow GitHub Actions to create and approve pull requests**. Keep `TELEGRAM_API_ID` and `TELEGRAM_API_HASH` configured as repository Actions secrets.
-
-Pull request workflows started by Release Please with the default `GITHUB_TOKEN` can require a maintainer to approve the runs. If branch protection requires those checks to start automatically, use a fine-grained personal access token or GitHub App token as the action's `token`.
-
-## Normal workflow
+## Workflow
 
 1. Merge changes into `main`, preferably with squash merge and a Conventional Commit title.
 2. The **Release Please** workflow opens or refreshes a release pull request. It proposes the next version, updates `CHANGELOG.md`, and synchronizes `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, `src-tauri/Cargo.lock`, and `.release-please-manifest.json`.
 3. Continue merging ordinary changes. Release Please keeps the same release pull request current.
 4. Review the generated changelog and version changes, then merge the release pull request when the release is ready.
-5. Release Please creates the `vX.Y.Z` tag and a draft GitHub Release. In the same workflow run, the reusable **Build release** workflow checks out the exact release commit, verifies every version, builds Intel and Apple Silicon macOS bundles plus Windows bundles, and uploads them to the draft.
+5. Release Please creates the `vX.Y.Z` tag and a draft GitHub Release. In the same workflow run, the reusable **Build release** workflow checks out the exact release commit, verifies every version, builds Intel and Apple Silicon macOS bundles plus Windows bundles and a signed Android arm64 APK, and uploads them to the draft.
 6. Test the uploaded artifacts and edit the release notes if needed. Publish the draft GitHub Release when it is ready for users.
 
 The release is deliberately left as a draft so incomplete, unsigned, or untested binaries are never published automatically.
+
+The Android APK targets arm64 devices. Android device acceptance remains outstanding, so the draft APK is a preview artifact rather than an officially supported platform release.
 
 ## Commit titles and version bumps
 

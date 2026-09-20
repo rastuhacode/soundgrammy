@@ -51,8 +51,9 @@ You can read more about philosophy around SoundGrammy in [Why I don’t use musi
 | :--- | :--- |
 | **macOS** | Apple Silicon (`arm64`) and Intel (`x86_64`) |
 | **Windows** | 64-bit (`x86_64`) |
+| **Android** | (`apk`) |
 
-Linux, iOS, and Android are not officially supported releases. Native playback and OS media adapters exist for these targets, and mobile background integration is implemented. Android compilation has been checked; iOS build setup and physical-device mobile acceptance remain outstanding. Implementation does not establish release support. See [mobile background playback](docs/mobile-background-playback.md) for validation status. Contributions that complete platform support are welcome.
+Linux and iOS are not officially supported although Tauri can build those. Contributions that complete platform support are welcome.
 
 ## How to use
 
