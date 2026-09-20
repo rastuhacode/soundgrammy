@@ -1,4 +1,5 @@
-/** Transport only. All values crossing this boundary are serializable. */
+import type { PlaybackSession } from '@/types/playback'
+/** Native playback observation and transport controls; all payloads are serializable. */
 export type AudioEngineKind = 'native-rust' | 'test'
 export type AudioEngineStatus = 'idle' | 'loading' | 'ready' | 'playing' | 'buffering' | 'paused' | 'ended' | 'error'
 export interface AudioTrackRequest {
@@ -11,9 +12,12 @@ export interface AudioEngineError {
   code: 'source-unavailable' | 'unsupported-format' | 'decode-failed' | 'output-unavailable' | 'interrupted' | 'unknown'
   message: string
   recoverable: boolean
+  /** Sanitized backend detail retained for opt-in diagnostic logs. */
+  diagnostic?: string
 }
 export interface AudioEngineSnapshot {
   revision: number
+  player?: PlaybackSession
   kind: AudioEngineKind
   status: AudioEngineStatus
   trackId: number | null

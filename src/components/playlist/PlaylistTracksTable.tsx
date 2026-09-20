@@ -4,7 +4,8 @@ import {
   type DragEndEvent,
   type Modifier,
   KeyboardSensor,
-  PointerSensor,
+  MouseSensor,
+  TouchSensor,
   useSensor,
   useSensors,
 } from '@dnd-kit/core'
@@ -28,15 +29,15 @@ import {
 } from '@tanstack/react-table'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react'
-import { useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { Track } from '@/lib/db'
 import type { ResolvedSelectedPlaylist } from '@/stores/playlists-store'
 import { cn } from '@/lib/utils'
 import { Checkbox } from '@/components/ui/checkbox'
 import { PlaylistTrackContextMenu } from './PlaylistTrackContextMenu'
 import {
-  TRACK_GRID_COLS,
-  TRACK_GRID_COLS_SELECT,
+  TRACK_GRID_CLASS,
+  TRACK_GRID_CLASS_SELECT,
   TRACK_ROW_STRIDE,
   PlaylistTrackRow,
 } from './PlaylistTrackRow'
@@ -125,6 +126,20 @@ export function PlaylistTracksTable({
   onShowInfo,
 }: PlaylistTracksTableProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
+  const [scrollbarWidth, setScrollbarWidth] = useState(0)
+
+  useEffect(() => {
+    const scrollElement = scrollRef.current
+    if (!scrollElement) return
+
+    const updateScrollbarWidth = () => {
+      setScrollbarWidth(scrollElement.offsetWidth - scrollElement.clientWidth)
+    }
+    const observer = new ResizeObserver(updateScrollbarWidth)
+    observer.observe(scrollElement)
+    updateScrollbarWidth()
+    return () => observer.disconnect()
+  }, [])
 
   const columns = useMemo<ColumnDef<typeof playlistTableFeatures, Track>[]>(() => {
     const defs: ColumnDef<typeof playlistTableFeatures, Track>[] = []
@@ -212,8 +227,11 @@ export function PlaylistTracksTable({
   const sortableIds = rows.map(row => rowSortableIds[row.index]!)
 
   const sensors = useSensors(
-    useSensor(PointerSensor, {
+    useSensor(MouseSensor, {
       activationConstraint: { distance: 6 },
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: { delay: 250, tolerance: 5 },
     }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,
@@ -231,8 +249,8 @@ export function PlaylistTracksTable({
   })
 
   const headerGridClass = selectionMode
-    ? TRACK_GRID_COLS_SELECT
-    : TRACK_GRID_COLS
+    ? TRACK_GRID_CLASS_SELECT
+    : TRACK_GRID_CLASS
 
   const handleDragEnd = (event: DragEndEvent) => {
     if (!canReorder) return
@@ -257,79 +275,80 @@ export function PlaylistTracksTable({
   }
 
   return (
-    <div ref={scrollRef} className="min-h-0 grow overflow-y-auto px-4 pb-4">
+    <div
+      role="table"
+      aria-label={`${currentPlaylist.name} tracks`}
+      className="flex min-h-0 min-w-0 grow flex-col px-2 md:px-4"
+    >
       <div
-        role="table"
-        aria-label={`${currentPlaylist.name} tracks`}
-        className="w-full"
+        role="rowgroup"
+        className="mb-2 shrink-0 rounded-md bg-sidebar px-1"
+        style={{ marginRight: scrollbarWidth }}
       >
         <div
-          role="rowgroup"
-          className="sticky top-0 z-10 -mx-1 mb-2 rounded-md bg-sidebar px-1"
+          role="row"
+          className={cn('grid h-9 items-center gap-2 px-2 text-[11px] font-medium tracking-wide text-muted-foreground uppercase md:gap-3 md:px-2.5', headerGridClass)}
         >
-          <div
-            role="row"
-            className="grid h-9 items-center gap-3 px-2.5 text-[11px] font-medium tracking-wide text-muted-foreground uppercase"
-            style={{ gridTemplateColumns: headerGridClass }}
-          >
-            {table.getHeaderGroups().map(headerGroup =>
-              headerGroup.headers.map((header) => {
-                const canSort = header.column.getCanSort()
-                const sorted = header.column.getIsSorted()
+          {table.getHeaderGroups().map(headerGroup =>
+            headerGroup.headers.map((header) => {
+              const canSort = header.column.getCanSort()
+              const sorted = header.column.getIsSorted()
 
-                if (header.id === 'select') {
-                  return (
-                    <div
-                      key={header.id}
-                      role="columnheader"
-                      className="flex size-full items-center justify-center"
-                    >
-                      {flexRender(
-                        header.column.columnDef.header,
-                        header.getContext(),
-                      )}
-                    </div>
-                  )
-                }
-
+              if (header.id === 'select') {
                 return (
                   <div
                     key={header.id}
                     role="columnheader"
-                    className={cn(
-                      header.id === 'duration' && 'justify-self-end',
-                    )}
+                    className="flex size-full items-center justify-center"
                   >
-                    {canSort
-                      ? (
-                          <button
-                            type="button"
-                            className={cn(
-                              'inline-flex items-center gap-1 text-xs transition-colors hover:text-foreground',
-                              sorted && 'text-foreground',
-                            )}
-                            onClick={header.column.getToggleSortingHandler()}
-                          >
-                            {flexRender(
-                              header.column.columnDef.header,
-                              header.getContext(),
-                            )}
-                            <SortIcon sorted={sorted} />
-                          </button>
-                        )
-                      : (
-                          flexRender(
-                            header.column.columnDef.header,
-                            header.getContext(),
-                          )
-                        )}
+                    {flexRender(
+                      header.column.columnDef.header,
+                      header.getContext(),
+                    )}
                   </div>
                 )
-              }),
-            )}
-          </div>
-        </div>
+              }
 
+              return (
+                <div
+                  key={header.id}
+                  role="columnheader"
+                  className={cn(
+                    header.id === 'duration' && 'justify-self-end',
+                    header.id === 'performer' && 'hidden md:block',
+                  )}
+                >
+                  {canSort
+                    ? (
+                        <button
+                          type="button"
+                          className={cn(
+                            'inline-flex items-center gap-1 text-xs transition-colors hover:text-foreground',
+                            sorted && 'text-foreground',
+                          )}
+                          onClick={header.column.getToggleSortingHandler()}
+                        >
+                          {flexRender(
+                            header.column.columnDef.header,
+                            header.getContext(),
+                          )}
+                          <SortIcon sorted={sorted} />
+                        </button>
+                      )
+                    : (
+                        flexRender(
+                          header.column.columnDef.header,
+                          header.getContext(),
+                        )
+                      )}
+                </div>
+              )
+            }),
+          )}
+        </div>
+      </div>
+
+      <div ref={scrollRef} className="min-h-0 grow overflow-x-hidden overflow-y-auto pb-4">
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}

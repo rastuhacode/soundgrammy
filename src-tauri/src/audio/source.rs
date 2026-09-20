@@ -9,7 +9,7 @@ use std::{
     io::{self, Read, Seek, SeekFrom},
     sync::{
         atomic::{AtomicBool, Ordering},
-        mpsc, Arc,
+        mpsc, Arc, Mutex,
     },
     time::Duration,
 };
@@ -54,6 +54,7 @@ struct StreamReader {
     stream: Arc<TrackStream>,
     downloaded_only: bool,
     coverage: Arc<super::availability::Availability>,
+    diagnostic: Arc<Mutex<Option<String>>>,
 }
 impl RangeReader for StreamReader {
     fn read(&self, start: u64, end: u64, active: Arc<AtomicBool>) -> io::Result<Vec<u8>> {
@@ -68,14 +69,24 @@ impl RangeReader for StreamReader {
                 stream.read_downloaded_range(start, end, token).await
             } else {
                 stream.read_range(start, end, Some(token)).await
-            }
-            .map_err(|_| io::Error::other("source-unavailable"));
+            };
+            let result = result.map_err(|error| io::Error::other(error.to_string()));
             if stream.received().await == stream.total() {
                 coverage.complete.store(true, Ordering::Release);
             }
             let _ = tx.send(result);
         });
-        wait(&rx, &active)?
+        let result = wait(&rx, &active)?;
+        if let Err(error) = &result {
+            if error.kind() != io::ErrorKind::ConnectionAborted {
+                *self
+                    .diagnostic
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner()) =
+                    Some(format!("range {start}..={end}: {error}"));
+            }
+        }
+        result
     }
 }
 pub struct Source {
@@ -97,6 +108,7 @@ impl Source {
         active: Arc<AtomicBool>,
         seek: Arc<super::seek::SeekControl>,
         coverage: Arc<super::availability::Availability>,
+        diagnostic: Arc<Mutex<Option<String>>>,
     ) -> io::Result<Self> {
         let id = format!("native-{generation}");
         let session = Session {
@@ -105,6 +117,7 @@ impl Source {
         };
         let (tx, rx) = mpsc::sync_channel(1);
         let token = active.clone();
+        let open_diagnostic = diagnostic.clone();
         tauri::async_runtime::spawn(async move {
             let result = async {
                 let state = app.state::<AppState>();
@@ -133,7 +146,14 @@ impl Source {
                 Ok((None, Some(stream), total))
             }
             .await
-            .map_err(|_| io::Error::other("source-unavailable"));
+            .map_err(|error| {
+                let message = error.to_string();
+                *open_diagnostic
+                    .lock()
+                    .unwrap_or_else(|poisoned| poisoned.into_inner()) =
+                    Some(format!("opening playback source: {message}"));
+                io::Error::other(message)
+            });
             let _ = tx.send(result);
         });
         let (file, stream, total) = wait(&rx, &active)??;
@@ -147,6 +167,7 @@ impl Source {
                     stream: stream.clone(),
                     downloaded_only: true,
                     coverage: coverage.clone(),
+                    diagnostic: diagnostic.clone(),
                 })),
                 active: active.clone(),
                 seek: Some(coverage.scan_seek.clone()),
@@ -174,6 +195,7 @@ impl Source {
                     stream,
                     downloaded_only: false,
                     coverage,
+                    diagnostic,
                 }) as Box<dyn RangeReader>
             }),
             active,
@@ -234,11 +256,12 @@ impl Read for Source {
                     "cancelled",
                 ));
             }
-            self.block = self
+            let result = self
                 .stream
                 .as_ref()
                 .ok_or_else(|| io::Error::other("source-unavailable"))?
-                .read(start, end, read_active)?;
+                .read(start, end, read_active);
+            self.block = result?;
             if self.block.len() != (end - start + 1) as usize {
                 return Err(io::Error::other("short source read"));
             }

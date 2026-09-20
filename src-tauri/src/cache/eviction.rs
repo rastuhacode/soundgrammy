@@ -135,7 +135,6 @@ pub(super) async fn protected_path_set(state: &AppState) -> HashSet<PathBuf> {
         .await
         .into_iter()
         .collect();
-    #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
     paths.extend(state.audio.protected_paths());
     paths
 }

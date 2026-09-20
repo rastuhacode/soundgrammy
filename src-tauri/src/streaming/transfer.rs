@@ -212,7 +212,7 @@ impl TrackStream {
 
         let document = self.document.lock().await.clone();
         let state = self.app.state::<AppState>();
-        let client = state.client().await?;
+        let client = state.ensure_client().await?;
         let first_attempt = download::download_chunk(
             &client,
             &state.media_requests,

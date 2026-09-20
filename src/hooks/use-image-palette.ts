@@ -1,16 +1,39 @@
 import { useEffect, useState } from 'react'
 
-const FALLBACK_PALETTE = ['#075985', '#172554', '#164e63']
+const FALLBACK_PALETTE = ['#141414', '#202020', '#272727']
 const SAMPLE_SIZE = 48
 const BUCKET_SIZE = 32
 const MIN_COLOR_DISTANCE = 72
+
+type RgbColor = [number, number, number]
 
 function toHex(value: number): string {
   return Math.max(0, Math.min(255, value)).toString(16).padStart(2, '0')
 }
 
-function colorDistance(a: number[], b: number[]): number {
+function colorDistance(a: RgbColor, b: RgbColor): number {
   return Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2])
+}
+
+function mixColors(a: RgbColor, b: RgbColor): RgbColor {
+  return a.map((value, index) => Math.round((value + b[index]) / 2)) as RgbColor
+}
+
+function shiftTone(color: RgbColor, amount: number): RgbColor {
+  const target = amount > 0 ? 255 : 0
+  return color.map(value => Math.round(value + (target - value) * Math.abs(amount))) as RgbColor
+}
+
+export function completeArtworkPalette(colors: RgbColor[]): RgbColor[] {
+  if (colors.length === 0) return []
+  if (colors.length >= 3) return colors.slice(0, 3)
+  if (colors.length === 2) return [colors[0], colors[1], mixColors(colors[0], colors[1])]
+
+  const color = colors[0]
+  const brightness = (color[0] + color[1] + color[2]) / 3
+  return brightness < 128
+    ? [color, shiftTone(color, 0.18), shiftTone(color, -0.25)]
+    : [color, shiftTone(color, -0.18), shiftTone(color, 0.12)]
 }
 
 function extractPalette(image: HTMLImageElement): string[] {
@@ -22,7 +45,7 @@ function extractPalette(image: HTMLImageElement): string[] {
 
   context.drawImage(image, 0, 0, SAMPLE_SIZE, SAMPLE_SIZE)
   const pixels = context.getImageData(0, 0, SAMPLE_SIZE, SAMPLE_SIZE).data
-  const buckets = new Map<string, { color: number[], count: number }>()
+  const buckets = new Map<string, { color: RgbColor, count: number }>()
 
   for (let index = 0; index < pixels.length; index += 4) {
     if (pixels[index + 3] < 180) continue
@@ -30,9 +53,7 @@ function extractPalette(image: HTMLImageElement): string[] {
       Math.round(pixels[index] / BUCKET_SIZE) * BUCKET_SIZE,
       Math.round(pixels[index + 1] / BUCKET_SIZE) * BUCKET_SIZE,
       Math.round(pixels[index + 2] / BUCKET_SIZE) * BUCKET_SIZE,
-    ].map(value => Math.min(255, value))
-    const brightness = (color[0] + color[1] + color[2]) / 3
-    if (brightness < 12 || brightness > 244) continue
+    ].map(value => Math.min(255, value)) as RgbColor
     const key = color.join(',')
     const bucket = buckets.get(key)
     if (bucket) bucket.count += 1
@@ -40,20 +61,22 @@ function extractPalette(image: HTMLImageElement): string[] {
   }
 
   const candidates = [...buckets.values()].sort((a, b) => b.count - a.count)
-  const selected: number[][] = []
-  for (const candidate of candidates) {
+  const preferredCandidates = candidates.filter(({ color }) => {
+    const brightness = (color[0] + color[1] + color[2]) / 3
+    return brightness >= 12 && brightness <= 244
+  })
+  const selected: RgbColor[] = []
+  for (const candidate of preferredCandidates.length > 0 ? preferredCandidates : candidates) {
     if (selected.every(color => colorDistance(color, candidate.color) >= MIN_COLOR_DISTANCE)) {
       selected.push(candidate.color)
     }
     if (selected.length === 3) break
   }
 
-  return FALLBACK_PALETTE.map((fallback, index) => {
-    const color = selected[index]
-    return color
-      ? `#${toHex(color[0])}${toHex(color[1])}${toHex(color[2])}`
-      : fallback
-  })
+  const palette = completeArtworkPalette(selected)
+  if (palette.length === 0) return FALLBACK_PALETTE
+
+  return palette.map(color => `#${toHex(color[0])}${toHex(color[1])}${toHex(color[2])}`)
 }
 
 export function useImagePalette(url: string | null): string[] {

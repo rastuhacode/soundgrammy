@@ -7,6 +7,7 @@ Rust Tauri 2 app: Telegram via ferogram, library in SQLite, media cache + stream
 | Module | Role |
 |--------|------|
 | `src/commands.rs` | Tauri IPC handlers |
+| `src/audio/` | Native queue policy, shuffle, playback transport, and UI reattachment snapshots |
 | `src/lib.rs` | App setup, command registration, `stream` protocol |
 | `src/db.rs` | SQLite (`library.db`) |
 | `src/telegram/` | Client, auth, saved music sync, download |

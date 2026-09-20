@@ -1,8 +1,8 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 /// A track as sent to the frontend. Field names are snake_case to match the
 /// ported Zustand stores/components.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Track {
     pub id: i64,
     pub tg_user_id: i64,

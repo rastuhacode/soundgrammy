@@ -85,7 +85,7 @@ function SplitterResizeHandle({
     <Separator
       data-slot="splitter-resize-handle"
       className={cn(
-        'group relative z-10 flex w-px items-center justify-center bg-border outline-none transition-colors',
+        'group relative flex w-px items-center justify-center bg-border outline-none transition-colors',
         'after:absolute after:inset-y-0 after:left-1/2 after:w-2 after:-translate-x-1/2',
         'hover:bg-primary/50 focus-visible:bg-primary data-[separator=active]:bg-primary',
         'aria-[orientation=horizontal]:h-px aria-[orientation=horizontal]:w-full',
@@ -96,7 +96,7 @@ function SplitterResizeHandle({
       {...props}
     >
       {withHandle && (
-        <div className="z-10 flex h-5 w-3 items-center justify-center rounded-sm border border-border bg-background shadow-sm">
+        <div className="flex h-5 w-3 items-center justify-center rounded-sm border border-border bg-background shadow-sm">
           <GripVertical className="size-2.5" />
         </div>
       )}

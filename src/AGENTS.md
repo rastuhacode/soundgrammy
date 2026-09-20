@@ -24,10 +24,10 @@ Zustand stores under `stores/`:
 | `library-store` | Track list |
 | `playlists-store` | Liked + custom playlists, selection |
 | `listen-stats-store` | Per-track listen aggregates (smart playlists) |
-| `player-store` | Queue, current track, playback flags |
+| `player-store` | Native queue/current-track/intent mirror; actions send native commands |
 | `cache-store` | Which tracks are fully present in app audio cache |
 | `playlist-jobs-store` | In-flight playlist download/cache jobs + result queue |
-| `shuffle-store` / `repeat-store` | Playback modes |
+| `shuffle-store` / `repeat-store` | Read-only native playback mode mirrors |
 | `fullscreen-store` | Fullscreen player UI |
 
 Prefer updating existing stores over adding parallel state.

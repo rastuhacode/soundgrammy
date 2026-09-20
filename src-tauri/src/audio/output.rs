@@ -12,6 +12,8 @@ pub struct Clock {
     pub reset_request: AtomicU64,
     pub reset_ack: AtomicU64,
     pub consumed: AtomicU64,
+    /// Lifetime PCM frames; never reset by seek.
+    pub rendered: AtomicU64,
     pub presented: AtomicU64,
     pub produced: AtomicU64,
     pub underruns: AtomicU64,
@@ -56,6 +58,7 @@ fn render<T: cpal::SizedSample + cpal::FromSample<f32>>(
         }
     }
     clock.consumed.fetch_add(consumed, Ordering::Relaxed);
+    clock.rendered.fetch_add(consumed, Ordering::Release);
     if playing && consumed == 0 {
         clock.underruns.fetch_add(1, Ordering::Relaxed);
     }
@@ -173,6 +176,8 @@ fn build<T: cpal::SizedSample + cpal::FromSample<f32>>(
 }
 impl Output {
     pub fn open(volume: f64) -> Result<(Self, HeapProd<f32>), &'static str> {
+        #[cfg(target_os = "ios")]
+        super::ios::activate()?;
         let device = cpal::default_host()
             .default_output_device()
             .ok_or("output-unavailable")?;
@@ -302,5 +307,12 @@ mod tests {
         render(&mut out, &mut c, 2, &clock);
         assert_eq!(out, [0.5, -0.5, 0.0, 1.0, 0.0, 0.0]);
         assert_eq!(clock.consumed.load(Ordering::Relaxed), 2);
+        assert_eq!(clock.rendered.load(Ordering::Relaxed), 2);
+        render(&mut out, &mut c, 2, &clock); // underrun silence is not listening
+        assert_eq!(clock.rendered.load(Ordering::Relaxed), 2);
+        clock.reset_request.store(1, Ordering::Release);
+        assert!(reset_consumer(&mut c, &clock));
+        assert_eq!(clock.consumed.load(Ordering::Relaxed), 0);
+        assert_eq!(clock.rendered.load(Ordering::Relaxed), 2);
     }
 }

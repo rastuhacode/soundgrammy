@@ -1,6 +1,5 @@
 //! SoundGrammy desktop backend: Tauri builder, state, and command registration.
 
-#[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
 mod audio;
 
 mod bounce_analysis;
@@ -29,7 +28,6 @@ use crate::state::AppState;
 pub fn run() {
     tauri::Builder::default()
         .on_page_load(|webview, payload| {
-            #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
             if webview.label() == "main"
                 && payload.event() == tauri::webview::PageLoadEvent::Started
             {
@@ -57,6 +55,8 @@ pub fn run() {
                 config, db, None, data_dir, cache_dir, false, None,
             ));
 
+            audio::media::initialize(app.handle());
+
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 let state = handle.state::<AppState>();
@@ -69,21 +69,14 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
-            #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+            commands::audio::native_player_command,
             commands::audio::native_audio_capabilities,
-            #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
             commands::audio::native_audio_snapshot,
-            #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
             commands::audio::native_audio_load,
-            #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
             commands::audio::native_audio_unload,
-            #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
             commands::audio::native_audio_play,
-            #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
             commands::audio::native_audio_pause,
-            #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
             commands::audio::native_audio_seek,
-            #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
             commands::audio::native_audio_set_volume,
             commands::auth::auth_status,
             commands::auth::refresh_auth,
@@ -155,9 +148,20 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building SoundGrammy")
         .run(|app, event| {
-            #[cfg(any(target_os = "macos", target_os = "windows", target_os = "linux"))]
+            // Activity/WebView destruction must not tear down the process-owned player.
+            // Explicit app exit remains honored; the OS may still terminate the process.
+            #[cfg(any(target_os = "android", target_os = "ios"))]
+            if let tauri::RunEvent::ExitRequested {
+                code: None,
+                ref api,
+                ..
+            } = event
+            {
+                api.prevent_exit();
+            }
             if matches!(event, tauri::RunEvent::Exit) {
                 app.state::<AppState>().audio.shutdown();
+                audio::media::shutdown(app);
             }
         });
 }

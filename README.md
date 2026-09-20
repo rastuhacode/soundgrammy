@@ -52,7 +52,7 @@ You can read more about philosophy around SoundGrammy in [Why I don’t use musi
 | **macOS** | Apple Silicon (`arm64`) and Intel (`x86_64`) |
 | **Windows** | 64-bit (`x86_64`) |
 
-Linux, iOS, and Android are not officially supported. Tauri supports these platforms at a framework level, but SoundGrammy has not been tested or packaged for them. Contributions that add support for other platforms are welcome.
+Linux, iOS, and Android are not officially supported releases. Native playback and OS media adapters exist for these targets, and mobile background integration is implemented. Android compilation has been checked; iOS build setup and physical-device mobile acceptance remain outstanding. Implementation does not establish release support. See [mobile background playback](docs/mobile-background-playback.md) for validation status. Contributions that complete platform support are welcome.
 
 ## How to use
 
@@ -160,3 +160,5 @@ The SoundGrammy name, artwork, and source code are independent of Telegram. The 
 Desktop playback uses the Rust audio engine in development and release builds.
 Run `bun tauri:dev`; no playback environment variable is required. See [native audio](docs/native-audio.md)
 for architecture, codec coverage, Linux dependencies, and verification gates.
+The [architecture overview](docs/architecture.md) explains native playback ownership,
+UI reattachment, and what persists across application restarts.

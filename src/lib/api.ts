@@ -1,3 +1,4 @@
+import type { PlayerCommand } from '@/types/playback'
 import type { AudioTrackRequest } from '@/hooks/audio/engine'
 import { invoke as tauriInvoke, convertFileSrc } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
@@ -61,13 +62,14 @@ async function invoke<T>(command: string, args?: Record<string, unknown>): Promi
 // ---- auth ----------------------------------------------------------------
 
 export const api = {
+  nativePlayerCommand: (command: PlayerCommand) => invoke<unknown>('native_player_command', { command }),
   nativeAudioCapabilities: () => invoke<{ available: boolean, streaming: boolean }>('native_audio_capabilities'),
   nativeAudioSnapshot: () => invoke<unknown>('native_audio_snapshot'),
   nativeAudioLoad: (request: AudioTrackRequest) => invoke<unknown>('native_audio_load', { request }),
   nativeAudioUnload: () => invoke<unknown>('native_audio_unload'),
   nativeAudioPlay: () => invoke<unknown>('native_audio_play'),
   nativeAudioPause: () => invoke<unknown>('native_audio_pause'),
-  nativeAudioSeek: (seconds: number) => invoke<unknown>('native_audio_seek', { seconds }),
+  nativeAudioSeek: (seconds: number, attemptId?: string) => invoke<unknown>('native_audio_seek', { seconds, attemptId }),
   nativeAudioSetVolume: (percent: number) => invoke<unknown>('native_audio_set_volume', { percent }),
   authStatus: () => invoke<AuthStatus>('auth_status'),
   refreshAuth: () => invoke<AuthStatus>('refresh_auth'),
@@ -322,3 +324,6 @@ export const onNativeAudioState = (callback: (value: unknown) => void) =>
   listen<unknown>('audio:state', event => callback(event.payload))
 export const onNativeAudioEvent = (callback: (value: unknown) => void) =>
   listen<unknown>('audio:event', event => callback(event.payload))
+
+export const onNativeListenStats = (callback: (stats: TrackListenStats) => void) =>
+  listen<TrackListenStats>('listen:stats', event => callback(event.payload))

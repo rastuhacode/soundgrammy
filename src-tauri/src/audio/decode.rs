@@ -17,6 +17,7 @@ use symphonia::core::{
 };
 
 pub enum Message {
+    Diagnostic(String),
     Duration(f64),
     Eof(u64),
     Seeked(u64),
@@ -74,6 +75,10 @@ pub fn decode_inner(
     let metadata = MetadataOptions::default()
         .limit_tag_bytes(Limit::Maximum(64 * 1024))
         .limit_visual_bytes(Limit::Maximum(0));
+    let stage = |value: &str| {
+        let _ = sender.send(Message::Diagnostic(value.into()));
+    };
+    stage("probe: detecting container and reading leading metadata");
     let mut format = symphonia::default::get_probe()
         .probe(
             &Hint::new(),
@@ -81,11 +86,20 @@ pub fn decode_inner(
             FormatOptions::default(),
             metadata,
         )
-        .map_err(|e| classify(&e))?;
+        .map_err(|e| {
+            stage(&format!("probe failed: {e}"));
+            classify(&e)
+        })?;
     let indexed_mp4 = format.format_info().short_name == "isomp4";
+    let container = format.format_info().short_name;
+    stage(&format!("select audio track: container={container}"));
     let track = format
         .default_track(TrackType::Audio)
         .ok_or("unsupported-format")?;
+    stage(&format!(
+        "read codec parameters: container={container}, track={}",
+        track.id
+    ));
     let params = track
         .codec_params
         .as_ref()
@@ -103,6 +117,7 @@ pub fn decode_inner(
     };
     let track_id = track.id;
     let time_base = track.time_base;
+    stage(&format!("validate audio parameters: container={container}, codec={:?}, sample_rate={:?}, channels={:?}", params.codec, params.sample_rate, params.channels));
     let input_rate = params.sample_rate.ok_or("unsupported-format")?;
     let input_channels = params
         .channels
@@ -112,6 +127,7 @@ pub fn decode_inner(
     if !(1..=2).contains(&input_channels) {
         return Err("unsupported-format");
     }
+    stage(&format!("create decoder: container={container}, codec={:?}, sample_rate={input_rate}, channels={input_channels}", params.codec));
     let mut decoder = symphonia::default::get_codecs()
         .make_audio_decoder(&params, &AudioDecoderOptions::default())
         .map_err(|e| classify(&e))?;
@@ -134,6 +150,7 @@ pub fn decode_inner(
             .map_err(|e| classify(&e))?;
         decoder.reset();
     }
+    stage(&format!("decode packets: container={container}, codec={:?}, sample_rate={input_rate}, channels={input_channels}", params.codec));
     let mut converter = Converter::new(input_rate, rate, channels)?;
     let mut samples = Vec::<f32>::new();
     let mut failures = 0;
@@ -307,6 +324,40 @@ mod tests {
     use super::*;
     use ringbuf::HeapRb;
     use std::{fs::File, path::PathBuf, sync::mpsc};
+
+    #[test]
+    fn mp3_with_large_id3v2_tag_decodes_before_probe_depth_is_exhausted() {
+        // A valid 2 MiB ID3v2.4 padding tag ahead of real MP3 audio. Without
+        // the ID3v2 reader, probing scans the tag and stops at its 1 MiB limit.
+        let size = 2 * 1024 * 1024u32;
+        let mut bytes = b"ID3\x04\x00\x00".to_vec();
+        bytes.extend_from_slice(&[
+            ((size >> 21) & 0x7f) as u8,
+            ((size >> 14) & 0x7f) as u8,
+            ((size >> 7) & 0x7f) as u8,
+            (size & 0x7f) as u8,
+        ]);
+        bytes.resize(10 + size as usize, 0);
+        bytes.extend_from_slice(include_bytes!("../../tests/fixtures/audio/tone.mp3"));
+        let (producer, consumer) = HeapRb::<f32>::new(48000 * 2 * 3).split();
+        let (sender, receiver) = mpsc::sync_channel(16);
+        let result = decode(
+            Box::new(std::io::Cursor::new(bytes)),
+            0.0,
+            (48000, 2),
+            producer,
+            Arc::new(AtomicBool::new(true)),
+            Arc::new(super::super::output::Clock::default()),
+            sender,
+        );
+        for message in receiver.try_iter() {
+            if let Message::Diagnostic(stage) = message {
+                eprintln!("{stage}");
+            }
+        }
+        assert_eq!(result, Ok(()));
+        assert!(consumer.occupied_len() > 80_000);
+    }
 
     fn fixture(name: &str, origin: f64) -> Result<Vec<f32>, &'static str> {
         let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))

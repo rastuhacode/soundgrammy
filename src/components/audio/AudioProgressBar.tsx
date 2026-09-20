@@ -237,7 +237,7 @@ export function AudioProgressBar({
                 <div
                   aria-hidden
                   className={cn(
-                    'pointer-events-none absolute top-[18px] z-10 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary opacity-0 transition-all duration-100 group-hover/audiobar:opacity-100',
+                    'pointer-events-none absolute top-4.5 z-10 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary opacity-0 transition-all duration-100 group-hover/audiobar:opacity-100',
                     isDragging && 'scale-125 opacity-100',
                   )}
                   style={{ left: `${progress}%` }}

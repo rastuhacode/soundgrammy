@@ -19,3 +19,6 @@
 # If you keep the line number information, uncomment this to
 # hide the original source file name.
 #-renamesourcefileattribute SourceFile
+# Rust JNI resolves this class and methods by name.
+-keep class com.soundgrammy.app.NativeMediaSession { *; }
+-keep class com.soundgrammy.app.NativeMediaSession$Companion { *; }
