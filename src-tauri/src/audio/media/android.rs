@@ -18,10 +18,20 @@ pub fn initialize(
         return Ok(());
     }
     let _ = APP.set(app.clone());
-    let class = env.find_class("com/soundgrammy/app/NativeMediaSession")?;
+    // JNI FindClass uses the system loader on Wry's native dispatch thread.
+    // Resolve app classes through the Activity's loader instead.
+    let name = env.new_string("com.soundgrammy.app.NativeMediaSession")?;
+    let class = env
+        .call_method(
+            activity,
+            "getAppClass",
+            "(Ljava/lang/String;)Ljava/lang/Class;",
+            &[JValue::Object(&name)],
+        )?
+        .l()?;
     let session = env
         .call_static_method(
-            class,
+            JClass::from(class),
             "getOrCreate",
             "(Landroid/content/Context;)Lcom/soundgrammy/app/NativeMediaSession;",
             &[JValue::Object(activity)],
