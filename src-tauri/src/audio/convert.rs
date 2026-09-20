@@ -125,7 +125,7 @@ mod tests {
             assert_eq!(whole.len(), output as usize * 2);
             assert_eq!(whole, split);
             assert!(whole.iter().all(|s| s.is_finite() && s.abs() <= 1.0));
-            assert!(whole.chunks_exact(2).all(|f| f[0] == f[1]));
+            assert!(whole.as_chunks::<2>().0.iter().all(|f| f[0] == f[1]));
         }
     }
 }
