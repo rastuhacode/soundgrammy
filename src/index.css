@@ -128,6 +128,25 @@
   }
 }
 
+@media (hover: none) {
+  .touch-visible-option {
+    opacity: 1;
+  }
+
+  .touch-visible-fullscreen {
+    opacity: 1;
+    background: transparent;
+    backdrop-filter: none;
+  }
+
+  .touch-visible-fullscreen svg {
+    box-sizing: content-box;
+    padding: 0.35rem;
+    border-radius: 0.5rem;
+    background: rgb(0 0 0 / 0.55);
+  }
+}
+
 /* ---------- Custom scrollbars ---------- */
 * {
   scrollbar-width: thin;

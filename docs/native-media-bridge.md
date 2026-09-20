@@ -15,11 +15,18 @@ Presentation includes revision, track and attempt identity, title, artist, nativ
 | Platform | Adapter | Artwork | Transport differences |
 | --- | --- | --- | --- |
 | macOS | MediaPlayer through objc2; main-thread object lifetime and retained command tokens | Cached file → NSImage → MPMediaItemArtwork | Loading/buffering maps to Interrupted with rate zero; error/end maps to Stopped |
+| iOS | Shared Apple MediaPlayer adapter plus AVAudioSession interruption observer | Cached file → UIImage → MPMediaItemArtwork | Playback audio session and background-audio mode; build/device verification outstanding |
 | Windows | SMTC bound to the main Tauri HWND; event tokens removed on teardown | Cached bytes → native memory stream (file URLs are not supported by CreateFromUri) | Buffering maps to Changing; seek range controls timeline availability |
 | Linux | zbus MPRIS session-bus service, unique process name | Local file URL; attempt-specific MPRIS track path | MPRIS has no Buffering/Error states: buffering maps to Paused and errors to Stopped; rate is fixed at 1, volume writes are unsupported |
 | Android | Application-owned framework MediaSession; callbacks cross JNI directly into Rust | Cached file decoded off the main thread, identity checked on completion | Native buffering/error states and per-session action mask |
 
-Each adapter implements `new`, `update`, and `Drop`; an iOS implementation can be added behind the same platform boundary. iOS is not implemented in this step. Android exposes the existing session token through `NativeMediaSession.getOrCreate(context).token`: step 3's foreground service must reuse this owner rather than create a second session. This step does not promise Android background process survival or foreground-service notifications.
+Each adapter implements `new`, `update`, and `Drop`. macOS and iOS share the Apple
+adapter behind platform-specific image and lifecycle APIs. Android's foreground
+`PlaybackService` reuses the process-owned `NativeMediaSession` token, publishes a
+media notification, and acquires audio focus before PCM playback. Neither the service
+nor the bridge creates a second decoder or queue. Service lifetime, interruptions,
+and outstanding mobile acceptance checks are described in
+[mobile background playback](mobile-background-playback.md).
 
 ## Verification
 
@@ -35,4 +42,4 @@ On each OS, run the app and verify:
 4. Rapid A → B → A selection while cover downloads are pending; an old attempt's cover never wins.
 5. Clear queue and logout remove metadata; app exit removes the media control owner.
 6. Suspend JavaScript in the inspector or reload/detach the UI while playing. Native controls and queue advancement continue; reattachment shows the same native session.
-7. On Android, recreate the Activity and confirm a single session/token remains. Test foreground-service/background guarantees separately in step 3.
+7. On Android, recreate the Activity and confirm a single session/token remains. Run the foreground-service/background scenarios in [mobile background playback](mobile-background-playback.md).

@@ -13,12 +13,18 @@ and iOS. Android requires API 26 or newer for CPAL’s AAudio backend. Initializ
 is lazy; a missing device does not prevent startup. Mobile foreground playback
 still requires device verification; enabling compilation does not establish parity.
 
-Android/iOS background playback still needs
-platform audio lifecycle integration. Queue progression,
-repeat/shuffle, and playback intent now belong to the native service and survive
-WebView suspension/recreation within the process. Listening statistics, Last.fm
-attempt accounting, shortcuts, and browser Media Session controls still use the
-frontend. See [audio engine boundary](audio-engine.md) for the ownership contract.
+Rust owns queue progression, repeat/shuffle, playback intent, listening statistics,
+and Last.fm attempt qualification. React mirrors native snapshots and handles in-app
+keyboard shortcuts. OS metadata and remote actions use the [native media bridge](native-media-bridge.md),
+without browser Media Session handlers.
+
+Android has a foreground playback service, audio-focus handling, and a CPU wake lock.
+iOS has playback audio-session/interruption integration and background-audio configuration.
+These implementations are not yet verified on physical devices; iOS compilation is
+also outstanding. See [mobile background playback](mobile-background-playback.md)
+for current build evidence and acceptance gates, and [audio engine boundary](audio-engine.md)
+for ownership and UI reattachment. Queue/position survive WebView recreation in the
+same process, but are not persisted across process termination.
 
 ## Implementation
 
@@ -26,6 +32,9 @@ frontend. See [audio engine boundary](audio-engine.md) for the ownership contrac
   before the first audio command; no Activity is retained.
 - `audio/mod.rs`: bounded 32-command control queue and output ownership on one
   dedicated thread; per-generation decode workers and bounded message channels.
+- `audio/activity.rs`: PCM-based listen attempts, local statistics, and ordered Last.fm qualification.
+- `audio/media/`: native metadata and command adapters for desktop and mobile.
+- `audio/lifecycle.rs`, `audio/ios.rs`, Android `PlaybackService.kt`: interruption policy and mobile playback lifetime.
 - `audio/session.rs`: native queue and mode policy, attempt identity, serial user
   commands and natural-end transitions, and revisioned UI snapshots.
 - `audio/shuffle.rs`: native random, variety, rediscover, smart, fresh, and duration
@@ -94,6 +103,11 @@ the existing Tauri packages. CI now checks macOS, Windows, and Linux headlessly.
 
 ## Verification record
 
+Current host recheck (2026-09-20): 260 frontend tests and 159 Rust library tests
+passed. These tests do not establish mobile device behavior. The dated entries below
+record earlier migration stages; current mobile status is maintained in
+[mobile background playback](mobile-background-playback.md).
+
 Native session migration automated validation (2026-09-16): 258 frontend tests
 and 142 Rust tests passed, including 3,000 native state transitions, all shuffle
 modes, duplicate memberships, stale commands/seeks, and UI reattachment races.
@@ -144,7 +158,7 @@ this change's headless tests:
 - Debug/release hardware playback on macOS, Windows, and Linux; no-device paths,
   44.1/48 kHz devices, Bluetooth removal, sleep/wake, and shutdown.
 - Queue/repeat/duplicate rows, listening statistics, and Last.fm during real
-  output (shared frontend behavior is covered by unit tests).
+  output (native policy and accounting are covered by unit tests).
 - A one-hour mixed-format run measuring memory, CPU, underruns, and worker count.
 - Fuzzing and adversarial container allocation behavior inside demuxers. This
   implementation caps metadata, packet processing, decoded buffers, and prefetch;
@@ -179,5 +193,6 @@ using a process-lifetime Application global reference before any output access.
 Validation: desktop `cargo check`, Android ARM64 `cargo check` using NDK 29/API 26,
 Rust formatting, and 45 desktop audio tests passed. No phone playback was tested.
 iOS compilation was not checked: this environment lacks the iOS Rust target and
-full Xcode/iOS SDK. Native media controls and background lifecycle remain future
-work; Android foreground-service support is not included in this change.
+full Xcode/iOS SDK. At that milestone, native media controls and background lifecycle were not yet
+implemented. Subsequent changes added both, including the Android foreground
+service; see [mobile background playback](mobile-background-playback.md) for current status.

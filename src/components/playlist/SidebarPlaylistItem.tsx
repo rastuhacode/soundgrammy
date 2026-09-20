@@ -81,7 +81,7 @@ export function SidebarPlaylistItem({
           transition,
         }}
         className={cn(
-          'group flex w-full items-center gap-3 rounded-lg px-2 py-2 transition-colors',
+          'group flex w-full items-center gap-3 rounded-lg px-2 py-2.5 transition-colors md:py-2',
           isActive
             ? 'bg-accent text-accent-foreground'
             : 'text-foreground hover:bg-muted/70',
@@ -120,7 +120,7 @@ export function SidebarPlaylistItem({
             {count}
           </span>
 
-          <div className="flex size-6 shrink-0 items-center justify-center">
+          <div className="flex size-9 shrink-0 items-center justify-center md:size-6">
             {hasMenu
               ? (
                   <Button
@@ -128,7 +128,7 @@ export function SidebarPlaylistItem({
                     variant="ghost"
                     size="icon-xs"
                     aria-label={`${name} options`}
-                    className="text-muted-foreground opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+                    className="touch-visible-option size-9 text-muted-foreground opacity-100 transition-opacity md:size-6 md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
                     onClick={(e) => {
                       openContextMenuFromPointerEvent(e, e.currentTarget)
                     }}

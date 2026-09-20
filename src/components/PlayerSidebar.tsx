@@ -28,6 +28,7 @@ import {
   formatInvokeError,
 } from '@/lib/playlist-recipe-io'
 import type { PlaylistRecipeSource } from '@/types'
+import type { PlaylistId } from '@/stores/playlists-store'
 import { canExportPlaylist } from '@/components/playlist/track-actions'
 import { SidebarDrawer } from './SidebarDrawer'
 
@@ -36,10 +37,9 @@ const restrictToVerticalAxis: Modifier = ({ transform }) => ({
   x: 0,
 })
 
-export function PlayerSidebar(props: { onLogout: () => void }) {
+export function PlayerSidebar(props: { onLogout: () => void, onSelectPlaylist: (id: PlaylistId) => void }) {
   const {
     selectedPlaylistId,
-    setSelectedPlaylist,
     dialogState,
     setDialogState,
     deletingId,
@@ -76,7 +76,7 @@ export function PlayerSidebar(props: { onLogout: () => void }) {
   }
 
   return (
-    <div className="flex h-full grow flex-col gap-4 pt-4">
+    <div className="flex h-full grow flex-col gap-4 pt-[max(1rem,env(safe-area-inset-top))]">
       <div className="flex items-center justify-between gap-2 px-4">
         <div className="flex items-center gap-4">
           <SidebarDrawer onLogout={props.onLogout} />
@@ -118,7 +118,7 @@ export function PlayerSidebar(props: { onLogout: () => void }) {
           items={filteredPlaylists.map(item => item.id)}
           strategy={verticalListSortingStrategy}
         >
-          <div className="flex min-h-0 grow flex-col gap-0.5 overflow-x-hidden overflow-y-auto px-2 pb-2">
+          <div className="flex min-h-0 grow flex-col gap-0.5 overflow-x-hidden overflow-y-auto px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))]">
             {filteredPlaylists.map((item) => {
               const customPlaylist = item.playlist
               const hideId = canHidePlaylist(item.id) ? item.id : null
@@ -137,7 +137,7 @@ export function PlayerSidebar(props: { onLogout: () => void }) {
                   thumbnailVariant={item.thumbnailVariant}
                   trackIds={item.trackIds}
                   sortable={canReorder}
-                  onSelect={() => setSelectedPlaylist(item.id)}
+                  onSelect={() => props.onSelectPlaylist(item.id)}
                   onEdit={customPlaylist
                     ? () => setDialogState({ mode: 'edit', playlist: customPlaylist })
                     : undefined}

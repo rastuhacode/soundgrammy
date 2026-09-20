@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useMediaQuery } from '@mantine/hooks'
 import { Loader2 } from 'lucide-react'
 import { MtprotoLogin } from '@/components/auth/MtprotoLogin'
 import { PlayerSidebar } from '@/components/PlayerSidebar'
@@ -10,6 +11,7 @@ import { useLibraryStore } from '@/stores/library-store'
 import { usePlayerStore } from '@/stores/player-store'
 import {
   ALL_TRACKS_PLAYLIST_ID,
+  type PlaylistId,
   usePlaylistsStore,
 } from '@/stores/playlists-store'
 import { useListenStatsStore } from '@/stores/listen-stats-store'
@@ -56,10 +58,23 @@ async function loadLibrary(firstLoad: boolean) {
 
 export default function App() {
   const [status, setStatus] = useState<AppStatus>('loading')
+  const isCompact = useMediaQuery('(max-width: 47.999rem)', undefined, {
+    getInitialValueInEffect: false,
+  })
+  const [compactPlaylistOpen, setCompactPlaylistOpen] = useState(false)
   const session = useSessionStore(state => state.session)
   const setSession = useSessionStore(state => state.setSession)
   const clearSession = useSessionStore(state => state.clearSession)
   const syncStartedRef = useRef(false)
+
+  useEffect(() => {
+    if (status !== 'ready') return
+    return usePlaylistsStore.subscribe((next, previous) => {
+      if (next.selectedPlaylistId !== previous.selectedPlaylistId) {
+        setCompactPlaylistOpen(true)
+      }
+    })
+  }, [status])
 
   const resetToLogin = useCallback(() => {
     useFullscreenStore.getState().exitFullscreen()
@@ -73,6 +88,7 @@ export default function App() {
     })
     useConnectivityStore.getState().reset()
     syncStartedRef.current = false
+    setCompactPlaylistOpen(false)
     setStatus('login')
   }, [clearSession])
 
@@ -211,6 +227,11 @@ export default function App() {
     resetToLogin()
   }, [resetToLogin])
 
+  const handleSelectPlaylist = useCallback((id: PlaylistId) => {
+    usePlaylistsStore.getState().setSelectedPlaylist(id)
+    setCompactPlaylistOpen(true)
+  }, [])
+
   if (status === 'loading') {
     return (
       <div className="hifi-bg flex min-h-screen items-center justify-center">
@@ -224,31 +245,48 @@ export default function App() {
   }
 
   return (
-    <div className="hifi-bg flex h-screen w-screen flex-col overflow-hidden">
-      <SplitterGroup
-        id="player-layout"
-        autoSaveId="player-layout"
-        panelIds={['playlist-sidebar', 'track-list']}
-        className="min-h-0 grow"
-      >
-        <SplitterPanel
-          id="playlist-sidebar"
-          defaultSize={320}
-          minSize={220}
-          maxSize={480}
-          groupResizeBehavior="preserve-pixel-size"
-        >
-          <aside className="size-full bg-sidebar/60 backdrop-blur-sm">
-            <PlayerSidebar onLogout={handleLogout} />
-          </aside>
-        </SplitterPanel>
-        <SplitterResizeHandle aria-label="Resize playlist sidebar" />
-        <SplitterPanel id="track-list" minSize={400}>
-          <main className="flex size-full min-h-0 flex-col">
-            <PlaylistView />
-          </main>
-        </SplitterPanel>
-      </SplitterGroup>
+    <div className="hifi-bg flex h-dvh w-full flex-col overflow-hidden">
+      {!isCompact
+        ? (
+            <SplitterGroup
+              id="player-layout"
+              autoSaveId="player-layout"
+              panelIds={['playlist-sidebar', 'track-list']}
+              className="min-h-0 grow"
+            >
+              <SplitterPanel
+                id="playlist-sidebar"
+                defaultSize={320}
+                minSize={220}
+                maxSize={480}
+                groupResizeBehavior="preserve-pixel-size"
+              >
+                <aside className="size-full bg-sidebar/60 backdrop-blur-sm">
+                  <PlayerSidebar onLogout={handleLogout} onSelectPlaylist={handleSelectPlaylist} />
+                </aside>
+              </SplitterPanel>
+              <SplitterResizeHandle aria-label="Resize playlist sidebar" />
+              <SplitterPanel id="track-list" minSize={400}>
+                <main className="flex size-full min-h-0 flex-col">
+                  <PlaylistView />
+                </main>
+              </SplitterPanel>
+            </SplitterGroup>
+          )
+        : (
+            <div className="min-h-0 min-w-0 grow">
+              <aside className={compactPlaylistOpen ? 'hidden' : 'size-full bg-sidebar/60 backdrop-blur-sm'}>
+                <PlayerSidebar onLogout={handleLogout} onSelectPlaylist={handleSelectPlaylist} />
+              </aside>
+              {compactPlaylistOpen
+                ? (
+                    <main className="flex size-full min-h-0 flex-col">
+                      <PlaylistView onBack={() => setCompactPlaylistOpen(false)} />
+                    </main>
+                  )
+                : null}
+            </div>
+          )}
       <AudioPlayer />
     </div>
   )

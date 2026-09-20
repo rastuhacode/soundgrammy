@@ -84,7 +84,7 @@ export function MtprotoLogin({
 
   return (
     <LoginShell>
-      <div className="w-75 mx-auto">
+      <div className="mx-auto w-full max-w-75">
         {body}
       </div>
     </LoginShell>
