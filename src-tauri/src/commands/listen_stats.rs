@@ -21,12 +21,21 @@ pub async fn get_listen_statistics_enabled(state: State<'_, AppState>) -> AppRes
 #[tauri::command]
 pub async fn set_listen_statistics_enabled(
     state: State<'_, AppState>,
+    app: tauri::AppHandle,
     enabled: bool,
 ) -> AppResult<()> {
-    state.db.set_setting(
-        SETTING_LISTEN_STATS_ENABLED,
-        if enabled { "true" } else { "false" },
-    )
+    state
+        .audio
+        .command(
+            app,
+            crate::audio::Control::ListenSettings {
+                enabled: Some(enabled),
+                clear: false,
+            },
+        )
+        .await
+        .map(|_| ())
+        .map_err(AppError::msg)
 }
 
 #[tauri::command]
@@ -75,6 +84,20 @@ pub async fn rebuild_listen_stats(state: State<'_, AppState>) -> AppResult<()> {
 }
 
 #[tauri::command]
-pub async fn clear_listen_statistics(state: State<'_, AppState>) -> AppResult<()> {
-    state.db.clear_listen_stats()
+pub async fn clear_listen_statistics(
+    state: State<'_, AppState>,
+    app: tauri::AppHandle,
+) -> AppResult<()> {
+    state
+        .audio
+        .command(
+            app,
+            crate::audio::Control::ListenSettings {
+                enabled: None,
+                clear: true,
+            },
+        )
+        .await
+        .map(|_| ())
+        .map_err(AppError::msg)
 }

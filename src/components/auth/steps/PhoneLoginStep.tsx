@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
+import { useForm } from '@tanstack/react-form'
 import { MaskInput } from 'maska'
 import { Button } from '@/components/ui/button'
 import { Field, FieldError, FieldSet } from '@/components/ui/fieldset'
 import { Input } from '@/components/ui/input'
-import { firstIssueMessage, phoneLoginSchema } from '@/lib/auth/login-schemas'
+import { phoneLoginSchema } from '@/lib/auth/login-schemas'
 
 /** Pick a readable mask from digit count so +7… stays `+7 (###) ###-##-##`. */
 function phoneMaskFor(value: string): string {
@@ -31,16 +32,21 @@ export function PhoneLoginStep({
   busy: boolean
   error: string | null
   onPhoneNumberChange: (value: string) => void
-  onSubmit: (phoneNumber: string) => void
+  onSubmit: (phoneNumber: string) => Promise<void>
   onBackToQr: () => void
 }) {
-  const [fieldError, setFieldError] = useState<string | null>(null)
-  const displayError = fieldError ?? error
-  const invalid = Boolean(displayError)
-
   const inputRef = useRef<HTMLInputElement>(null)
   const onPhoneNumberChangeRef = useRef(onPhoneNumberChange)
-  const setFieldErrorRef = useRef(setFieldError)
+
+  const form = useForm({
+    defaultValues: { phoneNumber },
+    validators: {
+      onSubmit: phoneLoginSchema,
+    },
+    onSubmit: async ({ value }) => {
+      await onSubmit(value.phoneNumber)
+    },
+  })
 
   useEffect(() => {
     onPhoneNumberChangeRef.current = onPhoneNumberChange
@@ -60,8 +66,9 @@ export function PhoneLoginStep({
         return digits.length > 0 ? `+${digits}` : ''
       },
       onMaska: (detail) => {
-        setFieldErrorRef.current(null)
-        onPhoneNumberChangeRef.current(toE164(detail.unmasked))
+        const nextPhoneNumber = toE164(detail.unmasked)
+        form.setFieldValue('phoneNumber', nextPhoneNumber)
+        onPhoneNumberChangeRef.current(nextPhoneNumber)
       },
     })
 
@@ -75,33 +82,42 @@ export function PhoneLoginStep({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    const result = phoneLoginSchema.safeParse({ phoneNumber })
-    if (!result.success) {
-      setFieldError(firstIssueMessage(result.error))
-      return
-    }
-    setFieldError(null)
-    onSubmit(result.data.phoneNumber)
-  }
-
   return (
-    <form onSubmit={handleSubmit} className="mx-auto flex w-full flex-col gap-3" noValidate>
+    <form
+      onSubmit={(event) => {
+        event.preventDefault()
+        event.stopPropagation()
+        void form.handleSubmit()
+      }}
+      className="mx-auto flex w-full flex-col gap-3"
+      noValidate
+    >
       <FieldSet>
-        <Field data-invalid={invalid || undefined}>
-          <Input
-            ref={inputRef}
-            id="login-phone"
-            type="tel"
-            inputMode="tel"
-            placeholder="+7 (999) 123-45-67"
-            aria-invalid={invalid || undefined}
-            autoComplete="tel"
-            disabled={busy}
-          />
-          <FieldError>{displayError}</FieldError>
-        </Field>
+        <form.Field name="phoneNumber">
+          {(field) => {
+            const validationError = field.state.meta.errors[0]?.message
+            const displayError = validationError ?? error
+            const invalid = Boolean(displayError)
+
+            return (
+              <Field data-invalid={invalid || undefined}>
+                <Input
+                  ref={inputRef}
+                  id="login-phone"
+                  name={field.name}
+                  type="tel"
+                  inputMode="tel"
+                  placeholder="+7 (999) 123-45-67"
+                  aria-invalid={invalid || undefined}
+                  autoComplete="tel"
+                  disabled={busy}
+                  onBlur={field.handleBlur}
+                />
+                <FieldError>{displayError}</FieldError>
+              </Field>
+            )
+          }}
+        </form.Field>
       </FieldSet>
       <Button type="submit" disabled={busy}>
         {busy ? 'Sending…' : 'Send login code'}

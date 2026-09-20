@@ -31,13 +31,12 @@ export function MtprotoLogin({
     case 'qr-password':
       body = (
         <PasswordLoginStep
-          password={login.password}
           passwordHint={login.passwordHint}
           busy={login.busy}
           error={login.error}
           submitLabel="Continue"
           showBackToQr
-          onPasswordChange={login.setPassword}
+          onValueChange={login.clearError}
           onSubmit={password => login.handlePassword(password)}
           onBackToQr={login.goToQr}
           onUsePhone={login.switchToPhone}
@@ -59,10 +58,9 @@ export function MtprotoLogin({
     case 'code':
       body = (
         <CodeLoginStep
-          code={login.code}
           busy={login.busy}
           error={login.error}
-          onCodeChange={login.setCode}
+          onValueChange={login.clearError}
           onSubmit={code => login.handleSignIn(code)}
           onBackToPhone={login.goToPhone}
         />
@@ -71,13 +69,12 @@ export function MtprotoLogin({
     case 'password':
       body = (
         <PasswordLoginStep
-          password={login.password}
           passwordHint={login.passwordHint}
           busy={login.busy}
           error={login.error}
           submitLabel="Sign in"
           showBackToQr={false}
-          onPasswordChange={login.setPassword}
+          onValueChange={login.clearError}
           onSubmit={password => login.handlePassword(password)}
           onUsePhone={login.goToPhone}
         />
@@ -87,7 +84,7 @@ export function MtprotoLogin({
 
   return (
     <LoginShell>
-      <div className="w-75 mx-auto">
+      <div className="mx-auto w-full max-w-75">
         {body}
       </div>
     </LoginShell>

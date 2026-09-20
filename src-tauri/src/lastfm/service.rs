@@ -197,6 +197,10 @@ impl LastFmService {
             SETTING_LASTFM_ENABLED,
             if enabled { "true" } else { "false" },
         )?;
+        app.state::<AppState>()
+            .audio
+            .lastfm_epoch
+            .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
         if enabled {
             self.wake();
         }
@@ -240,6 +244,10 @@ impl LastFmService {
             db.delete_setting(key)?;
         }
         db.set_setting(SETTING_LASTFM_ENABLED, "false")?;
+        app.state::<AppState>()
+            .audio
+            .lastfm_epoch
+            .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
         {
             let mut runtime = self.runtime.lock().await;
             runtime.auth_state = if self.client.is_some() {

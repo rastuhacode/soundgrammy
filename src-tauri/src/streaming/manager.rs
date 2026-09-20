@@ -12,8 +12,8 @@ use crate::error::{AppError, AppResult};
 use crate::telegram::download;
 
 struct PlaybackSession {
-    track_id: i64,
-    stream: Arc<TrackStream>,
+    // Keep the stream alive and protected from eviction for the session lifetime.
+    _stream: Arc<TrackStream>,
     active: Arc<AtomicBool>,
 }
 
@@ -49,13 +49,17 @@ impl StreamingManager {
         Ok(stream)
     }
 
-    pub async fn open_playback(
+    pub async fn open_playback_with_active(
         &self,
         app: AppHandle,
         track: Track,
         destination: PathBuf,
         session_id: String,
+        active: Arc<AtomicBool>,
     ) -> AppResult<Arc<TrackStream>> {
+        if !active.load(Ordering::Acquire) {
+            return Err(AppError::msg("playback stream session closed"));
+        }
         if session_id.is_empty() {
             return Err(AppError::msg("playback stream session id is empty"));
         }
@@ -66,9 +70,7 @@ impl StreamingManager {
             }
         }
 
-        let track_id = track.id;
         let stream = self.start(app, track, destination).await?;
-        let active = Arc::new(AtomicBool::new(true));
         {
             let mut playback = self.playback.lock().await;
             if playback.closed_before_open.remove(&session_id) {
@@ -77,8 +79,7 @@ impl StreamingManager {
             if let Some(previous) = playback.active.insert(
                 session_id.clone(),
                 PlaybackSession {
-                    track_id,
-                    stream: Arc::clone(&stream),
+                    _stream: Arc::clone(&stream),
                     active: Arc::clone(&active),
                 },
             ) {
@@ -97,26 +98,9 @@ impl StreamingManager {
             return Err(AppError::msg("playback stream session closed"));
         }
         // Reused resumable streams may not download a new chunk during open;
-        // replay their ledger so the frontend can make safe backfill choices.
+        // replay their ledger for download progress observers.
         stream.emit_progress().await;
         Ok(stream)
-    }
-
-    pub async fn playback_stream(
-        &self,
-        session_id: &str,
-        track_id: i64,
-    ) -> AppResult<(Arc<TrackStream>, Arc<AtomicBool>)> {
-        let playback = self.playback.lock().await;
-        let session = playback
-            .active
-            .get(session_id)
-            .filter(|session| session.track_id == track_id)
-            .ok_or_else(|| AppError::msg("playback stream session not found"))?;
-        if !session.active.load(Ordering::Acquire) {
-            return Err(AppError::msg("playback stream session closed"));
-        }
-        Ok((Arc::clone(&session.stream), Arc::clone(&session.active)))
     }
 
     pub async fn close_playback(&self, session_id: &str) {
@@ -129,12 +113,6 @@ impl StreamingManager {
             }
             playback.closed_before_open.insert(session_id.to_string());
         }
-    }
-
-    pub async fn get(&self, track_id: i64) -> Option<Arc<TrackStream>> {
-        let mut streams = self.streams.lock().await;
-        streams.retain(|_, stream| stream.strong_count() > 0);
-        streams.get(&track_id).and_then(Weak::upgrade)
     }
 
     /// Destinations / partials for active streams — never delete these on clear/evict.

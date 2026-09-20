@@ -30,7 +30,7 @@ export function QrLoginStep({
           Scan with Telegram on your phone
           <br />
           <span className="font-mono text-xs uppercase tracking-wide text-foreground/70">
-            Settings → Devices → Link Desktop
+            Settings → Devices → Add Device
           </span>
         </FieldDescription>
 

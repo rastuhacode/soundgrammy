@@ -18,6 +18,7 @@ export interface AudioProgressBarProps {
   duration: number
   bufferedRanges?: AudioBufferedRange[]
   showInitialLoading?: boolean
+  isSeeking?: boolean
   onSeek: (time: number) => void
   onSeekStart?: () => void
   onSeekEnd?: () => void
@@ -26,6 +27,7 @@ export interface AudioProgressBarProps {
 
 // Virtual anchor tooltip positioning offset. Set to remove tooltip flickering
 const HOVER_ZONE_EXTENSION = 3 // 3px
+const LOADING_INDICATOR_DELAY_MS = 500
 
 interface PointerAnchor {
   clientX: number
@@ -72,6 +74,7 @@ export function AudioProgressBar({
   duration,
   bufferedRanges = [],
   showInitialLoading = false,
+  isSeeking = false,
   onSeek,
   onSeekStart,
   onSeekEnd,
@@ -82,6 +85,17 @@ export function AudioProgressBar({
   const [isHovering, setIsHovering] = useState(false)
   const [hoverTime, setHoverTime] = useState(0)
   const [pointerAnchor, setPointerAnchor] = useState<PointerAnchor | null>(null)
+  const [showLoadingIndicator, setShowLoadingIndicator] = useState(false)
+
+  const isLoading = showInitialLoading || isSeeking
+
+  useEffect(() => {
+    const timeout = window.setTimeout(
+      () => setShowLoadingIndicator(isLoading),
+      isLoading ? LOADING_INDICATOR_DELAY_MS : 0,
+    )
+    return () => window.clearTimeout(timeout)
+  }, [isLoading])
 
   const tooltipOpen = pointerAnchor !== null && isHovering && !isDragging && duration > 0
   const virtualAnchor = useMemo(
@@ -196,7 +210,7 @@ export function AudioProgressBar({
                   aria-hidden
                   className="pointer-events-none absolute inset-x-0 top-4 h-1 overflow-hidden bg-foreground/15"
                 >
-                  {showInitialLoading && (
+                  {isLoading && showLoadingIndicator && (
                     <div className="barbershop-buffer absolute inset-0 opacity-35" />
                   )}
                   {bufferedRanges.map((range, index) => {
@@ -223,7 +237,7 @@ export function AudioProgressBar({
                 <div
                   aria-hidden
                   className={cn(
-                    'pointer-events-none absolute top-[18px] z-10 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary opacity-0 transition-all duration-100 group-hover/audiobar:opacity-100',
+                    'pointer-events-none absolute top-4.5 z-10 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full bg-primary opacity-0 transition-all duration-100 group-hover/audiobar:opacity-100',
                     isDragging && 'scale-125 opacity-100',
                   )}
                   style={{ left: `${progress}%` }}
@@ -231,6 +245,8 @@ export function AudioProgressBar({
 
                 <input
                   type="range"
+                  aria-busy={isSeeking}
+                  aria-valuetext={`${formatTime(currentTime)}${isSeeking ? ', seeking' : ''}`}
                   className={
                     cn(
                       'absolute inset-0 h-full w-full appearance-none opacity-0',

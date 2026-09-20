@@ -1,3 +1,5 @@
+import type { PlayerCommand } from '@/types/playback'
+import type { AudioTrackRequest } from '@/hooks/audio/engine'
 import { invoke as tauriInvoke, convertFileSrc } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { appLogger } from '@/lib/app-logger'
@@ -40,16 +42,6 @@ export interface Profile {
   phone: string | null
 }
 
-export type TrackSource
-  = | { kind: 'cached', path: string }
-    | {
-      kind: 'stream'
-      trackId: number
-      sessionId: string
-      mimeType: string
-      total: number
-    }
-
 async function invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   try {
     return await tauriInvoke<T>(command, args)
@@ -70,6 +62,15 @@ async function invoke<T>(command: string, args?: Record<string, unknown>): Promi
 // ---- auth ----------------------------------------------------------------
 
 export const api = {
+  nativePlayerCommand: (command: PlayerCommand) => invoke<unknown>('native_player_command', { command }),
+  nativeAudioCapabilities: () => invoke<{ available: boolean, streaming: boolean }>('native_audio_capabilities'),
+  nativeAudioSnapshot: () => invoke<unknown>('native_audio_snapshot'),
+  nativeAudioLoad: (request: AudioTrackRequest) => invoke<unknown>('native_audio_load', { request }),
+  nativeAudioUnload: () => invoke<unknown>('native_audio_unload'),
+  nativeAudioPlay: () => invoke<unknown>('native_audio_play'),
+  nativeAudioPause: () => invoke<unknown>('native_audio_pause'),
+  nativeAudioSeek: (seconds: number, attemptId?: string) => invoke<unknown>('native_audio_seek', { seconds, attemptId }),
+  nativeAudioSetVolume: (percent: number) => invoke<unknown>('native_audio_set_volume', { percent }),
   authStatus: () => invoke<AuthStatus>('auth_status'),
   refreshAuth: () => invoke<AuthStatus>('refresh_auth'),
   phoneSendCode: (phone: string) =>
@@ -79,6 +80,7 @@ export const api = {
     invoke<AuthUser>('phone_check_password', { password }),
   qrStart: () => invoke<QrOutcome>('qr_start'),
   qrPoll: () => invoke<QrOutcome>('qr_poll'),
+  qrRestart: () => invoke<QrOutcome>('qr_restart'),
   qrCheckPassword: (password: string) =>
     invoke<AuthUser>('qr_check_password', { password }),
   logout: () => invoke<void>('logout'),
@@ -92,44 +94,6 @@ export const api = {
     invoke<void>('set_fullscreen_display_awake', { enabled }),
 
   // ---- media ------------------------------------------------------------
-  getTrackSource: (trackId: number, sessionId: string) =>
-    invoke<TrackSource>('get_track_source', { trackId, sessionId }),
-  /** Inclusive byte range from an active playback stream (chunk-capped). */
-  readStreamRange: async (
-    trackId: number,
-    sessionId: string,
-    start: number,
-    end: number,
-  ) => {
-    const bytes = await invoke<ArrayBuffer | number[]>('read_stream_range', {
-      trackId,
-      sessionId,
-      start,
-      end,
-    })
-    return bytes instanceof ArrayBuffer
-      ? new Uint8Array(bytes)
-      : Uint8Array.from(bytes)
-  },
-  /** Prioritize downloading an inclusive byte range (seek-ahead gap fill). */
-  ensureStreamRange: (
-    trackId: number,
-    sessionId: string,
-    start: number,
-    end: number,
-  ) => invoke<void>('ensure_stream_range', { trackId, sessionId, start, end }),
-  /** Low-priority storage-only fill of the backend-validated ID3v2 prefix. */
-  backfillStreamId3: (
-    trackId: number,
-    sessionId: string,
-  ) => invoke<void>('backfill_stream_id3', {
-    trackId,
-    sessionId,
-  }),
-  downloadTrackForPlayback: (trackId: number, sessionId: string) =>
-    invoke<string>('download_track_for_playback', { trackId, sessionId }),
-  closeStreamSession: (sessionId: string) =>
-    invoke<void>('close_stream_session', { sessionId }),
   downloadTrack: (trackId: number) =>
     invoke<string>('download_track', { trackId }),
   prefetchTrack: (trackId: number) =>
@@ -269,7 +233,7 @@ export const api = {
     invoke<void>('lastfm_attempt_ended', { attemptId }),
 }
 
-/** Turns an absolute cache path into an `asset:` URL for `<audio>`/`<img>`. */
+/** Turns an absolute cache path into an `asset:` URL for images. */
 export function fileSrc(path: string): string {
   return convertFileSrc(path)
 }
@@ -354,3 +318,12 @@ export function onCacheChanged(
 export function onAuthRevoked(cb: () => void): Promise<UnlistenFn> {
   return listen('auth:revoked', () => cb())
 }
+
+/** Native transport payloads are validated by the proxy before publication. */
+export const onNativeAudioState = (callback: (value: unknown) => void) =>
+  listen<unknown>('audio:state', event => callback(event.payload))
+export const onNativeAudioEvent = (callback: (value: unknown) => void) =>
+  listen<unknown>('audio:event', event => callback(event.payload))
+
+export const onNativeListenStats = (callback: (stats: TrackListenStats) => void) =>
+  listen<TrackListenStats>('listen:stats', event => callback(event.payload))

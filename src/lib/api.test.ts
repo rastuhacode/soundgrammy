@@ -42,14 +42,15 @@ describe('api diagnostics', () => {
     expect(JSON.stringify(logError.mock.calls)).not.toContain('private-password')
   })
 
-  it('sends ID3 backfill through the active playback session', async () => {
-    tauriInvoke.mockResolvedValueOnce(undefined)
-
-    await api.backfillStreamId3(42, 'playback-session')
-
-    expect(tauriInvoke).toHaveBeenCalledWith('backfill_stream_id3', {
-      trackId: 42,
-      sessionId: 'playback-session',
+  it('uses the fresh-session command when restarting QR login', async () => {
+    tauriInvoke.mockResolvedValueOnce({
+      status: 'waiting',
+      url: 'tg://login?token=fresh',
+      expires: 123,
     })
+
+    await api.qrRestart()
+
+    expect(tauriInvoke).toHaveBeenCalledWith('qr_restart', undefined)
   })
 })

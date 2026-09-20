@@ -51,8 +51,9 @@ You can read more about philosophy around SoundGrammy in [Why I don’t use musi
 | :--- | :--- |
 | **macOS** | Apple Silicon (`arm64`) and Intel (`x86_64`) |
 | **Windows** | 64-bit (`x86_64`) |
+| **Android** | (`apk`) |
 
-Linux, iOS, and Android are not officially supported. Tauri supports these platforms at a framework level, but SoundGrammy has not been tested or packaged for them. Contributions that add support for other platforms are welcome.
+Linux and iOS are not officially supported although Tauri can build those. Contributions that complete platform support are welcome.
 
 ## How to use
 
@@ -67,7 +68,7 @@ Linux, iOS, and Android are not officially supported. Tauri supports these platf
 ## FAQ
 
 - **Why does app asks for my device password on initial launch on macOS?** - SoundGrammy uses keychain to cipher your session and macOS needs password for this operation.
-- **Why some of my tracks play only when they fully cached, while others streams fine?** - SoundGrammy uses MSE streaming for uncached tracks playthrough. MSE works correctly with `mp3`, but can't properly work with `m4a`, `FLAC`. In this case you need to either manually cache it before playing or just wait a bit longer for song to fully cache.
+- **Why can uncached tracks take longer to start?** SoundGrammy downloads the ranges needed by the native decoder. Startup and seeking depend on the container metadata and network speed. Caching a track first avoids network waits during playback.
 - **How can I use this app if Telegram is blocked in my country?** - you can use VPN or connect to MTProto proxy (for ex. [tg-ws-proxy](https://github.com/Flowseal/tg-ws-proxy)).
 - **I found a bug, how can I report it?** - enable logs in the settings and reproduce the problem. Copy logs if they exist and open an issue.
 
@@ -154,3 +155,11 @@ Use of the Telegram API is governed by Telegram's [API Terms of Service](https:/
 Optional scrobbling uses the [Last.fm API](https://www.last.fm/api) and is governed by its [API Terms of Service](https://www.last.fm/api/tos). Release maintainers must review those terms before distribution and contact Last.fm before commercial use.
 
 The SoundGrammy name, artwork, and source code are independent of Telegram. The Telegram name and logo remain the property of their respective owner. References to Telegram describe compatibility and the remote service used by the app; they do not imply an official relationship.
+
+### Native audio playback
+
+Desktop playback uses the Rust audio engine in development and release builds.
+Run `bun tauri:dev`; no playback environment variable is required. See [native audio](docs/native-audio.md)
+for architecture, codec coverage, Linux dependencies, and verification gates.
+The [architecture overview](docs/architecture.md) explains native playback ownership,
+UI reattachment, and what persists across application restarts.

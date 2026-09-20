@@ -6,9 +6,8 @@ use tauri::{AppHandle, State};
 use crate::cache;
 use crate::db::{Profile, Track};
 use crate::display_wake::DisplayWakeState;
-use crate::error::{AppError, AppResult};
+use crate::error::AppResult;
 use crate::state::AppState;
-use crate::streaming;
 use crate::telegram::saved_music::{self, SyncResult};
 
 pub(crate) mod auth;
@@ -58,51 +57,6 @@ pub async fn set_fullscreen_display_awake(
 
 // ---- media ---------------------------------------------------------------
 
-#[derive(Serialize)]
-#[serde(tag = "kind", rename_all = "camelCase")]
-pub enum TrackSource {
-    Cached {
-        path: String,
-    },
-    Stream {
-        #[serde(rename = "trackId")]
-        track_id: i64,
-        #[serde(rename = "sessionId")]
-        session_id: String,
-        #[serde(rename = "mimeType")]
-        mime_type: String,
-        total: u64,
-    },
-}
-
-#[tauri::command]
-pub async fn get_track_source(
-    state: State<'_, AppState>,
-    app: AppHandle,
-    track_id: i64,
-    session_id: String,
-) -> AppResult<TrackSource> {
-    let track = cache::require_track(&state, track_id)?;
-    let path = cache::audio_path(&state, &track)?;
-    if path.exists() {
-        let _ = state.db.touch_audio_cache(track_id);
-        return Ok(TrackSource::Cached {
-            path: path.to_string_lossy().into_owned(),
-        });
-    }
-
-    let stream = state
-        .streaming
-        .open_playback(app, track, path, session_id.clone())
-        .await?;
-    Ok(TrackSource::Stream {
-        track_id: stream.track_id(),
-        session_id,
-        mime_type: stream.mime_type().to_string(),
-        total: stream.total(),
-    })
-}
-
 #[tauri::command]
 pub async fn get_track_bounce_profile(
     state: State<'_, AppState>,
@@ -110,110 +64,6 @@ pub async fn get_track_bounce_profile(
     track_id: i64,
 ) -> AppResult<crate::bounce_analysis::BounceProfileResponse> {
     Ok(crate::bounce_analysis::profile_for_track(&state, &app, track_id).await)
-}
-
-/// Reads a byte range from an active stream (or a fully cached file).
-///
-/// `start`/`end` are inclusive. Responses are capped at one streaming chunk
-/// so the MSE frontend can append progressively without huge IPC payloads.
-#[tauri::command]
-pub async fn read_stream_range(
-    state: State<'_, AppState>,
-    track_id: i64,
-    session_id: String,
-    start: u64,
-    end: u64,
-) -> AppResult<tauri::ipc::Response> {
-    if end < start {
-        return Err(AppError::msg("requested audio range is invalid"));
-    }
-
-    let capped_end = start
-        .saturating_add(streaming::CHUNK_SIZE.saturating_sub(1))
-        .min(end);
-
-    let (stream, active) = state
-        .streaming
-        .playback_stream(&session_id, track_id)
-        .await?;
-    let last = stream.total().saturating_sub(1);
-    if start > last {
-        return Err(AppError::msg("requested audio range is invalid"));
-    }
-    let bytes = stream
-        .read_range(start, capped_end.min(last), Some(active))
-        .await?;
-    Ok(tauri::ipc::Response::new(bytes))
-}
-
-/// Prioritizes downloading an inclusive byte range for an active stream.
-/// Used on seek-ahead so the gap toward the target fills before distant chunks.
-#[tauri::command]
-pub async fn ensure_stream_range(
-    state: State<'_, AppState>,
-    track_id: i64,
-    session_id: String,
-    start: u64,
-    end: u64,
-) -> AppResult<()> {
-    if end < start {
-        return Err(AppError::msg("requested audio range is invalid"));
-    }
-
-    let (stream, active) = state
-        .streaming
-        .playback_stream(&session_id, track_id)
-        .await?;
-    let last = stream.total().saturating_sub(1);
-    if start > last {
-        return Err(AppError::msg("requested audio range is invalid"));
-    }
-    stream
-        .ensure_range(start, end.min(last), Some(active))
-        .await?;
-    Ok(())
-}
-
-/// Completes only a skipped ID3v2 prefix after all playable audio is local.
-/// The backend independently parses the trusted prefix boundary.
-#[tauri::command]
-pub async fn backfill_stream_id3(
-    state: State<'_, AppState>,
-    track_id: i64,
-    session_id: String,
-) -> AppResult<()> {
-    let (stream, active) = state
-        .streaming
-        .playback_stream(&session_id, track_id)
-        .await?;
-    stream.backfill_id3_for_playback(active).await
-}
-
-#[tauri::command]
-pub async fn download_track_for_playback(
-    state: State<'_, AppState>,
-    track_id: i64,
-    session_id: String,
-) -> AppResult<String> {
-    let (stream, active) = state
-        .streaming
-        .playback_stream(&session_id, track_id)
-        .await?;
-    let path = stream.download_complete_for_playback(active).await?;
-    Ok(path.to_string_lossy().into_owned())
-}
-
-#[tauri::command]
-pub async fn close_stream_session(
-    state: State<'_, AppState>,
-    app: AppHandle,
-    session_id: String,
-) -> AppResult<()> {
-    state.streaming.close_playback(&session_id).await;
-    // If partial playback temporarily took usage over the configured limit,
-    // reclaim idle partials now. Active stream paths remain protected.
-    let _ = cache::evict_for_room(&state, &app, 0).await;
-    Ok(())
 }
 
 #[tauri::command]
@@ -490,3 +340,5 @@ fn require_uid(state: &AppState) -> AppResult<i64> {
         .map(|p| p.tg_user_id)
         .ok_or(crate::error::AppError::NotAuthorized)
 }
+
+pub mod audio;

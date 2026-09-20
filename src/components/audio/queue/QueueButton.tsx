@@ -53,7 +53,7 @@ export function QueueButton({ className, classes }: QueueButtonProps) {
       <PopoverContent
         side="top"
         sideOffset={41}
-        className="w-80 p-0"
+        className="w-[min(20rem,calc(100vw-1rem))] p-0"
         classes={classes}
       >
         <QueuePopoverPanel

@@ -37,6 +37,7 @@ struct LiveTelegram {
 }
 
 pub struct AppState {
+    pub audio: crate::audio::NativeAudioService,
     pub config: Config,
     pub db: Db,
     telegram: RwLock<Option<LiveTelegram>>,
@@ -79,6 +80,7 @@ impl AppState {
         let telegram = client.map(|(client, shutdown)| LiveTelegram { client, shutdown });
         let lastfm = LastFmService::new(&config, &db);
         Self {
+            audio: Default::default(),
             config,
             db,
             telegram: RwLock::new(telegram),

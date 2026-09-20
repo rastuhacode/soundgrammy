@@ -1,5 +1,7 @@
 //! SoundGrammy desktop backend: Tauri builder, state, and command registration.
 
+mod audio;
+
 mod bounce_analysis;
 mod cache;
 mod commands;
@@ -25,11 +27,14 @@ use crate::state::AppState;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .register_asynchronous_uri_scheme_protocol("stream", |context, request, responder| {
-            let app = context.app_handle().clone();
-            tauri::async_runtime::spawn(async move {
-                responder.respond(streaming::protocol_response(&app, request).await);
-            });
+        .on_page_load(|webview, payload| {
+            if webview.label() == "main"
+                && payload.event() == tauri::webview::PageLoadEvent::Started
+            {
+                if let Some(state) = webview.try_state::<AppState>() {
+                    state.audio.page_loading();
+                }
+            }
         })
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
@@ -50,6 +55,8 @@ pub fn run() {
                 config, db, None, data_dir, cache_dir, false, None,
             ));
 
+            audio::media::initialize(app.handle());
+
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 let state = handle.state::<AppState>();
@@ -62,6 +69,15 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            commands::audio::native_player_command,
+            commands::audio::native_audio_capabilities,
+            commands::audio::native_audio_snapshot,
+            commands::audio::native_audio_load,
+            commands::audio::native_audio_unload,
+            commands::audio::native_audio_play,
+            commands::audio::native_audio_pause,
+            commands::audio::native_audio_seek,
+            commands::audio::native_audio_set_volume,
             commands::auth::auth_status,
             commands::auth::refresh_auth,
             commands::auth::phone_send_code,
@@ -69,6 +85,7 @@ pub fn run() {
             commands::auth::phone_check_password,
             commands::auth::qr_start,
             commands::auth::qr_poll,
+            commands::auth::qr_restart,
             commands::auth::qr_check_password,
             commands::auth::logout,
             commands::sync_saved_music,
@@ -76,13 +93,7 @@ pub fn run() {
             commands::get_profile,
             commands::sync_status,
             commands::set_fullscreen_display_awake,
-            commands::get_track_source,
             commands::get_track_bounce_profile,
-            commands::read_stream_range,
-            commands::ensure_stream_range,
-            commands::backfill_stream_id3,
-            commands::download_track_for_playback,
-            commands::close_stream_session,
             commands::download_track,
             commands::prefetch_track,
             commands::cache_track,
@@ -134,8 +145,25 @@ pub fn run() {
             commands::set_proxy_settings,
             commands::parse_proxy_link,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running SoundGrammy");
+        .build(tauri::generate_context!())
+        .expect("error while building SoundGrammy")
+        .run(|app, event| {
+            // Activity/WebView destruction must not tear down the process-owned player.
+            // Explicit app exit remains honored; the OS may still terminate the process.
+            #[cfg(any(target_os = "android", target_os = "ios"))]
+            if let tauri::RunEvent::ExitRequested {
+                code: None,
+                ref api,
+                ..
+            } = event
+            {
+                api.prevent_exit();
+            }
+            if matches!(event, tauri::RunEvent::Exit) {
+                app.state::<AppState>().audio.shutdown();
+                audio::media::shutdown(app);
+            }
+        });
 }
 
 #[cfg(test)]

@@ -22,6 +22,7 @@ const KEYRING_SERVICE: &str = "com.soundgrammy.app";
 const KEYRING_USER: &str = "session-encryption-key";
 const SESSION_FILE: &str = "session.enc";
 const NONCE_LEN: usize = 12;
+const TAG_LEN: usize = 16;
 
 fn session_path(data_dir: &Path) -> PathBuf {
     data_dir.join(SESSION_FILE)
@@ -81,6 +82,51 @@ impl EncryptedSessionBackend {
     pub fn arc(data_dir: &Path) -> Arc<Self> {
         Arc::new(Self::new(data_dir))
     }
+
+    fn load_with_cipher<F>(&self, load_cipher: F) -> io::Result<Option<PersistedSession>>
+    where
+        F: FnOnce() -> io::Result<Aes256Gcm>,
+    {
+        let blob = match std::fs::read(&self.path) {
+            Ok(blob) => blob,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(None),
+            Err(e) => return Err(e),
+        };
+        if blob.len() < NONCE_LEN + TAG_LEN {
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                format!(
+                    "encrypted session is truncated: expected at least {} bytes, got {}",
+                    NONCE_LEN + TAG_LEN,
+                    blob.len()
+                ),
+            ));
+        }
+
+        let (nonce_bytes, ciphertext) = blob.split_at(NONCE_LEN);
+        let cipher = load_cipher()?;
+        let nonce = Nonce::try_from(nonce_bytes).map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "invalid encrypted session nonce",
+            )
+        })?;
+        let plaintext = cipher.decrypt(&nonce, ciphertext).map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::InvalidData,
+                "failed to decrypt session: authentication failed",
+            )
+        })?;
+
+        PersistedSession::from_bytes(&plaintext)
+            .map(Some)
+            .map_err(|e| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("failed to decode persisted session: {e}"),
+                )
+            })
+    }
 }
 
 impl SessionBackend for EncryptedSessionBackend {
@@ -104,46 +150,7 @@ impl SessionBackend for EncryptedSessionBackend {
     }
 
     fn load(&self) -> io::Result<Option<PersistedSession>> {
-        if !self.path.exists() {
-            return Ok(None);
-        }
-
-        let blob = std::fs::read(&self.path)?;
-        if blob.len() <= NONCE_LEN {
-            let _ = std::fs::remove_file(&self.path);
-            return Ok(None);
-        }
-
-        let (nonce_bytes, ciphertext) = blob.split_at(NONCE_LEN);
-        let cipher = match cipher() {
-            Ok(c) => c,
-            Err(_) => {
-                let _ = std::fs::remove_file(&self.path);
-                return Ok(None);
-            }
-        };
-        let nonce = match Nonce::try_from(nonce_bytes) {
-            Ok(nonce) => nonce,
-            Err(_) => {
-                let _ = std::fs::remove_file(&self.path);
-                return Ok(None);
-            }
-        };
-        let plaintext = match cipher.decrypt(&nonce, ciphertext) {
-            Ok(p) => p,
-            Err(_) => {
-                let _ = std::fs::remove_file(&self.path);
-                return Ok(None);
-            }
-        };
-
-        match PersistedSession::from_bytes(&plaintext) {
-            Ok(session) => Ok(Some(session)),
-            Err(_) => {
-                let _ = std::fs::remove_file(&self.path);
-                Ok(None)
-            }
-        }
+        self.load_with_cipher(|| cipher().map_err(io_err))
     }
 
     fn delete(&self) -> io::Result<()> {
@@ -181,12 +188,129 @@ mod tests {
     use super::*;
     use std::fs;
 
-    #[test]
-    fn exists_requires_non_trivial_session_file() {
+    fn test_dir(name: &str) -> PathBuf {
         let dir =
-            std::env::temp_dir().join(format!("soundgrammy-session-exists-{}", std::process::id()));
+            std::env::temp_dir().join(format!("soundgrammy-session-{name}-{}", std::process::id()));
         let _ = fs::remove_dir_all(&dir);
         fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn test_cipher(byte: u8) -> Aes256Gcm {
+        let key_bytes = [byte; 32];
+        let key = Key::<Aes256Gcm>::try_from(key_bytes.as_slice()).unwrap();
+        Aes256Gcm::new(&key)
+    }
+
+    fn encrypted_blob(cipher: &Aes256Gcm, plaintext: &[u8]) -> Vec<u8> {
+        let nonce_bytes = [7u8; NONCE_LEN];
+        let nonce = Nonce::try_from(nonce_bytes.as_slice()).unwrap();
+        let ciphertext = cipher.encrypt(&nonce, plaintext).unwrap();
+        let mut blob = Vec::with_capacity(NONCE_LEN + ciphertext.len());
+        blob.extend_from_slice(&nonce);
+        blob.extend_from_slice(&ciphertext);
+        blob
+    }
+
+    fn assert_load_error_preserves_file<F>(
+        backend: &EncryptedSessionBackend,
+        expected_blob: &[u8],
+        load_cipher: F,
+    ) -> io::Error
+    where
+        F: FnOnce() -> io::Result<Aes256Gcm>,
+    {
+        let error = backend.load_with_cipher(load_cipher).unwrap_err();
+        assert_eq!(fs::read(&backend.path).unwrap(), expected_blob);
+        error
+    }
+
+    #[test]
+    fn missing_session_file_returns_none() {
+        let dir = test_dir("missing");
+        let backend = EncryptedSessionBackend::new(&dir);
+
+        assert!(backend.load().unwrap().is_none());
+
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn key_store_failure_preserves_session_file() {
+        let dir = test_dir("key-store-failure");
+        let backend = EncryptedSessionBackend::new(&dir);
+        let blob = vec![1u8; NONCE_LEN + 16];
+        fs::write(&backend.path, &blob).unwrap();
+
+        let error = assert_load_error_preserves_file(&backend, &blob, || {
+            Err(io::Error::other("keychain temporarily unavailable"))
+        });
+        assert!(error
+            .to_string()
+            .contains("keychain temporarily unavailable"));
+
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn truncated_ciphertext_preserves_session_file() {
+        let dir = test_dir("truncated");
+        let backend = EncryptedSessionBackend::new(&dir);
+        let blob = vec![1u8; NONCE_LEN + TAG_LEN - 1];
+        fs::write(&backend.path, &blob).unwrap();
+
+        let error = assert_load_error_preserves_file(&backend, &blob, || Ok(test_cipher(1)));
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+        assert!(error.to_string().contains("truncated"));
+
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn authentication_failure_preserves_session_file() {
+        let dir = test_dir("authentication-failure");
+        let backend = EncryptedSessionBackend::new(&dir);
+        let blob = encrypted_blob(&test_cipher(1), &PersistedSession::default().to_bytes());
+        fs::write(&backend.path, &blob).unwrap();
+
+        let error = assert_load_error_preserves_file(&backend, &blob, || Ok(test_cipher(2)));
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+        assert!(error.to_string().contains("authentication failed"));
+
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn invalid_session_plaintext_preserves_session_file() {
+        let dir = test_dir("invalid-plaintext");
+        let backend = EncryptedSessionBackend::new(&dir);
+        let blob = encrypted_blob(&test_cipher(1), b"not a persisted session");
+        fs::write(&backend.path, &blob).unwrap();
+
+        let error = assert_load_error_preserves_file(&backend, &blob, || Ok(test_cipher(1)));
+        assert_eq!(error.kind(), io::ErrorKind::InvalidData);
+        assert!(error
+            .to_string()
+            .contains("failed to decode persisted session"));
+
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn explicit_delete_removes_session_file() {
+        let dir = test_dir("explicit-delete");
+        let backend = EncryptedSessionBackend::new(&dir);
+        fs::write(&backend.path, [1u8; NONCE_LEN + 1]).unwrap();
+
+        backend.delete().unwrap();
+
+        assert!(!backend.path.exists());
+        fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn exists_requires_non_trivial_session_file() {
+        let dir = test_dir("exists");
 
         assert!(!exists(&dir));
 

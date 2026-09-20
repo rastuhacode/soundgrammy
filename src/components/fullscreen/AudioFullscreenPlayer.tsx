@@ -27,13 +27,14 @@ interface AudioFullscreenPlayerProps {
   duration: number
   bufferedRanges: AudioBufferedRange[]
   showInitialLoading: boolean
+  isSeeking?: boolean
   volume: number
   onVolumeChange: (volume: number) => void
   onMuteToggle: () => void
   onSeek: (time: number) => void
   onSeekStart: () => void
   onSeekEnd: () => void
-  getAudioElement: () => HTMLAudioElement | null
+  isActuallyPlaying: boolean
 }
 
 export function AudioFullscreenPlayer(props: AudioFullscreenPlayerProps) {
@@ -50,7 +51,8 @@ export function AudioFullscreenPlayer(props: AudioFullscreenPlayerProps) {
   useArtworkBounce({
     trackId: props.track.id,
     elementRef: artworkBounceRef,
-    getAudioElement: props.getAudioElement,
+    currentTime: props.currentTime,
+    isActuallyPlaying: props.isActuallyPlaying,
   })
 
   useEffect(() => {
@@ -109,7 +111,7 @@ export function AudioFullscreenPlayer(props: AudioFullscreenPlayerProps) {
       onPointerMove={showControls}
       onFocusCapture={showControls}
       className={cn(
-        'fullscreen-player fixed inset-0 z-200 h-dvh w-dvw overflow-hidden bg-black text-white',
+        'fullscreen-player fixed inset-0 z-200 h-dvh w-dvw overflow-hidden bg-[#141414] text-white',
         !controlsVisible && 'cursor-none',
       )}
       style={{
@@ -127,7 +129,7 @@ export function AudioFullscreenPlayer(props: AudioFullscreenPlayerProps) {
               style={{ backgroundImage: `url("${url}")` }}
             />
           )
-        : <div className="absolute inset-0 bg-neutral-950" />}
+        : <div className="absolute inset-0 bg-[#141414]" />}
       <div
         key={`palette:${props.track.id}:${url ?? 'fallback'}`}
         className="fullscreen-palette absolute inset-0"
@@ -213,6 +215,7 @@ export function AudioFullscreenPlayer(props: AudioFullscreenPlayerProps) {
               duration={props.duration}
               bufferedRanges={props.bufferedRanges}
               showInitialLoading={props.showInitialLoading}
+              isSeeking={props.isSeeking}
               onSeek={props.onSeek}
               onSeekStart={props.onSeekStart}
               onSeekEnd={props.onSeekEnd}

@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import type { DragEndEvent } from '@dnd-kit/core'
 import {
   KeyboardSensor,
-  PointerSensor,
+  MouseSensor,
+  TouchSensor,
   useSensor,
   useSensors,
 } from '@dnd-kit/core'
@@ -193,8 +194,11 @@ export function useSidebarPlaylists() {
   const canReorder = sortMode === 'custom' && search.length === 0
 
   const sensors = useSensors(
-    useSensor(PointerSensor, {
+    useSensor(MouseSensor, {
       activationConstraint: { distance: 6 },
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: { delay: 250, tolerance: 5 },
     }),
     useSensor(KeyboardSensor, {
       coordinateGetter: sortableKeyboardCoordinates,

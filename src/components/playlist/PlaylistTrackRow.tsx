@@ -13,10 +13,8 @@ export const TRACK_ROW_HEIGHT = 70
 /** Space between rows; baked into stride so DnD measuring matches layout. */
 export const TRACK_ROW_GAP = 8
 export const TRACK_ROW_STRIDE = TRACK_ROW_HEIGHT + TRACK_ROW_GAP
-export const TRACK_SELECT_COL = '2.25rem'
-export const TRACK_ACTIONS_COL = '2.25rem'
-export const TRACK_GRID_COLS = `minmax(0, 1.4fr) minmax(0, 1fr) 4.5rem ${TRACK_ACTIONS_COL}`
-export const TRACK_GRID_COLS_SELECT = `${TRACK_SELECT_COL} ${TRACK_GRID_COLS}`
+export const TRACK_GRID_CLASS = 'grid-cols-[minmax(0,1fr)_3rem_2.25rem] md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_4.5rem_2.25rem]'
+export const TRACK_GRID_CLASS_SELECT = 'grid-cols-[2.25rem_minmax(0,1fr)_3rem_2.25rem] md:grid-cols-[2.25rem_minmax(0,1.4fr)_minmax(0,1fr)_4.5rem_2.25rem]'
 
 export interface PlaylistTrackRowViewProps {
   track: Track
@@ -67,7 +65,8 @@ export function PlaylistTrackRowView({
             : 'Play track'
       }
       className={cn(
-        'group relative grid w-full cursor-default items-center gap-3 rounded-lg px-2.5 transition-colors',
+        'group relative grid w-full cursor-default items-center gap-2 rounded-lg px-2 transition-colors md:gap-3 md:px-2.5',
+        selectionMode ? TRACK_GRID_CLASS_SELECT : TRACK_GRID_CLASS,
         'border-2 border-transparent hover:bg-card/70',
         isSelected && 'border-primary/50 bg-primary/8',
         isActive && !isSelected && 'bg-accent/40',
@@ -75,9 +74,6 @@ export function PlaylistTrackRowView({
       )}
       style={{
         height: TRACK_ROW_HEIGHT,
-        gridTemplateColumns: selectionMode
-          ? TRACK_GRID_COLS_SELECT
-          : TRACK_GRID_COLS,
         ...style,
       }}
     >
@@ -132,18 +128,23 @@ export function PlaylistTrackRowView({
           </div>
         </div>
 
-        <span
-          className={cn(
-            'max-w-full truncate text-sm font-medium',
-            isActive ? 'text-primary' : 'text-foreground',
-          )}
-          title={trackTitle}
-        >
-          {trackTitle}
+        <span className="flex min-w-0 flex-col">
+          <span
+            className={cn(
+              'max-w-full truncate text-sm font-medium',
+              isActive ? 'text-primary' : 'text-foreground',
+            )}
+            title={trackTitle}
+          >
+            {trackTitle}
+          </span>
+          <span className="truncate text-xs text-muted-foreground md:hidden" title={trackArtist}>
+            {trackArtist}
+          </span>
         </span>
       </div>
 
-      <div role="cell" className="min-w-0">
+      <div role="cell" className="hidden min-w-0 md:block">
         <span className="block max-w-full truncate text-sm text-muted-foreground" title={trackArtist}>
           {trackArtist}
         </span>
@@ -164,7 +165,7 @@ export function PlaylistTrackRowView({
           aria-haspopup="menu"
           className={cn(
             'text-muted-foreground opacity-0 transition-opacity',
-            !selectionMode && 'group-hover:opacity-100 focus-visible:opacity-100',
+            !selectionMode && 'touch-visible-option size-9 opacity-100 md:size-6 md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100',
           )}
           onClick={(event) => {
             openContextMenuFromPointerEvent(event, event.currentTarget)

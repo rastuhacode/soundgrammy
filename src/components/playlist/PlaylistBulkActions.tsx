@@ -1,4 +1,4 @@
-import { Download, HardDriveDownload, Heart, ListEnd, ListPlus, ListStart, ListX } from 'lucide-react'
+import { Download, Ellipsis, HardDriveDownload, Heart, ListEnd, ListPlus, ListStart, ListX } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -61,8 +61,9 @@ export function PlaylistBulkActions({
     <DropdownMenu>
       <DropdownMenuTrigger
         render={(
-          <Button variant="secondary" className="gap-1.5">
-            Actions
+          <Button variant="secondary" className="gap-1.5" aria-label={`Actions for ${count} selected ${count === 1 ? 'track' : 'tracks'}`}>
+            <span className="hidden md:inline">Actions</span>
+            <Ellipsis className="size-4 md:hidden" />
             <span className="rounded-md bg-primary/15 px-1.5 py-0.5 font-mono text-[11px] text-primary">
               {count}
             </span>

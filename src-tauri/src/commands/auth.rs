@@ -73,6 +73,11 @@ pub async fn qr_poll(state: State<'_, AppState>) -> AppResult<QrOutcome> {
 }
 
 #[tauri::command]
+pub async fn qr_restart(state: State<'_, AppState>) -> AppResult<QrOutcome> {
+    telegram_auth::qr_restart(&state).await
+}
+
+#[tauri::command]
 pub async fn qr_check_password(
     state: State<'_, AppState>,
     password: String,

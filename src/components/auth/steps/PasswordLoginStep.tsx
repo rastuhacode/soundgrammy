@@ -1,69 +1,88 @@
-import { useState } from 'react'
+import { useForm } from '@tanstack/react-form'
 import { Button } from '@/components/ui/button'
-import { Field, FieldError, FieldSet } from '@/components/ui/fieldset'
+import { Field, FieldDescription, FieldError, FieldSet } from '@/components/ui/fieldset'
 import { Input } from '@/components/ui/input'
-import { firstIssueMessage, passwordLoginSchema } from '@/lib/auth/login-schemas'
+import { passwordLoginSchema } from '@/lib/auth/login-schemas'
 
 export function PasswordLoginStep({
-  password,
+  passwordHint,
   busy,
   error,
   submitLabel,
   showBackToQr,
-  onPasswordChange,
+  onValueChange,
   onSubmit,
   onBackToQr,
   onUsePhone,
 }: {
-  password: string
   passwordHint: string | null
   busy: boolean
   error: string | null
   submitLabel: string
   showBackToQr: boolean
-  onPasswordChange: (value: string) => void
-  onSubmit: (password: string) => void
+  onValueChange: () => void
+  onSubmit: (password: string) => Promise<void>
   onBackToQr?: () => void
   onUsePhone?: () => void
 }) {
-  const [fieldError, setFieldError] = useState<string | null>(null)
-  const displayError = fieldError ?? error
-  const invalid = Boolean(displayError)
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    const result = passwordLoginSchema.safeParse({ password })
-    if (!result.success) {
-      setFieldError(firstIssueMessage(result.error))
-      return
-    }
-    setFieldError(null)
-    onSubmit(result.data.password)
-  }
+  const form = useForm({
+    defaultValues: { password: '' },
+    validators: {
+      onSubmit: passwordLoginSchema,
+    },
+    onSubmit: async ({ value }) => {
+      await onSubmit(value.password)
+    },
+  })
 
   return (
     <div className="flex w-full flex-col items-center gap-4">
       <form
-        onSubmit={handleSubmit}
+        onSubmit={(event) => {
+          event.preventDefault()
+          event.stopPropagation()
+          void form.handleSubmit()
+        }}
         className="flex w-full flex-col gap-3"
         noValidate
       >
-        <FieldSet>
-          <Field data-invalid={invalid || undefined}>
-            <Input
-              id="login-password"
-              type="password"
-              placeholder="2FA password"
-              value={password}
-              onChange={(e) => {
-                setFieldError(null)
-                onPasswordChange(e.target.value)
-              }}
-              aria-invalid={invalid || undefined}
-              autoComplete="current-password"
-            />
-            <FieldError>{displayError}</FieldError>
-          </Field>
+        <FieldSet disabled={busy}>
+          {passwordHint
+            ? (
+                <FieldDescription className="text-center">
+                  Password hint:
+                  {' '}
+                  {passwordHint}
+                </FieldDescription>
+              )
+            : null}
+          <form.Field name="password">
+            {(field) => {
+              const validationError = field.state.meta.errors[0]?.message
+              const displayError = validationError ?? error
+              const invalid = Boolean(displayError)
+
+              return (
+                <Field data-invalid={invalid || undefined}>
+                  <Input
+                    id="login-password"
+                    name={field.name}
+                    type="password"
+                    placeholder="2FA password"
+                    value={field.state.value}
+                    onChange={(event) => {
+                      field.handleChange(event.target.value)
+                      onValueChange()
+                    }}
+                    onBlur={field.handleBlur}
+                    aria-invalid={invalid || undefined}
+                    autoComplete="current-password"
+                  />
+                  <FieldError>{displayError}</FieldError>
+                </Field>
+              )
+            }}
+          </form.Field>
         </FieldSet>
         <Button type="submit" disabled={busy} className="w-full">
           {busy ? 'Signing in…' : submitLabel}
