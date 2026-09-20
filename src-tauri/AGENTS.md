@@ -11,7 +11,8 @@ Rust Tauri 2 app: Telegram via ferogram, library in SQLite, media cache + stream
 | `src/lib.rs` | App setup, command registration, `stream` protocol |
 | `src/db.rs` | SQLite (`library.db`) |
 | `src/telegram/` | Client, auth, saved music sync, download |
-| `src/session.rs` | Encrypted ferogram `SessionBackend` + keyring |
+| `src/session.rs` | Encrypted ferogram `SessionBackend` + platform credential store |
+| `src/android_keyring.rs` | Android Keystore-backed credential store initialization |
 | `src/config.rs` | `TELEGRAM_API_ID` / `TELEGRAM_API_HASH` (runtime resolve) |
 | `build.rs` | Embeds API credentials from env or `.env.local` |
 | `src/streaming.rs` | Range streaming for uncached tracks |

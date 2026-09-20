@@ -3,7 +3,7 @@
 //! ferogram holds auth keys in memory and calls this backend to load/save a
 //! [`PersistedSession`]. We seal the native ferogram binary snapshot with
 //! AES-256-GCM and store it as `session.enc`. The 256-bit key lives in the OS
-//! keychain (via `keyring`).
+//! credential store (`keyring` on desktop, Android Keystore on Android).
 
 use std::io;
 use std::path::{Path, PathBuf};
@@ -15,6 +15,11 @@ use base64::engine::general_purpose::STANDARD as B64;
 use base64::Engine;
 use ferogram::session_backend::PersistedSession;
 use ferogram::SessionBackend;
+
+#[cfg(not(target_os = "android"))]
+use keyring as credential_store;
+#[cfg(target_os = "android")]
+use keyring_core as credential_store;
 
 use crate::error::{AppError, AppResult};
 
@@ -28,10 +33,10 @@ fn session_path(data_dir: &Path) -> PathBuf {
     data_dir.join(SESSION_FILE)
 }
 
-/// Loads the AES key from the OS keychain, generating and storing a new random
+/// Loads the AES key from the OS credential store, generating and storing a new random
 /// one on first run.
 fn load_or_create_key() -> AppResult<[u8; 32]> {
-    let entry = keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER)
+    let entry = credential_store::Entry::new(KEYRING_SERVICE, KEYRING_USER)
         .map_err(|e| AppError::msg(format!("keychain unavailable: {e}")))?;
 
     match entry.get_password() {
@@ -44,7 +49,7 @@ fn load_or_create_key() -> AppResult<[u8; 32]> {
                 .map_err(|_| AppError::msg("session key has unexpected length"))?;
             Ok(arr)
         }
-        Err(keyring::Error::NoEntry) => {
+        Err(credential_store::Error::NoEntry) => {
             let key = Key::<Aes256Gcm>::generate();
             entry
                 .set_password(&B64.encode(key.as_slice()))

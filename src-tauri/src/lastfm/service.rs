@@ -6,6 +6,11 @@ use tauri::{AppHandle, Emitter, Manager};
 use tauri_plugin_opener::OpenerExt;
 use tokio::sync::{Mutex, Notify};
 
+#[cfg(not(target_os = "android"))]
+use keyring as credential_store;
+#[cfg(target_os = "android")]
+use keyring_core as credential_store;
+
 use crate::config::Config;
 use crate::db::{
     Db, LastFmQueueInsert, SETTING_LASTFM_ACCOUNT_KEY, SETTING_LASTFM_ENABLED,
@@ -35,26 +40,26 @@ struct OsSessionStore;
 
 impl SessionStore for OsSessionStore {
     fn get(&self, username: &str) -> AppResult<Option<String>> {
-        let entry = keyring::Entry::new(KEYRING_SERVICE, username)
+        let entry = credential_store::Entry::new(KEYRING_SERVICE, username)
             .map_err(|_| AppError::msg("Last.fm keychain is unavailable."))?;
         match entry.get_password() {
             Ok(value) => Ok(Some(value)),
-            Err(keyring::Error::NoEntry) => Ok(None),
+            Err(credential_store::Error::NoEntry) => Ok(None),
             Err(_) => Err(AppError::msg("Last.fm keychain could not be read.")),
         }
     }
 
     fn set(&self, username: &str, key: &str) -> AppResult<()> {
-        keyring::Entry::new(KEYRING_SERVICE, username)
+        credential_store::Entry::new(KEYRING_SERVICE, username)
             .and_then(|entry| entry.set_password(key))
             .map_err(|_| AppError::msg("Last.fm session could not be saved to the keychain."))
     }
 
     fn delete(&self, username: &str) -> AppResult<()> {
-        let entry = keyring::Entry::new(KEYRING_SERVICE, username)
+        let entry = credential_store::Entry::new(KEYRING_SERVICE, username)
             .map_err(|_| AppError::msg("Last.fm keychain is unavailable."))?;
         match entry.delete_credential() {
-            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
+            Ok(()) | Err(credential_store::Error::NoEntry) => Ok(()),
             Err(_) => Err(AppError::msg(
                 "Last.fm session could not be removed from the keychain.",
             )),

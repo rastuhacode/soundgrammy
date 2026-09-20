@@ -2,6 +2,9 @@
 
 mod audio;
 
+#[cfg(target_os = "android")]
+mod android_keyring;
+
 mod bounce_analysis;
 mod cache;
 mod commands;
