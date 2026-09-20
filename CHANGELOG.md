@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.1.1](https://github.com/rastuhacode/soundgrammy/compare/v3.1.0...v3.1.1) (2026-09-20)
+
+
+### Bug Fixes
+
+* enhance Android media session initialization with improved error handling ([c89a8b6](https://github.com/rastuhacode/soundgrammy/commit/c89a8b6f808227c686dc69a35e6246743bb39983))
+* enhance Android media session initialization with improved error handling ([9fde7b8](https://github.com/rastuhacode/soundgrammy/commit/9fde7b8b0671f906e30c2b51d259132d225ff284))
+
 ## [3.1.0](https://github.com/rastuhacode/soundgrammy/compare/v3.0.0...v3.1.0) (2026-09-20)
 
 
