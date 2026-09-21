@@ -184,7 +184,7 @@ export function PlaylistToolbar({
             </p>
           </div>
 
-          <div className="flex min-w-[10.75rem] flex-1 items-center gap-1">
+          <div className="flex min-w-43 grow items-center gap-1">
             {selectionMode
               ? (
                   <>

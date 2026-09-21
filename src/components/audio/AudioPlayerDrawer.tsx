@@ -60,7 +60,7 @@ export function AudioPlayerDrawer(props: AudioPlayerDrawerProps) {
             />
           </header>
 
-          <div className="flex min-h-0 grow items-center justify-center overflow-hidden px-7 py-5 [container-type:size]">
+          <div className="flex min-h-0 grow items-center justify-center overflow-hidden px-7 py-5 @container-size">
             <div className="aspect-square w-[min(100cqw,100cqh)] shrink-0 overflow-hidden rounded-2xl bg-muted shadow-2xl ring-1 ring-border">
               {failed || !url
                 ? (
