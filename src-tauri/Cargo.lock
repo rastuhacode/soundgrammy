@@ -1459,8 +1459,6 @@ dependencies = [
 [[package]]
 name = "ferogram-mtsender"
 version = "0.6.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "fbebaffacc8c90e610bd89d388dabdb4cdea991388ebd5a98839b0c83be0f653"
 dependencies = [
  "ferogram-connect",
  "ferogram-crypto",

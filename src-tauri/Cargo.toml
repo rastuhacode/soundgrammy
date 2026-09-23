@@ -100,3 +100,7 @@ objc2-ui-kit = "0.3"
 objc2-avf-audio = "0.3"
 objc2-media-player = "0.3"
 block2 = "0.6"
+
+[patch.crates-io]
+# Remove once ferogram ships cancellation-safe, per-connection DC readiness.
+ferogram-mtsender = { path = "vendor/ferogram-mtsender" }
