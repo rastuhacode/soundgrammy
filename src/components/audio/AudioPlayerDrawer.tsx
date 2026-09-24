@@ -34,7 +34,7 @@ export function AudioPlayerDrawer(props: AudioPlayerDrawerProps) {
         } as React.CSSProperties}
       >
         <div className="flex min-h-0 grow flex-col">
-          <header className="flex shrink-0 items-center justify-between gap-3 px-5 pt-3">
+          <header className="android-overlay-inset flex shrink-0 items-center justify-between gap-3 px-5 pt-3">
             <Button
               onClick={() => props.onOpenChange(false)}
               variant="ghost"

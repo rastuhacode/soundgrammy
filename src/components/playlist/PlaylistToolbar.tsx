@@ -162,7 +162,7 @@ export function PlaylistToolbar({
     const trackCount = currentPlaylist.trackIds.length
     return (
       <>
-        <header className="flex w-full min-w-0 shrink-0 items-center gap-1 border-b border-border bg-sidebar/85 px-2 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))] backdrop-blur-sm">
+        <header className="flex w-full min-w-0 shrink-0 flex-wrap items-center gap-1 border-b border-border bg-sidebar/85 px-2 pb-2 pt-[max(0.5rem,env(safe-area-inset-top))] backdrop-blur-sm">
           <Button
             variant="ghost"
             size="icon"
@@ -184,7 +184,7 @@ export function PlaylistToolbar({
             </p>
           </div>
 
-          <div className="flex min-w-43 grow items-center gap-1">
+          <div className="android-toolbar-actions flex min-w-43 grow items-center gap-1">
             {selectionMode
               ? (
                   <>

@@ -61,7 +61,7 @@ export function ShuffleButton() {
         aria-keyshortcuts="Shift+F10"
         title={`Shuffle: ${shuffleState === 'on' ? activeLabel : 'Off'}. Right-click to choose mode.`}
         className={cn(
-          'flex items-center justify-center transition-transform hover:scale-105 active:scale-95 [&>svg]:size-4',
+          'android-touch-target flex items-center justify-center transition-transform hover:scale-105 active:scale-95 [&>svg]:size-4',
           shuffleState === 'on'
             ? 'text-primary'
             : 'text-muted-foreground',

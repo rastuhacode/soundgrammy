@@ -145,7 +145,7 @@ export function SidebarDrawer({ onLogout }: SidebarDrawerProps) {
         />
 
         <DrawerContent className="rounded-none border-y-0 border-l-0 bg-sidebar text-sidebar-foreground w-80 [--drawer-inset:0px]">
-          <DrawerHeader className="md:gap-2 gap-2 p-4 text-left flex-row items-center">
+          <DrawerHeader className="android-overlay-inset md:gap-2 gap-2 p-4 text-left flex-row items-center">
             <Avatar className="size-12 after:border-0">
               {avatarSrc
                 ? <AvatarImage src={avatarSrc} alt={displayName} />

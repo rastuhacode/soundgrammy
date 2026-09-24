@@ -238,7 +238,7 @@ export default function App() {
 
   if (status === 'loading') {
     return (
-      <div className="hifi-bg flex min-h-screen items-center justify-center">
+      <div className="hifi-bg android-app-inset flex min-h-screen items-center justify-center">
         <Loader2 className="size-6 animate-spin text-primary" />
       </div>
     )
@@ -249,7 +249,7 @@ export default function App() {
   }
 
   return (
-    <div className="hifi-bg flex h-dvh w-full flex-col overflow-hidden">
+    <div className="hifi-bg android-app-inset flex h-dvh w-full flex-col overflow-hidden">
       {!isCompact
         ? (
             <SplitterGroup

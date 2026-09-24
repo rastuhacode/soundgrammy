@@ -128,6 +128,31 @@
   }
 }
 
+/* The Android WebView can report a zero CSS safe-area inset in edge-to-edge mode. */
+[data-platform="android"] .android-app-inset {
+  padding-top: max(3rem, env(safe-area-inset-top, 0px));
+}
+
+[data-platform="android"] .android-overlay-inset {
+  padding-top: max(3rem, calc(env(safe-area-inset-top, 0px) + 0.75rem));
+}
+
+[data-platform="android"] .android-toolbar-actions {
+  flex-basis: 100%;
+}
+
+[data-platform="android"] [data-slot="button"],
+[data-platform="android"] .android-touch-target {
+  min-width: 2.75rem;
+  min-height: 2.75rem;
+}
+
+[data-platform="android"] [data-slot="input-group"],
+[data-platform="android"] [data-slot="input-group-control"],
+[data-platform="android"] [data-slot="audio-progress"] {
+  min-height: 2.75rem;
+}
+
 @media (hover: none) {
   .touch-visible-option {
     opacity: 1;
