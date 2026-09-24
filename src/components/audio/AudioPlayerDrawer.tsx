@@ -20,7 +20,7 @@ interface AudioPlayerDrawerProps extends Omit<AudioPlayerBarProps, 'onOpenDrawer
 }
 
 export function AudioPlayerDrawer(props: AudioPlayerDrawerProps) {
-  const { url, failed } = useCachedThumbnail(props.track.id, { quality: 'high' })
+  const { url, failed, onError } = useCachedThumbnail(props.track.id, { quality: 'high' })
   const queueSource = usePlayerStore(state => state.queue.source?.name)
 
   return (
@@ -72,6 +72,7 @@ export function AudioPlayerDrawer(props: AudioPlayerDrawerProps) {
                     <img
                       src={url}
                       alt={`${props.track.title ?? 'Unknown title'} artwork`}
+                      onError={onError}
                       className="size-full object-cover"
                     />
                   )}

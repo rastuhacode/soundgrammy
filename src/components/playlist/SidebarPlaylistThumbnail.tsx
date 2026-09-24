@@ -122,6 +122,7 @@ function PlaylistCoverTile({
             <img
               src={thumbnail.url}
               alt=""
+              onError={thumbnail.onError}
               className="size-full object-cover"
             />
           )

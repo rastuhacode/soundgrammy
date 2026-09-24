@@ -8,7 +8,7 @@ export interface AudioTrackDescriptionProps {
 }
 
 export function AudioTrackDescription(props: AudioTrackDescriptionProps) {
-  const { url, failed } = useCachedThumbnail(props.track.id)
+  const { url, failed, onError } = useCachedThumbnail(props.track.id)
   const enterFullscreen = useFullscreenStore(state => state.enterFullscreen)
   const isTransitioning = useFullscreenStore(state => state.isTransitioning)
 
@@ -25,6 +25,7 @@ export function AudioTrackDescription(props: AudioTrackDescriptionProps) {
               <img
                 src={url}
                 alt="Thumbnail"
+                onError={onError}
                 className="size-11 rounded-lg object-cover ring-1 ring-border md:size-16"
               />
             )}
