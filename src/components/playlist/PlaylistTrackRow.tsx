@@ -31,6 +31,7 @@ export interface PlaylistTrackRowViewProps {
   onToggleSelected?: (selected: boolean) => void
   onEnterSelection?: () => void
   onTouchDragStart?: React.TouchEventHandler<HTMLButtonElement>
+  touchOptions?: React.ReactNode
 }
 
 /** Presentational track row. */
@@ -48,12 +49,12 @@ export function PlaylistTrackRowView({
   onToggleSelected,
   onEnterSelection,
   onTouchDragStart,
+  touchOptions,
 }: PlaylistTrackRowViewProps) {
   const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const touchStart = useRef<{ x: number, y: number } | null>(null)
   const suppressClick = useRef(false)
   const lastTouchAt = useRef<number | null>(null)
-  const buttonTouched = useRef(false)
   const clearLongPress = () => {
     if (longPressTimer.current !== null) clearTimeout(longPressTimer.current)
     longPressTimer.current = null
@@ -124,7 +125,9 @@ export function PlaylistTrackRowView({
       }
       className={cn(
         'group relative grid w-full cursor-default items-center gap-2 rounded-lg px-2 transition-colors md:gap-3 md:px-2.5',
-        selectionMode ? TRACK_GRID_CLASS_SELECT : TRACK_GRID_CLASS,
+        selectionMode || (touchScreen && canReorder)
+          ? TRACK_GRID_CLASS_SELECT
+          : TRACK_GRID_CLASS,
         'border-2 border-transparent hover:bg-card/70',
         isSelected && 'border-primary/50 bg-primary/8',
         isActive && !isSelected && 'bg-accent/40',
@@ -149,6 +152,23 @@ export function PlaylistTrackRowView({
             aria-label={`Select ${track.title ?? 'track'}`}
             className="animate-in fade-in-0 zoom-in-95 duration-150"
           />
+        </div>
+      )}
+
+      {!selectionMode && touchScreen && canReorder && (
+        <div role="cell" className="flex size-full items-center justify-center">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            aria-label={`Drag ${track.title ?? 'track'} to reorder`}
+            className="size-9 text-muted-foreground touch-none"
+            onPointerDown={event => event.stopPropagation()}
+            onTouchStart={onTouchDragStart}
+            onClick={event => event.stopPropagation()}
+          >
+            <GripVertical className="size-4" />
+          </Button>
         </div>
       )}
 
@@ -215,39 +235,27 @@ export function PlaylistTrackRowView({
       </div>
 
       <div role="cell" className="flex justify-center">
-        {!selectionMode && (
+        {!selectionMode && touchScreen && touchOptions}
+        {!selectionMode && !touchScreen && (
           <Button
             type="button"
             variant="ghost"
             size="icon-xs"
-            aria-label={touchScreen
-              ? `${canReorder ? 'Select or drag to reorder' : 'Select'} ${track.title ?? 'track'}`
-              : `${track.title ?? 'Track'} options`}
-            aria-haspopup={touchScreen ? undefined : 'menu'}
+            aria-label={`${track.title ?? 'Track'} options`}
+            aria-haspopup="menu"
             className={cn(
               'text-muted-foreground opacity-0 transition-opacity',
               !selectionMode && 'touch-visible-option size-9 opacity-100 md:size-6 md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100',
             )}
             onClick={(event) => {
-              if (touchScreen || buttonTouched.current) {
-                event.stopPropagation()
-                onEnterSelection?.()
-              }
-              else {
-                openContextMenuFromPointerEvent(event, event.currentTarget)
-              }
-              buttonTouched.current = false
+              openContextMenuFromPointerEvent(event, event.currentTarget)
             }}
             onPointerDown={(event) => {
-              buttonTouched.current = event.pointerType === 'touch'
               lastTouchAt.current = event.pointerType === 'touch' ? Date.now() : null
               event.stopPropagation()
             }}
-            onTouchStart={onTouchDragStart}
           >
-            {touchScreen && canReorder
-              ? <GripVertical className="size-4" />
-              : <Ellipsis className="size-4" />}
+            <Ellipsis className="size-4" />
           </Button>
         )}
       </div>
@@ -269,6 +277,7 @@ export interface PlaylistTrackRowProps {
   onRowClick: () => void
   onToggleSelected: (selected: boolean) => void
   onEnterSelection: () => void
+  touchOptions?: React.ReactNode
 }
 
 export function PlaylistTrackRow({
@@ -285,6 +294,7 @@ export function PlaylistTrackRow({
   onRowClick,
   onToggleSelected,
   onEnterSelection,
+  touchOptions,
 }: PlaylistTrackRowProps) {
   const {
     attributes,
@@ -330,6 +340,7 @@ export function PlaylistTrackRow({
         onRowClick={onRowClick}
         onToggleSelected={onToggleSelected}
         onEnterSelection={onEnterSelection}
+        touchOptions={touchOptions}
         onTouchDragStart={canReorder && listeners?.onTouchStart
           ? event => listeners.onTouchStart(event)
           : undefined}

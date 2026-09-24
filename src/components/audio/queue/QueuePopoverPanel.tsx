@@ -199,7 +199,7 @@ export function QueuePopoverPanel({ onClose, hasTracks }: QueuePopoverPanelProps
                 </Button>
               )}
             />
-            <DropdownMenuContent align="end" className="w-48">
+            <DropdownMenuContent align="end" className="w-48" positionerClassName="z-[90]">
               <DropdownMenuItem onClick={() => setSaveOpen(true)}>
                 <ListPlus className="size-4" />
                 Save as playlist

@@ -37,6 +37,7 @@ import { cn } from '@/lib/utils'
 import { Checkbox } from '@/components/ui/checkbox'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { PlaylistTrackContextMenu } from './PlaylistTrackContextMenu'
+import { PlaylistTrackDropdownMenu } from './PlaylistTrackDropdownMenu'
 import {
   TRACK_GRID_CLASS,
   TRACK_GRID_CLASS_SELECT,
@@ -151,6 +152,15 @@ export function PlaylistTracksTable({
         size: 36,
       })
     }
+    else if (touchScreen && canReorder) {
+      defs.push({
+        id: 'drag',
+        header: () => <span className="sr-only">Reorder tracks</span>,
+        cell: () => null,
+        enableSorting: false,
+        size: 36,
+      })
+    }
 
     defs.push(
       {
@@ -192,7 +202,7 @@ export function PlaylistTracksTable({
     )
 
     return defs
-  }, [selectionMode])
+  }, [selectionMode, touchScreen, canReorder])
 
   const table = useTable({
     features: playlistTableFeatures,
@@ -237,7 +247,7 @@ export function PlaylistTracksTable({
     overscan: 8,
   })
 
-  const headerGridClass = selectionMode
+  const headerGridClass = selectionMode || (touchScreen && canReorder)
     ? TRACK_GRID_CLASS_SELECT
     : TRACK_GRID_CLASS
 
@@ -282,7 +292,7 @@ export function PlaylistTracksTable({
               const canSort = header.column.getCanSort()
               const sorted = header.column.getIsSorted()
 
-              if (header.id === 'select') {
+              if (header.id === 'select' || header.id === 'drag') {
                 return (
                   <div
                     key={header.id}
@@ -366,26 +376,29 @@ export function PlaylistTracksTable({
                 const isSelected = row.getIsSelected()
                 const sortableId = rowSortableIds[row.index]
                 if (!sortableId) return null
+                const menuProps = {
+                  track,
+                  sourceIndex,
+                  isLiked: isTrackLiked(track.id),
+                  currentPlaylist,
+                  customPlaylists,
+                  onSelect: onEnterSelection,
+                  onToggleLike,
+                  onAddToPlaylist,
+                  onDeleteFromPlaylist,
+                  onPlayNext,
+                  onAddToEnd,
+                  onCache,
+                  onDownload,
+                  onRemoveFromCache,
+                  onShowInfo,
+                }
 
                 return (
                   <PlaylistTrackContextMenu
                     disabled={selectionMode || touchScreen}
                     key={sortableId}
-                    track={track}
-                    sourceIndex={sourceIndex}
-                    isLiked={isTrackLiked(track.id)}
-                    currentPlaylist={currentPlaylist}
-                    customPlaylists={customPlaylists}
-                    onSelect={onEnterSelection}
-                    onToggleLike={onToggleLike}
-                    onAddToPlaylist={onAddToPlaylist}
-                    onDeleteFromPlaylist={onDeleteFromPlaylist}
-                    onPlayNext={onPlayNext}
-                    onAddToEnd={onAddToEnd}
-                    onCache={onCache}
-                    onDownload={onDownload}
-                    onRemoveFromCache={onRemoveFromCache}
-                    onShowInfo={onShowInfo}
+                    {...menuProps}
                   >
                     <PlaylistTrackRow
                       virtualStart={virtualRow.start}
@@ -398,6 +411,9 @@ export function PlaylistTracksTable({
                       touchScreen={touchScreen}
                       canReorder={canReorder}
                       onEnterSelection={() => onEnterSelection(sourceIndex)}
+                      touchOptions={touchScreen
+                        ? <PlaylistTrackDropdownMenu {...menuProps} />
+                        : undefined}
                       onRowClick={() => {
                         if (selectionMode) {
                           row.toggleSelected(!isSelected)

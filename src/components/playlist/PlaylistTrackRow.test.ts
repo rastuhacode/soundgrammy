@@ -34,11 +34,13 @@ describe('touch track selection', () => {
   let root: Root
   const onPlay = vi.fn()
   const onEnterSelection = vi.fn()
+  const onOpenOptions = vi.fn()
 
   beforeEach(async () => {
     vi.useFakeTimers()
     onPlay.mockClear()
     onEnterSelection.mockClear()
+    onOpenOptions.mockClear()
     host = document.createElement('div')
     document.body.append(host)
     root = createRoot(host)
@@ -51,6 +53,14 @@ describe('touch track selection', () => {
       touchScreen: true,
       onRowClick: onPlay,
       onEnterSelection,
+      touchOptions: createElement('button', {
+        'aria-label': 'Test track options',
+        'onPointerDown': (event: React.PointerEvent) => event.stopPropagation(),
+        'onClick': (event: React.MouseEvent) => {
+          event.stopPropagation()
+          onOpenOptions()
+        },
+      }, '…'),
     })))
   })
 
@@ -84,11 +94,39 @@ describe('touch track selection', () => {
     expect(onEnterSelection).not.toHaveBeenCalled()
   })
 
-  it('selects from the touch action button without playing', async () => {
-    const button = host.querySelector('button[aria-label="Select Test track"]')!
+  it('opens track options on a short tap without selecting or playing', async () => {
+    const button = host.querySelector('button[aria-label="Test track options"]')!
+    await act(async () => button.dispatchEvent(pointerEvent('pointerdown')))
     await act(async () => button.dispatchEvent(new MouseEvent('click', { bubbles: true })))
 
-    expect(onEnterSelection).toHaveBeenCalledTimes(1)
+    expect(onOpenOptions).toHaveBeenCalledTimes(1)
+    expect(onEnterSelection).not.toHaveBeenCalled()
     expect(onPlay).not.toHaveBeenCalled()
+  })
+
+  it('shows separate drag and options controls for a custom playlist', async () => {
+    const onTouchDragStart = vi.fn()
+    await act(async () => root.render(createElement(PlaylistTrackRowView, {
+      track,
+      isActive: false,
+      isPlaying: false,
+      isSelected: false,
+      selectionMode: false,
+      touchScreen: true,
+      canReorder: true,
+      onRowClick: onPlay,
+      onEnterSelection,
+      onTouchDragStart,
+      touchOptions: createElement('button', { 'aria-label': 'Test track options' }, '…'),
+    })))
+
+    const dragHandle = host.querySelector('button[aria-label="Drag Test track to reorder"]')!
+    await act(async () => dragHandle.dispatchEvent(pointerEvent('pointerdown')))
+    await act(async () => dragHandle.dispatchEvent(new Event('touchstart', { bubbles: true })))
+    await act(async () => vi.advanceTimersByTime(500))
+
+    expect(onTouchDragStart).toHaveBeenCalledTimes(1)
+    expect(onEnterSelection).not.toHaveBeenCalled()
+    expect(host.querySelector('button[aria-label="Test track options"]')).not.toBeNull()
   })
 })
