@@ -30,6 +30,7 @@ import {
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react'
 import { useMemo, useRef } from 'react'
+import { useTouchScreen } from '@/hooks/use-touch-screen'
 import type { Track } from '@/lib/db'
 import type { ResolvedSelectedPlaylist } from '@/stores/playlists-store'
 import { cn } from '@/lib/utils'
@@ -127,6 +128,7 @@ export function PlaylistTracksTable({
   onShowInfo,
 }: PlaylistTracksTableProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
+  const touchScreen = useTouchScreen()
 
   const columns = useMemo<ColumnDef<typeof playlistTableFeatures, Track>[]>(() => {
     const defs: ColumnDef<typeof playlistTableFeatures, Track>[] = []
@@ -367,7 +369,7 @@ export function PlaylistTracksTable({
 
                 return (
                   <PlaylistTrackContextMenu
-                    disabled={selectionMode}
+                    disabled={selectionMode || touchScreen}
                     key={sortableId}
                     track={track}
                     sourceIndex={sourceIndex}
@@ -393,7 +395,9 @@ export function PlaylistTracksTable({
                       isPlaying={isPlaying}
                       isSelected={isSelected}
                       selectionMode={selectionMode}
+                      touchScreen={touchScreen}
                       canReorder={canReorder}
+                      onEnterSelection={() => onEnterSelection(sourceIndex)}
                       onRowClick={() => {
                         if (selectionMode) {
                           row.toggleSelected(!isSelected)

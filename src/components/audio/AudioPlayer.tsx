@@ -29,7 +29,7 @@ function AudioPlayerContent() {
   const commandError = usePlayerStore(state => state.commandError)
   const isFullscreen = useFullscreenStore(state => state.isFullscreen)
   const exitFullscreen = useFullscreenStore(state => state.exitFullscreen)
-  const isCompact = useCompactDisplay()
+  const { isCompact } = useCompactDisplay()
   const {
     currentTime,
     duration,
