@@ -60,6 +60,9 @@ const restrictToVerticalAxis: Modifier = ({ transform }) => ({
   x: 0,
 })
 
+// Overlay scrollbars have zero measured width but still cover the scroll area.
+const TRACK_SCROLL_GUTTER = 16
+
 export interface PlaylistTracksTableProps {
   tracks: Track[]
   sourceIndices: number[]
@@ -283,7 +286,7 @@ export function PlaylistTracksTable({
       <div
         role="rowgroup"
         className="mb-2 shrink-0 rounded-md bg-sidebar px-1"
-        style={{ marginRight: scrollbarWidth }}
+        style={{ marginRight: scrollbarWidth + TRACK_SCROLL_GUTTER }}
       >
         <div
           role="row"
@@ -348,7 +351,11 @@ export function PlaylistTracksTable({
         </div>
       </div>
 
-      <div ref={scrollRef} className="min-h-0 grow overflow-x-hidden overflow-y-auto pb-4">
+      <div
+        ref={scrollRef}
+        className="min-h-0 grow overflow-x-hidden overflow-y-auto pb-4"
+        style={{ paddingRight: TRACK_SCROLL_GUTTER }}
+      >
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}

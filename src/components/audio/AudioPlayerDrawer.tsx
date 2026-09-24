@@ -20,7 +20,7 @@ interface AudioPlayerDrawerProps extends Omit<AudioPlayerBarProps, 'onOpenDrawer
 }
 
 export function AudioPlayerDrawer(props: AudioPlayerDrawerProps) {
-  const { url, failed } = useCachedThumbnail(props.track.id, { quality: 'high' })
+  const { url, failed, onError } = useCachedThumbnail(props.track.id, { quality: 'high' })
   const queueSource = usePlayerStore(state => state.queue.source?.name)
 
   return (
@@ -34,7 +34,7 @@ export function AudioPlayerDrawer(props: AudioPlayerDrawerProps) {
         } as React.CSSProperties}
       >
         <div className="flex min-h-0 grow flex-col">
-          <header className="flex shrink-0 items-center justify-between gap-3 px-5 pt-3">
+          <header className="android-overlay-inset flex shrink-0 items-center justify-between gap-3 px-5 pt-3">
             <Button
               onClick={() => props.onOpenChange(false)}
               variant="ghost"
@@ -60,7 +60,7 @@ export function AudioPlayerDrawer(props: AudioPlayerDrawerProps) {
             />
           </header>
 
-          <div className="flex min-h-0 grow items-center justify-center overflow-hidden px-7 py-5 [container-type:size]">
+          <div className="flex min-h-0 grow items-center justify-center overflow-hidden px-7 py-5 @container-size">
             <div className="aspect-square w-[min(100cqw,100cqh)] shrink-0 overflow-hidden rounded-2xl bg-muted shadow-2xl ring-1 ring-border">
               {failed || !url
                 ? (
@@ -72,6 +72,7 @@ export function AudioPlayerDrawer(props: AudioPlayerDrawerProps) {
                     <img
                       src={url}
                       alt={`${props.track.title ?? 'Unknown title'} artwork`}
+                      onError={onError}
                       className="size-full object-cover"
                     />
                   )}

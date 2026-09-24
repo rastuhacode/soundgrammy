@@ -188,12 +188,28 @@ async fn copy_track_to_dir(
 
 /// Export a single track into `Downloads/SoundGrammy/`.
 pub async fn export_track(state: &AppState, app: &AppHandle, track_id: i64) -> AppResult<String> {
-    let root = soundgrammy_downloads_root(app)?;
-    tokio::fs::create_dir_all(&root)
-        .await
-        .map_err(|e| AppError::msg(format!("Cannot create Downloads/SoundGrammy folder: {e}")))?;
-    let path = copy_track_to_dir(state, app, track_id, &root).await?;
-    Ok(path.to_string_lossy().into_owned())
+    #[cfg(target_os = "android")]
+    {
+        let track = cache::require_track(state, track_id)?;
+        let doc = download::stored_document(&track)?;
+        let file_name = format!(
+            "{}.{}",
+            track_export_basename(&track),
+            extension_for_mime(&doc.mime_type)
+        );
+        let cached = cache::ensure_audio(state, app, track_id).await?;
+        return crate::android_downloads::save(cached, file_name, doc.mime_type).await;
+    }
+
+    #[cfg(not(target_os = "android"))]
+    {
+        let root = soundgrammy_downloads_root(app)?;
+        tokio::fs::create_dir_all(&root).await.map_err(|e| {
+            AppError::msg(format!("Cannot create Downloads/SoundGrammy folder: {e}"))
+        })?;
+        let path = copy_track_to_dir(state, app, track_id, &root).await?;
+        Ok(path.to_string_lossy().into_owned())
+    }
 }
 
 /// Export many tracks into a dated subfolder under `Downloads/SoundGrammy/`.

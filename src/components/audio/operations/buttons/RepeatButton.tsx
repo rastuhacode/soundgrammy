@@ -13,7 +13,7 @@ export function RepeatButton() {
       type="button"
       aria-label={title}
       title={title}
-      className="flex items-center justify-center text-primary transition-transform hover:scale-105 active:scale-95 [&>svg]:size-4"
+      className="android-touch-target flex items-center justify-center text-primary transition-transform hover:scale-105 active:scale-95 [&>svg]:size-4"
       onClick={toggleRepeat}
     >
       {repeatState === 'none' || repeatState === 'all'

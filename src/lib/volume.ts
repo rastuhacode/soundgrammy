@@ -1,6 +1,13 @@
 export const VOLUME_MIN = 0
 export const VOLUME_MAX = 100
 export const VOLUME_DEFAULT = 25
+export const ANDROID_VOLUME_DEFAULT = 100
+
+export function volumePreferences(userAgent: string) {
+  return /\bAndroid\b/i.test(userAgent)
+    ? { key: 'soundgrammy-volume-android', defaultValue: ANDROID_VOLUME_DEFAULT }
+    : { key: 'soundgrammy-volume', defaultValue: VOLUME_DEFAULT }
+}
 
 const TRACKPAD_WHEEL_THRESHOLD = 40
 
@@ -10,8 +17,8 @@ export function normalizeVolume(value: number): number {
   return Math.min(VOLUME_MAX, Math.max(VOLUME_MIN, Math.round(value)))
 }
 
-export function parseStoredVolume(stored: string | undefined): number {
-  if (stored === undefined) return VOLUME_DEFAULT
+export function parseStoredVolume(stored: string | undefined, defaultValue = VOLUME_DEFAULT): number {
+  if (stored === undefined) return defaultValue
 
   let value: unknown
   try {
@@ -27,7 +34,7 @@ export function parseStoredVolume(stored: string | undefined): number {
     || value < VOLUME_MIN
     || value > VOLUME_MAX
   ) {
-    return VOLUME_DEFAULT
+    return defaultValue
   }
 
   return normalizeVolume(value)

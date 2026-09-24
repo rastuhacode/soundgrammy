@@ -12,7 +12,7 @@ export function PreviousButton() {
       title={title}
       className={
         cn(
-          'flex items-center justify-center',
+          'android-touch-target flex items-center justify-center',
           'text-foreground',
           'transition-transform hover:scale-105 active:scale-95',
           '[&>svg]:fill-foreground [&>svg]:size-5',

@@ -52,8 +52,12 @@ class PlaybackService : Service() {
         return START_NOT_STICKY
     }
     override fun onBind(intent: Intent?): IBinder? = null
-    // Removing the task leaves active playback running. No Activity references are retained.
-    override fun onTaskRemoved(rootIntent: Intent?) { if (!wanted) finish() }
+    // A swipe from Recents is an explicit close, unlike moving the Activity to
+    // the background. The foreground service otherwise keeps Rust and the old
+    // WebView process alive, so a later launch can open onto a blank window.
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        TaskRemoval.close(::finish) { Process.killProcess(Process.myPid()) }
+    }
     private fun refresh() {
         if (!wanted) { finish(); return }
         val needsWake = presentation?.optString("status") != "paused"

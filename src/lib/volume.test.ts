@@ -3,6 +3,8 @@ import {
   consumeVolumeWheelDelta,
   normalizeVolume,
   parseStoredVolume,
+  volumePreferences,
+  ANDROID_VOLUME_DEFAULT,
   VOLUME_DEFAULT,
 } from './volume'
 
@@ -26,6 +28,22 @@ describe('parseStoredVolume', () => {
     expect(parseStoredVolume('"loud"')).toBe(VOLUME_DEFAULT)
     expect(parseStoredVolume('-1')).toBe(VOLUME_DEFAULT)
     expect(parseStoredVolume('101')).toBe(VOLUME_DEFAULT)
+  })
+
+  it('uses the Android default for missing or invalid Android preferences', () => {
+    expect(parseStoredVolume(undefined, ANDROID_VOLUME_DEFAULT)).toBe(100)
+    expect(parseStoredVolume('invalid', ANDROID_VOLUME_DEFAULT)).toBe(100)
+  })
+})
+
+describe('volumePreferences', () => {
+  it('starts Android at full gain with a separate preference from the old 25% key', () => {
+    expect(volumePreferences('Mozilla/5.0 (Linux; Android 16)')).toEqual({
+      key: 'soundgrammy-volume-android', defaultValue: 100,
+    })
+    expect(volumePreferences('Mozilla/5.0 (Macintosh)')).toEqual({
+      key: 'soundgrammy-volume', defaultValue: 25,
+    })
   })
 })
 

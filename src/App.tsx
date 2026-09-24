@@ -26,6 +26,7 @@ import { startPlaylistJobsListeners } from '@/stores/playlist-jobs-store'
 import { useConnectivityStore } from '@/stores/connectivity-store'
 import { useTelegramReconnect } from '@/hooks/use-telegram-reconnect'
 import { useLastFmIntegration } from '@/hooks/use-lastfm-integration'
+import { useAndroidBackAction } from '@/hooks/use-android-back'
 import {
   SplitterGroup,
   SplitterPanel,
@@ -62,6 +63,9 @@ export default function App() {
     getInitialValueInEffect: false,
   })
   const [compactPlaylistOpen, setCompactPlaylistOpen] = useState(false)
+  useAndroidBackAction(status === 'ready' && isCompact && compactPlaylistOpen, () => {
+    setCompactPlaylistOpen(false)
+  })
   const session = useSessionStore(state => state.session)
   const setSession = useSessionStore(state => state.setSession)
   const clearSession = useSessionStore(state => state.clearSession)
@@ -234,7 +238,7 @@ export default function App() {
 
   if (status === 'loading') {
     return (
-      <div className="hifi-bg flex min-h-screen items-center justify-center">
+      <div className="hifi-bg android-app-inset flex min-h-screen items-center justify-center">
         <Loader2 className="size-6 animate-spin text-primary" />
       </div>
     )
@@ -245,7 +249,7 @@ export default function App() {
   }
 
   return (
-    <div className="hifi-bg flex h-dvh w-full flex-col overflow-hidden">
+    <div className="hifi-bg android-app-inset flex h-dvh w-full flex-col overflow-hidden">
       {!isCompact
         ? (
             <SplitterGroup

@@ -1,16 +1,18 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { api, fileSrc } from '@/lib/api'
 
 interface ThumbnailState {
   url: string | null
   loaded: boolean
   failed: boolean
+  onError: () => void
 }
 
 // Cache the resolved cache-file path per track for the session so re-mounting
 // virtualized rows doesn't re-invoke the backend.
 const pathCache = new Map<string, string | null>()
 const requestCache = new Map<string, Promise<string | null>>()
+let thumbnailRevision = 0
 
 export function clearThumbnailMemoryCache(): void {
   pathCache.clear()
@@ -20,9 +22,10 @@ export function clearThumbnailMemoryCache(): void {
 export function loadThumbnailPath(
   trackId: number,
   highQuality: boolean,
+  revalidate = false,
 ): Promise<string | null> {
   const cacheKey = `${trackId}:${highQuality ? 'high' : 'standard'}`
-  if (!highQuality && pathCache.has(cacheKey)) {
+  if (!revalidate && !highQuality && pathCache.has(cacheKey)) {
     return Promise.resolve(pathCache.get(cacheKey) ?? null)
   }
 
@@ -42,8 +45,10 @@ export function loadThumbnailPath(
   return request
 }
 
-function thumbnailUrl(path: string | null): string | null {
-  return path ? fileSrc(path) : null
+function thumbnailUrl(path: string | null, revision = 0): string | null {
+  if (!path) return null
+  const url = fileSrc(path)
+  return revision ? `${url}${url.includes('?') ? '&' : '?'}thumbnailRevision=${revision}` : url
 }
 
 export function useCachedThumbnail(
@@ -54,7 +59,9 @@ export function useCachedThumbnail(
   const quality = options?.quality ?? 'standard'
   const cacheKey = `${trackId}:${quality}`
   const highQuality = quality === 'high'
-  const [state, setState] = useState<ThumbnailState>(() => {
+  const [revision, setRevision] = useState(0)
+  const retries = useRef(0)
+  const [state, setState] = useState<Omit<ThumbnailState, 'onError'>>(() => {
     if (pathCache.has(cacheKey)) {
       const path = pathCache.get(cacheKey) ?? null
       return {
@@ -67,12 +74,16 @@ export function useCachedThumbnail(
   })
 
   useEffect(() => {
+    retries.current = 0
+  }, [cacheKey])
+
+  useEffect(() => {
     /* eslint-disable react-hooks/set-state-in-effect -- Thumbnail state mirrors an external cache/backend lookup keyed by trackId. */
     if (!enabled || !trackId) return
 
     // High-quality thumbs can upgrade from remote → embedded once audio is
     // cached, so always re-ask the backend. Standard list thumbs stay session-cached.
-    if (!highQuality && pathCache.has(cacheKey)) {
+    if (!revision && !highQuality && pathCache.has(cacheKey)) {
       const path = pathCache.get(cacheKey) ?? null
       setState({
         url: thumbnailUrl(path),
@@ -87,11 +98,11 @@ export function useCachedThumbnail(
       setState({ url: null, loaded: false, failed: false })
     }
 
-    loadThumbnailPath(trackId, highQuality)
+    loadThumbnailPath(trackId, highQuality, revision > 0)
       .then((path) => {
         if (cancelled) return
         setState({
-          url: thumbnailUrl(path),
+          url: thumbnailUrl(path, revision),
           loaded: Boolean(path),
           failed: path === null,
         })
@@ -104,7 +115,32 @@ export function useCachedThumbnail(
       cancelled = true
     }
     /* eslint-enable react-hooks/set-state-in-effect */
-  }, [cacheKey, enabled, highQuality, trackId])
+  }, [cacheKey, enabled, highQuality, revision, trackId])
 
-  return state
+  useEffect(() => {
+    if (!enabled || !trackId) return
+    const refresh = () => {
+      if (document.visibilityState === 'hidden') return
+      retries.current = 0
+      setRevision(++thumbnailRevision)
+    }
+    document.addEventListener('visibilitychange', refresh)
+    window.addEventListener('pageshow', refresh)
+    return () => {
+      document.removeEventListener('visibilitychange', refresh)
+      window.removeEventListener('pageshow', refresh)
+    }
+  }, [enabled, trackId])
+
+  const onError = () => {
+    if (retries.current < 1) {
+      retries.current += 1
+      setRevision(++thumbnailRevision)
+    }
+    else {
+      setState({ url: null, loaded: false, failed: true })
+    }
+  }
+
+  return { ...state, onError }
 }

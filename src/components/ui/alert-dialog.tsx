@@ -3,9 +3,11 @@ import { AlertDialog as AlertDialogPrimitive } from '@base-ui/react/alert-dialog
 
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { useAndroidBackOverlay } from '@/hooks/use-android-back'
 
-function AlertDialog({ ...props }: AlertDialogPrimitive.Root.Props) {
-  return <AlertDialogPrimitive.Root data-slot="alert-dialog" {...props} />
+function AlertDialog(props: AlertDialogPrimitive.Root.Props) {
+  const back = useAndroidBackOverlay<AlertDialogPrimitive.Root.Actions, AlertDialogPrimitive.Root.ChangeEventDetails>(props)
+  return <AlertDialogPrimitive.Root data-slot="alert-dialog" {...props} {...back} />
 }
 
 function AlertDialogTrigger({ ...props }: AlertDialogPrimitive.Trigger.Props) {
