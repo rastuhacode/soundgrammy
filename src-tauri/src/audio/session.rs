@@ -571,7 +571,7 @@ impl Session {
                 }
                 if restart && position >= 5.0 {
                     Effect::Seek(0.0)
-                } else if self.queue.cursor == 0 && self.preferences.repeat == Repeat::None {
+                } else if self.queue.tracks.len() == 1 && self.preferences.repeat == Repeat::None {
                     Effect::None
                 } else {
                     self.queue.cursor = (self.queue.cursor + self.queue.tracks.len() as i64 - 1)
@@ -979,7 +979,7 @@ mod tests {
         }
     }
     #[test]
-    fn previous_uses_native_position_and_queue_boundaries() {
+    fn previous_uses_native_position_and_wraps_to_last_track() {
         let mut s = play(&[1, 2]);
         apply(&mut s, Command::Next);
         let a = s.attempt;
@@ -997,6 +997,14 @@ mod tests {
         assert_eq!(s.queue.cursor, 0);
         assert_eq!(
             apply(&mut s, Command::Previous { restart: false }),
+            Effect::Load
+        );
+        assert_eq!(s.queue.cursor, 1);
+        assert_eq!(s.queue.current().unwrap().id, 2);
+
+        let mut single = play(&[1]);
+        assert_eq!(
+            apply(&mut single, Command::Previous { restart: false }),
             Effect::None
         );
     }

@@ -79,6 +79,7 @@ impl Presentation {
             && !matches!(s.status, "error" | "ended" | "idle");
         let previous = s.player.as_ref().is_some_and(|p| {
             p.queue.cursor > 0
+                || p.queue.tracks.len() > 1
                 || p.preferences.repeat != session::Repeat::None
                 || s.current_time_seconds >= 5.0
         });
@@ -421,12 +422,32 @@ mod tests {
         Arc::make_mut(s.player.as_mut().unwrap()).is_playing = false;
         assert!(Presentation::from_snapshot(&s).actions.play);
         s.current_time_seconds = 2.0;
+        Arc::make_mut(s.player.as_mut().unwrap())
+            .queue
+            .tracks
+            .truncate(1);
         assert!(!Presentation::from_snapshot(&s).actions.previous);
         Arc::make_mut(s.player.as_mut().unwrap()).preferences.repeat = session::Repeat::All;
         assert!(Presentation::from_snapshot(&s).actions.previous);
         let empty = Presentation::from_snapshot(&Snapshot::default());
         assert_eq!(empty.actions, Actions::default());
         assert!(empty.identity.is_none());
+    }
+
+    #[test]
+    fn previous_at_first_track_is_available_to_native_media_controls() {
+        let mut s = snapshot();
+        s.current_time_seconds = 2.0;
+        assert!(Presentation::from_snapshot(&s).actions.previous);
+        let Some(Control::Player(command)) = RemoteCommand::Previous.control(&s) else {
+            panic!("previous should be available at the first queue item")
+        };
+        let session = Arc::make_mut(s.player.as_mut().unwrap());
+        assert_eq!(
+            session.apply(*command, 2.0, |e, _| e).unwrap(),
+            session::Effect::Load
+        );
+        assert_eq!(session.queue.cursor, 1);
     }
 
     #[test]
