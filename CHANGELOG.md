@@ -1,5 +1,23 @@
 # Changelog
 
+## [3.2.0](https://github.com/rastuhacode/soundgrammy/compare/v3.1.1...v3.2.0) (2026-09-24)
+
+
+### Features
+
+* add Android back navigation support with hooks for UI components ([f784a94](https://github.com/rastuhacode/soundgrammy/commit/f784a94d0605af74ec999062452f99432844ad49))
+* enhance Android support with platform-specific styles and audio component adjustments ([57485d7](https://github.com/rastuhacode/soundgrammy/commit/57485d7999b9a5e62a5950259ccc5f3a778e703f))
+* implement Android-specific volume preferences and improve volume handling in audio components ([00abfea](https://github.com/rastuhacode/soundgrammy/commit/00abfea63acae0a707c063448e719e840c07b41d))
+* implement exportTrackAndReveal function for improved track exporting on Android ([85d30e7](https://github.com/rastuhacode/soundgrammy/commit/85d30e7d517a3d7d9a64d795720fe9f443d6fe5c))
+* improve task removal handling in PlaybackService and add TaskRemoval utility for better process management ([31a21d9](https://github.com/rastuhacode/soundgrammy/commit/31a21d94a4c689c9a67c3bc696691dd9d3aea168))
+
+
+### Bug Fixes
+
+* enhance thumbnail loading with error handling and caching improvements ([4c3f5b7](https://github.com/rastuhacode/soundgrammy/commit/4c3f5b7cc9dd3e5d31da9b70aa95e748968d89f3))
+* fixed track and scrollbar overlap ([3cc72ef](https://github.com/rastuhacode/soundgrammy/commit/3cc72ef2e2be9b7acc962a85b5c164bd7badf1a9))
+* update previous track logic to handle single track scenarios and improve test coverage ([1a3c5df](https://github.com/rastuhacode/soundgrammy/commit/1a3c5dfd38880252e6dae4d7f2c9fc6a974f3ab6))
+
 ## [3.1.1](https://github.com/rastuhacode/soundgrammy/compare/v3.1.0...v3.1.1) (2026-09-20)
 
 
