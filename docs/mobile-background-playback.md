@@ -21,9 +21,12 @@ Permanent loss and becoming-noisy clear playback intent. Old focus-request callb
 are discarded. The notification shares the MediaSession token and has previous,
 pause, next, and stop actions; seek is exposed through MediaSession.
 
-Active task removal leaves playback running. Activity recreation reattaches through
-native snapshots. Pause/final completion/stop/logout release focus and stop the
-foreground service; service destruction releases its receiver and wake lock.
+Swiping the task away from Android Recents stops the foreground service and ends
+the process, so playback stops and the next launch starts with a fresh WebView.
+Moving the app to the background still permits playback, and ordinary Activity
+recreation reattaches through native snapshots. Pause/final completion/stop/logout
+release focus and stop the foreground service; service destruction releases its
+receiver and wake lock.
 Unexpected service destruction sends native Stop. Temporary interruptions retain
 the service but release its CPU wake lock. Active playback/buffering holds a partial
 wake lock for Rust decoding/network work; it never keeps the display awake.
@@ -93,7 +96,8 @@ rows remain **not run** for this change.
 | Calls/focus competition; pause during interruption | Resume only if still intended; no stale resume after user pause |
 | Wired headphones/Bluetooth removal and route changes | Safe pause/failure, explicit recovery; no unexpected speaker output |
 | Wi-Fi ↔ cellular, offline then online | Verified chunks retained; native recovery or bounded recoverable error |
-| Activity recreation/task removal/reopen | Same process session and position; no extra decoder/queue/accounting task |
+| Activity recreation without task removal | Same process session and position; no extra decoder/queue/accounting task |
+| Swipe task from Recents, then reopen | Audio and notification stop; fresh process shows the UI and starts idle |
 | Logout, notification stop, service destruction | Output, foreground status, focus, and wake resources released |
 | Seek repeatedly; buffer; pause; clear/disable statistics | No time inflation or pre-clear history reappearance; Last.fm at most once per attempt |
 | Force-stop/process death | No automatic playback; fresh process idle |
