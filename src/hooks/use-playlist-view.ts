@@ -14,9 +14,9 @@ import {
 import type { CustomPlaylistId } from '@/stores/playlists-store'
 import { useListenStatsStore } from '@/stores/listen-stats-store'
 import { useMemo, useState } from 'react'
-import { revealItemInDir } from '@tauri-apps/plugin-opener'
 import type { RowSelectionState, SortingState } from '@tanstack/react-table'
 import { api } from '@/lib/api'
+import { exportTrackAndReveal } from '@/lib/export-track'
 import { resolvePlayingSourceIndex } from '@/lib/queue/playing-source-index'
 import { useFilter } from '@/hooks/utils/use-filter'
 import {
@@ -505,8 +505,7 @@ export function usePlaylistView() {
     if (cache.isBusy(track.id)) return
     cache.markBusy([track.id])
     try {
-      const path = await api.exportTrack(track.id)
-      await revealItemInDir(path)
+      await exportTrackAndReveal(track.id)
     }
     catch (error) {
       setActionError(errorMessage(error))

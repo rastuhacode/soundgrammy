@@ -5,7 +5,18 @@ use std::sync::OnceLock;
 // ndk-context retains a raw jobject, so keep its Application global reference
 // alive for the entire process, including activity recreation.
 static CONTEXT: OnceLock<jni::objects::GlobalRef> = OnceLock::new();
+static VM: OnceLock<jni::JavaVM> = OnceLock::new();
 static INITIALIZED: OnceLock<Result<(), String>> = OnceLock::new();
+
+pub(crate) fn java_context(
+) -> Result<(&'static jni::JavaVM, &'static jni::objects::GlobalRef), String> {
+    Ok((
+        VM.get().ok_or("Android Java VM is unavailable")?,
+        CONTEXT
+            .get()
+            .ok_or("Android application context is unavailable")?,
+    ))
+}
 
 #[no_mangle]
 pub extern "system" fn Java_com_soundgrammy_app_MainActivity_initializeNativeStorage(
@@ -25,6 +36,7 @@ pub extern "system" fn Java_com_soundgrammy_app_MainActivity_initializeNativeSto
                 context.as_obj().as_raw().cast(),
             );
         }
+        let _ = VM.set(vm);
         let store = android_native_keyring_store::Store::new().map_err(|e| e.to_string())?;
         keyring_core::set_default_store(store);
         Ok(())

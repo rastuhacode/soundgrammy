@@ -22,3 +22,4 @@
 # Rust JNI resolves this class and methods by name.
 -keep class com.soundgrammy.app.NativeMediaSession { *; }
 -keep class com.soundgrammy.app.NativeMediaSession$Companion { *; }
+-keep class com.soundgrammy.app.AndroidDownloads { *; }
