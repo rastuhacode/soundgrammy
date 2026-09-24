@@ -60,6 +60,22 @@ afterEach(async () => {
 })
 
 describe('React engine composition', () => {
+  it('uses full native gain on Android despite the old stored desktop default', async () => {
+    vi.spyOn(window.navigator, 'userAgent', 'get').mockReturnValue('Mozilla/5.0 (Linux; Android 16)')
+    localStorage.setItem('soundgrammy-volume', '25')
+    const fake = createFakeAudioEngine()
+    await act(async () => {
+      root.render(createElement(AudioEngineProvider, { factory: () => ({ engine: fake.engine }) }, createElement(Probe)))
+    })
+    expect(model.volume).toBe(100)
+    expect(fake.engine.getSnapshot().volumePercent).toBe(100)
+    await act(async () => {
+      model.handleVolumeChange(40)
+    })
+    expect(localStorage.getItem('soundgrammy-volume-android')).toBe('40')
+    expect(localStorage.getItem('soundgrammy-volume')).toBe('25')
+  })
+
   it('drives the complete facade with a fake and no audio element, including persisted mute restore', async () => {
     localStorage.setItem('soundgrammy-volume', '37')
     const fake = createFakeAudioEngine()
