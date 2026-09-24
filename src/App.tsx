@@ -26,6 +26,7 @@ import { startPlaylistJobsListeners } from '@/stores/playlist-jobs-store'
 import { useConnectivityStore } from '@/stores/connectivity-store'
 import { useTelegramReconnect } from '@/hooks/use-telegram-reconnect'
 import { useLastFmIntegration } from '@/hooks/use-lastfm-integration'
+import { useAndroidBackAction } from '@/hooks/use-android-back'
 import {
   SplitterGroup,
   SplitterPanel,
@@ -62,6 +63,9 @@ export default function App() {
     getInitialValueInEffect: false,
   })
   const [compactPlaylistOpen, setCompactPlaylistOpen] = useState(false)
+  useAndroidBackAction(status === 'ready' && isCompact && compactPlaylistOpen, () => {
+    setCompactPlaylistOpen(false)
+  })
   const session = useSessionStore(state => state.session)
   const setSession = useSessionStore(state => state.setSession)
   const clearSession = useSessionStore(state => state.clearSession)

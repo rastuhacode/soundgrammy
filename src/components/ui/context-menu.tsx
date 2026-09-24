@@ -3,9 +3,11 @@ import { ContextMenu as ContextMenuPrimitive } from '@base-ui/react/context-menu
 import { CheckIcon, ChevronRightIcon } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
+import { useAndroidBackOverlay } from '@/hooks/use-android-back'
 
-function ContextMenu({ ...props }: ContextMenuPrimitive.Root.Props) {
-  return <ContextMenuPrimitive.Root data-slot="context-menu" {...props} />
+function ContextMenu(props: ContextMenuPrimitive.Root.Props) {
+  const back = useAndroidBackOverlay<ContextMenuPrimitive.Root.Actions, ContextMenuPrimitive.Root.ChangeEventDetails>(props)
+  return <ContextMenuPrimitive.Root data-slot="context-menu" {...props} {...back} />
 }
 
 function ContextMenuPortal({ ...props }: ContextMenuPrimitive.Portal.Props) {
@@ -107,9 +109,10 @@ function ContextMenuItem({
   )
 }
 
-function ContextMenuSub({ ...props }: ContextMenuPrimitive.SubmenuRoot.Props) {
+function ContextMenuSub(props: ContextMenuPrimitive.SubmenuRoot.Props) {
+  const back = useAndroidBackOverlay<ContextMenuPrimitive.Root.Actions, ContextMenuPrimitive.SubmenuRoot.ChangeEventDetails>(props)
   return (
-    <ContextMenuPrimitive.SubmenuRoot data-slot="context-menu-sub" {...props} />
+    <ContextMenuPrimitive.SubmenuRoot data-slot="context-menu-sub" {...props} {...back} />
   )
 }
 
