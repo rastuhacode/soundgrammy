@@ -113,6 +113,18 @@ bun tauri:dev
 The development app uses its own `com.soundgrammy.app.dev` identity, data directory,
 cache and Telegram session to not interfere with production installment.
 
+To develop on a connected Android device, enable USB debugging and run:
+
+```bash
+adb devices -l
+bun tauri:android:dev
+```
+
+Tauri starts Vite, builds the Rust and Android code, installs `com.soundgrammy.app.dev`,
+and opens it on the device. Keep the command running for live frontend updates and
+Rust rebuilds; press Ctrl-C to stop it. The first Android build can take several
+minutes. The debug application ID suffix lets it coexist with the production app.
+
 ### Quality checks
 
 ```bash

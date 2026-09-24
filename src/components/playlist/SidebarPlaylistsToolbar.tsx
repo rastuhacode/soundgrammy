@@ -56,7 +56,7 @@ export function SidebarPlaylistsToolbar({
             aria-label={title}
             title={title}
             variant="ghost"
-            size="icon-sm"
+            size="icon"
             className="text-muted-foreground hover:text-foreground"
           >
             { hasActiveFilters ? <FunnelX /> : <Funnel />}

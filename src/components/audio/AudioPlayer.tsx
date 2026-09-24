@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
-import { useMediaQuery } from '@mantine/hooks'
 import { AudioEngineProvider } from '@/hooks/audio/engine-factory'
 import { useAudioEngine } from '@/hooks/use-audio-engine'
+import { useCompactDisplay } from '@/hooks/use-compact-display'
 import { useFullscreenStore } from '@/stores/fullscreen-store'
 import { usePlayerStore } from '@/stores/player-store'
 import { AudioFullscreenPlayer } from '../fullscreen/AudioFullscreenPlayer'
@@ -29,9 +29,7 @@ function AudioPlayerContent() {
   const commandError = usePlayerStore(state => state.commandError)
   const isFullscreen = useFullscreenStore(state => state.isFullscreen)
   const exitFullscreen = useFullscreenStore(state => state.exitFullscreen)
-  const isCompact = useMediaQuery('(max-width: 47.999rem)', undefined, {
-    getInitialValueInEffect: false,
-  })
+  const isCompact = useCompactDisplay()
   const {
     currentTime,
     duration,

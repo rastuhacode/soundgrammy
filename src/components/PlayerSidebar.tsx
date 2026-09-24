@@ -97,13 +97,13 @@ export function PlayerSidebar(props: { onLogout: () => void, onSelectPlaylist: (
           />
           <Button
             variant="ghost"
-            size="icon-sm"
+            size="icon"
             onClick={() => setDialogState({ mode: 'create' })}
             aria-label={title}
             title={title}
             className="text-muted-foreground hover:text-foreground"
           >
-            <Plus />
+            <Plus className="size-4" />
           </Button>
         </div>
       </div>
