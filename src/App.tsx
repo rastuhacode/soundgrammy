@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { useMediaQuery } from '@mantine/hooks'
 import { Loader2 } from 'lucide-react'
 import { MtprotoLogin } from '@/components/auth/MtprotoLogin'
 import { PlayerSidebar } from '@/components/PlayerSidebar'
@@ -27,6 +26,7 @@ import { useConnectivityStore } from '@/stores/connectivity-store'
 import { useTelegramReconnect } from '@/hooks/use-telegram-reconnect'
 import { useLastFmIntegration } from '@/hooks/use-lastfm-integration'
 import { useAndroidBackAction } from '@/hooks/use-android-back'
+import { useCompactDisplay } from '@/hooks/use-compact-display'
 import {
   SplitterGroup,
   SplitterPanel,
@@ -59,9 +59,7 @@ async function loadLibrary(firstLoad: boolean) {
 
 export default function App() {
   const [status, setStatus] = useState<AppStatus>('loading')
-  const isCompact = useMediaQuery('(max-width: 47.999rem)', undefined, {
-    getInitialValueInEffect: false,
-  })
+  const { isCompact } = useCompactDisplay()
   const [compactPlaylistOpen, setCompactPlaylistOpen] = useState(false)
   useAndroidBackAction(status === 'ready' && isCompact && compactPlaylistOpen, () => {
     setCompactPlaylistOpen(false)
@@ -238,7 +236,7 @@ export default function App() {
 
   if (status === 'loading') {
     return (
-      <div className="hifi-bg android-app-inset flex min-h-screen items-center justify-center">
+      <div className="hifi-bg flex min-h-screen items-center justify-center">
         <Loader2 className="size-6 animate-spin text-primary" />
       </div>
     )
@@ -249,7 +247,7 @@ export default function App() {
   }
 
   return (
-    <div className="hifi-bg android-app-inset flex h-dvh w-full flex-col overflow-hidden">
+    <div className="hifi-bg flex h-dvh w-full flex-col overflow-hidden">
       {!isCompact
         ? (
             <SplitterGroup

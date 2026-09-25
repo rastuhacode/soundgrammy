@@ -184,7 +184,7 @@ export function PlaylistToolbar({
             </p>
           </div>
 
-          <div className="android-toolbar-actions flex min-w-43 grow items-center gap-1">
+          <div className="flex min-w-43 grow items-center gap-1">
             {selectionMode
               ? (
                   <>

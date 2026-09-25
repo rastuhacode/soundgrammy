@@ -137,9 +137,9 @@ export function SidebarDrawer({ onLogout }: SidebarDrawerProps) {
               size="icon"
               aria-label="Open navigation menu"
               title="Menu"
-              className="-ml-1 text-muted-foreground hover:text-foreground"
+              className="text-muted-foreground hover:text-foreground"
             >
-              <Menu className="size-5" />
+              <Menu className="size-4" />
             </Button>
           )}
         />

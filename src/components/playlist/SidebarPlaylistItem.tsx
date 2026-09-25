@@ -1,11 +1,16 @@
-import { Ellipsis } from 'lucide-react'
+import { Ellipsis, EyeOff, FileDown, Pencil, Trash2 } from 'lucide-react'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
+import { useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import {
-  openContextMenuFromPointerEvent,
-  SidebarPlaylistContextMenu,
-} from '@/components/playlist/SidebarPlaylistContextMenu'
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu'
+import { useTouchScreen } from '@/hooks/use-touch-screen'
+import { SidebarPlaylistContextMenu } from '@/components/playlist/SidebarPlaylistContextMenu'
 import {
   SidebarPlaylistThumbnail,
   type SidebarPlaylistThumbnailVariant,
@@ -44,6 +49,8 @@ export function SidebarPlaylistItem({
   isDeleting,
   sortable = false,
 }: SidebarPlaylistItemProps) {
+  const touchScreen = useTouchScreen()
+  const lastTouchAt = useRef<number | null>(null)
   const {
     attributes,
     listeners,
@@ -69,6 +76,7 @@ export function SidebarPlaylistItem({
       canHide={canHide}
       canExport={canExport}
       isDeleting={isDeleting}
+      disabled={touchScreen}
       onEdit={onEdit}
       onDelete={onDelete}
       onHide={onHide}
@@ -91,6 +99,14 @@ export function SidebarPlaylistItem({
         aria-label={`Select ${name} playlist`}
         tabIndex={0}
         onClick={onSelect}
+        onPointerDown={(event) => {
+          lastTouchAt.current = event.pointerType === 'touch' ? Date.now() : null
+        }}
+        onContextMenuCapture={(event) => {
+          if (!touchScreen && (lastTouchAt.current === null || Date.now() - lastTouchAt.current > 1000)) return
+          event.preventDefault()
+          event.stopPropagation()
+        }}
         onKeyDown={(e) => {
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault()
@@ -123,19 +139,48 @@ export function SidebarPlaylistItem({
           <div className="flex size-9 shrink-0 items-center justify-center md:size-6">
             {hasMenu
               ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon-xs"
-                    aria-label={`${name} options`}
-                    className="touch-visible-option size-9 text-muted-foreground opacity-100 transition-opacity md:size-6 md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
-                    onClick={(e) => {
-                      openContextMenuFromPointerEvent(e, e.currentTarget)
-                    }}
-                    onPointerDown={e => e.stopPropagation()}
-                  >
-                    <Ellipsis className="size-4" />
-                  </Button>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger render={(
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="icon-xs"
+                        aria-label={`${name} options`}
+                        className="touch-visible-option size-9 text-muted-foreground opacity-100 transition-opacity md:size-6 md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100"
+                        onClick={event => event.stopPropagation()}
+                        onPointerDown={event => event.stopPropagation()}
+                      >
+                        <Ellipsis className="size-4" />
+                      </Button>
+                    )}
+                    />
+                    <DropdownMenuContent className="w-44" align="end">
+                      {canEdit && onEdit && (
+                        <DropdownMenuItem onClick={onEdit}>
+                          <Pencil className="size-4" />
+                          Edit playlist
+                        </DropdownMenuItem>
+                      )}
+                      {canExport && onExport && (
+                        <DropdownMenuItem onClick={onExport}>
+                          <FileDown className="size-4" />
+                          Export playlist
+                        </DropdownMenuItem>
+                      )}
+                      {canDelete && onDelete && (
+                        <DropdownMenuItem variant="destructive" disabled={isDeleting} onClick={onDelete}>
+                          <Trash2 className="size-4" />
+                          Delete playlist
+                        </DropdownMenuItem>
+                      )}
+                      {canHide && onHide && (
+                        <DropdownMenuItem onClick={onHide}>
+                          <EyeOff className="size-4" />
+                          Hide playlist
+                        </DropdownMenuItem>
+                      )}
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 )
               : null}
           </div>

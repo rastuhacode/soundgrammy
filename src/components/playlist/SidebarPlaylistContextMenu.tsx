@@ -21,6 +21,7 @@ export interface SidebarPlaylistContextMenuProps {
   canHide: boolean
   canExport?: boolean
   isDeleting?: boolean
+  disabled?: boolean
   onEdit?: () => void
   onDelete?: () => void
   onHide?: () => void
@@ -34,6 +35,7 @@ export function SidebarPlaylistContextMenu({
   canHide,
   canExport,
   isDeleting,
+  disabled,
   onEdit,
   onDelete,
   onHide,
@@ -46,7 +48,7 @@ export function SidebarPlaylistContextMenu({
   }
 
   return (
-    <ContextMenu>
+    <ContextMenu disabled={disabled}>
       <ContextMenuTrigger className="contents">
         {children}
       </ContextMenuTrigger>

@@ -29,12 +29,15 @@ import {
 } from '@tanstack/react-table'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useMemo, useRef } from 'react'
+import { useTouchScreen } from '@/hooks/use-touch-screen'
 import type { Track } from '@/lib/db'
 import type { ResolvedSelectedPlaylist } from '@/stores/playlists-store'
 import { cn } from '@/lib/utils'
 import { Checkbox } from '@/components/ui/checkbox'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { PlaylistTrackContextMenu } from './PlaylistTrackContextMenu'
+import { PlaylistTrackDropdownMenu } from './PlaylistTrackDropdownMenu'
 import {
   TRACK_GRID_CLASS,
   TRACK_GRID_CLASS_SELECT,
@@ -59,9 +62,6 @@ const restrictToVerticalAxis: Modifier = ({ transform }) => ({
   ...transform,
   x: 0,
 })
-
-// Overlay scrollbars have zero measured width but still cover the scroll area.
-const TRACK_SCROLL_GUTTER = 16
 
 export interface PlaylistTracksTableProps {
   tracks: Track[]
@@ -129,20 +129,7 @@ export function PlaylistTracksTable({
   onShowInfo,
 }: PlaylistTracksTableProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
-  const [scrollbarWidth, setScrollbarWidth] = useState(0)
-
-  useEffect(() => {
-    const scrollElement = scrollRef.current
-    if (!scrollElement) return
-
-    const updateScrollbarWidth = () => {
-      setScrollbarWidth(scrollElement.offsetWidth - scrollElement.clientWidth)
-    }
-    const observer = new ResizeObserver(updateScrollbarWidth)
-    observer.observe(scrollElement)
-    updateScrollbarWidth()
-    return () => observer.disconnect()
-  }, [])
+  const touchScreen = useTouchScreen()
 
   const columns = useMemo<ColumnDef<typeof playlistTableFeatures, Track>[]>(() => {
     const defs: ColumnDef<typeof playlistTableFeatures, Track>[] = []
@@ -160,6 +147,15 @@ export function PlaylistTracksTable({
             aria-label="Select all tracks"
           />
         ),
+        cell: () => null,
+        enableSorting: false,
+        size: 36,
+      })
+    }
+    else if (touchScreen && canReorder) {
+      defs.push({
+        id: 'drag',
+        header: () => <span className="sr-only">Reorder tracks</span>,
         cell: () => null,
         enableSorting: false,
         size: 36,
@@ -206,7 +202,7 @@ export function PlaylistTracksTable({
     )
 
     return defs
-  }, [selectionMode])
+  }, [selectionMode, touchScreen, canReorder])
 
   const table = useTable({
     features: playlistTableFeatures,
@@ -251,7 +247,7 @@ export function PlaylistTracksTable({
     overscan: 8,
   })
 
-  const headerGridClass = selectionMode
+  const headerGridClass = selectionMode || (touchScreen && canReorder)
     ? TRACK_GRID_CLASS_SELECT
     : TRACK_GRID_CLASS
 
@@ -281,12 +277,11 @@ export function PlaylistTracksTable({
     <div
       role="table"
       aria-label={`${currentPlaylist.name} tracks`}
-      className="flex min-h-0 min-w-0 grow flex-col px-2 md:px-4"
+      className="flex min-h-0 min-w-0 grow flex-col px-2 md:px-4 pb-2 md:pb-4"
     >
       <div
         role="rowgroup"
         className="mb-2 shrink-0 rounded-md bg-sidebar px-1"
-        style={{ marginRight: scrollbarWidth + TRACK_SCROLL_GUTTER }}
       >
         <div
           role="row"
@@ -297,7 +292,7 @@ export function PlaylistTracksTable({
               const canSort = header.column.getCanSort()
               const sorted = header.column.getIsSorted()
 
-              if (header.id === 'select') {
+              if (header.id === 'select' || header.id === 'drag') {
                 return (
                   <div
                     key={header.id}
@@ -351,10 +346,11 @@ export function PlaylistTracksTable({
         </div>
       </div>
 
-      <div
-        ref={scrollRef}
-        className="min-h-0 grow overflow-x-hidden overflow-y-auto pb-4"
-        style={{ paddingRight: TRACK_SCROLL_GUTTER }}
+      <ScrollArea
+        className="min-h-0 grow"
+        viewportRef={scrollRef}
+
+        viewportStyle={{ overflowX: 'hidden' }}
       >
         <DndContext
           sensors={sensors}
@@ -380,26 +376,29 @@ export function PlaylistTracksTable({
                 const isSelected = row.getIsSelected()
                 const sortableId = rowSortableIds[row.index]
                 if (!sortableId) return null
+                const menuProps = {
+                  track,
+                  sourceIndex,
+                  isLiked: isTrackLiked(track.id),
+                  currentPlaylist,
+                  customPlaylists,
+                  onSelect: onEnterSelection,
+                  onToggleLike,
+                  onAddToPlaylist,
+                  onDeleteFromPlaylist,
+                  onPlayNext,
+                  onAddToEnd,
+                  onCache,
+                  onDownload,
+                  onRemoveFromCache,
+                  onShowInfo,
+                }
 
                 return (
                   <PlaylistTrackContextMenu
-                    disabled={selectionMode}
+                    disabled={selectionMode || touchScreen}
                     key={sortableId}
-                    track={track}
-                    sourceIndex={sourceIndex}
-                    isLiked={isTrackLiked(track.id)}
-                    currentPlaylist={currentPlaylist}
-                    customPlaylists={customPlaylists}
-                    onSelect={onEnterSelection}
-                    onToggleLike={onToggleLike}
-                    onAddToPlaylist={onAddToPlaylist}
-                    onDeleteFromPlaylist={onDeleteFromPlaylist}
-                    onPlayNext={onPlayNext}
-                    onAddToEnd={onAddToEnd}
-                    onCache={onCache}
-                    onDownload={onDownload}
-                    onRemoveFromCache={onRemoveFromCache}
-                    onShowInfo={onShowInfo}
+                    {...menuProps}
                   >
                     <PlaylistTrackRow
                       virtualStart={virtualRow.start}
@@ -409,7 +408,12 @@ export function PlaylistTracksTable({
                       isPlaying={isPlaying}
                       isSelected={isSelected}
                       selectionMode={selectionMode}
+                      touchScreen={touchScreen}
                       canReorder={canReorder}
+                      onEnterSelection={() => onEnterSelection(sourceIndex)}
+                      touchOptions={touchScreen
+                        ? <PlaylistTrackDropdownMenu {...menuProps} />
+                        : undefined}
                       onRowClick={() => {
                         if (selectionMode) {
                           row.toggleSelected(!isSelected)
@@ -427,7 +431,7 @@ export function PlaylistTracksTable({
             </div>
           </SortableContext>
         </DndContext>
-      </div>
+      </ScrollArea>
     </div>
   )
 }

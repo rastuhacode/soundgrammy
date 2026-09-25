@@ -122,7 +122,7 @@ export function SaveQueueAsPlaylistDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-md">
+      <DialogContent className="z-[100] sm:max-w-md" overlayClassName="z-[90]">
         <DialogHeader>
           <DialogTitle>Save queue as playlist</DialogTitle>
           <DialogDescription>

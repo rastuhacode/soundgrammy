@@ -2,7 +2,8 @@ import type { Track } from '@/lib/db'
 import { cn } from '@/lib/utils'
 import { useSortable } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
-import { Ellipsis, Play } from 'lucide-react'
+import { Ellipsis, GripVertical, Play } from 'lucide-react'
+import { useEffect, useRef } from 'react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { openContextMenuFromPointerEvent } from './SidebarPlaylistContextMenu'
@@ -22,10 +23,15 @@ export interface PlaylistTrackRowViewProps {
   isPlaying: boolean
   isSelected: boolean
   selectionMode: boolean
+  touchScreen?: boolean
+  canReorder?: boolean
   className?: string
   style?: React.CSSProperties
   onRowClick?: () => void
   onToggleSelected?: (selected: boolean) => void
+  onEnterSelection?: () => void
+  onTouchDragStart?: React.TouchEventHandler<HTMLButtonElement>
+  touchOptions?: React.ReactNode
 }
 
 /** Presentational track row. */
@@ -35,11 +41,30 @@ export function PlaylistTrackRowView({
   isPlaying,
   isSelected,
   selectionMode,
+  touchScreen = false,
+  canReorder = false,
   className,
   style,
   onRowClick,
   onToggleSelected,
+  onEnterSelection,
+  onTouchDragStart,
+  touchOptions,
 }: PlaylistTrackRowViewProps) {
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const touchStart = useRef<{ x: number, y: number } | null>(null)
+  const suppressClick = useRef(false)
+  const lastTouchAt = useRef<number | null>(null)
+  const clearLongPress = () => {
+    if (longPressTimer.current !== null) clearTimeout(longPressTimer.current)
+    longPressTimer.current = null
+    touchStart.current = null
+  }
+
+  useEffect(() => () => {
+    if (longPressTimer.current !== null) clearTimeout(longPressTimer.current)
+  }, [])
+
   const showEqualizer = isActive && isPlaying
   const trackTitle = track.title ?? 'Unknown Title'
   const trackArtist = track.performer ?? 'Unknown Artist'
@@ -48,7 +73,41 @@ export function PlaylistTrackRowView({
     <div
       role="row"
       tabIndex={onRowClick ? 0 : -1}
-      onClick={onRowClick}
+      onClick={() => {
+        if (suppressClick.current) {
+          suppressClick.current = false
+          return
+        }
+        onRowClick?.()
+      }}
+      onPointerDown={(event) => {
+        lastTouchAt.current = event.pointerType === 'touch' ? Date.now() : null
+        suppressClick.current = false
+        if (event.pointerType !== 'touch' || selectionMode || !onEnterSelection) return
+        clearLongPress()
+        touchStart.current = { x: event.clientX, y: event.clientY }
+        longPressTimer.current = setTimeout(() => {
+          longPressTimer.current = null
+          touchStart.current = null
+          suppressClick.current = true
+          onEnterSelection()
+        }, 500)
+      }}
+      onPointerMove={(event) => {
+        if (!touchStart.current) return
+        if (Math.abs(event.clientX - touchStart.current.x) > 10
+          || Math.abs(event.clientY - touchStart.current.y) > 10) {
+          clearLongPress()
+        }
+      }}
+      onPointerUp={clearLongPress}
+      onPointerCancel={clearLongPress}
+      onTouchStart={event => event.stopPropagation()}
+      onContextMenuCapture={(event) => {
+        if (!touchScreen && (lastTouchAt.current === null || Date.now() - lastTouchAt.current > 1000)) return
+        event.preventDefault()
+        event.stopPropagation()
+      }}
       onKeyDown={(event) => {
         if (!onRowClick) return
         if (event.key === 'Enter' || event.key === ' ') {
@@ -66,7 +125,9 @@ export function PlaylistTrackRowView({
       }
       className={cn(
         'group relative grid w-full cursor-default items-center gap-2 rounded-lg px-2 transition-colors md:gap-3 md:px-2.5',
-        selectionMode ? TRACK_GRID_CLASS_SELECT : TRACK_GRID_CLASS,
+        selectionMode || (touchScreen && canReorder)
+          ? TRACK_GRID_CLASS_SELECT
+          : TRACK_GRID_CLASS,
         'border-2 border-transparent hover:bg-card/70',
         isSelected && 'border-primary/50 bg-primary/8',
         isActive && !isSelected && 'bg-accent/40',
@@ -91,6 +152,23 @@ export function PlaylistTrackRowView({
             aria-label={`Select ${track.title ?? 'track'}`}
             className="animate-in fade-in-0 zoom-in-95 duration-150"
           />
+        </div>
+      )}
+
+      {!selectionMode && touchScreen && canReorder && (
+        <div role="cell" className="flex size-full items-center justify-center">
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            aria-label={`Drag ${track.title ?? 'track'} to reorder`}
+            className="size-9 text-muted-foreground touch-none"
+            onPointerDown={event => event.stopPropagation()}
+            onTouchStart={onTouchDragStart}
+            onClick={event => event.stopPropagation()}
+          >
+            <GripVertical className="size-4" />
+          </Button>
         </div>
       )}
 
@@ -157,23 +235,29 @@ export function PlaylistTrackRowView({
       </div>
 
       <div role="cell" className="flex justify-center">
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-xs"
-          aria-label={`${track.title ?? 'Track'} options`}
-          aria-haspopup="menu"
-          className={cn(
-            'text-muted-foreground opacity-0 transition-opacity',
-            !selectionMode && 'touch-visible-option size-9 opacity-100 md:size-6 md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100',
-          )}
-          onClick={(event) => {
-            openContextMenuFromPointerEvent(event, event.currentTarget)
-          }}
-          onPointerDown={event => event.stopPropagation()}
-        >
-          <Ellipsis className="size-4" />
-        </Button>
+        {!selectionMode && touchScreen && touchOptions}
+        {!selectionMode && !touchScreen && (
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon-xs"
+            aria-label={`${track.title ?? 'Track'} options`}
+            aria-haspopup="menu"
+            className={cn(
+              'text-muted-foreground opacity-0 transition-opacity',
+              !selectionMode && 'touch-visible-option size-9 opacity-100 md:size-6 md:opacity-0 md:group-hover:opacity-100 md:focus-visible:opacity-100',
+            )}
+            onClick={(event) => {
+              openContextMenuFromPointerEvent(event, event.currentTarget)
+            }}
+            onPointerDown={(event) => {
+              lastTouchAt.current = event.pointerType === 'touch' ? Date.now() : null
+              event.stopPropagation()
+            }}
+          >
+            <Ellipsis className="size-4" />
+          </Button>
+        )}
       </div>
     </div>
   )
@@ -186,11 +270,14 @@ export interface PlaylistTrackRowProps {
   isPlaying: boolean
   isSelected: boolean
   selectionMode: boolean
+  touchScreen: boolean
   canReorder: boolean
   virtualStart: number
   className?: string
   onRowClick: () => void
   onToggleSelected: (selected: boolean) => void
+  onEnterSelection: () => void
+  touchOptions?: React.ReactNode
 }
 
 export function PlaylistTrackRow({
@@ -200,11 +287,14 @@ export function PlaylistTrackRow({
   isPlaying,
   isSelected,
   selectionMode,
+  touchScreen,
   canReorder,
   virtualStart,
   className,
   onRowClick,
   onToggleSelected,
+  onEnterSelection,
+  touchOptions,
 }: PlaylistTrackRowProps) {
   const {
     attributes,
@@ -242,11 +332,18 @@ export function PlaylistTrackRow({
         isPlaying={isPlaying}
         isSelected={isSelected}
         selectionMode={selectionMode}
+        touchScreen={touchScreen}
+        canReorder={canReorder}
         className={cn(
           isDragging && 'cursor-grabbing bg-muted opacity-95 shadow-md',
         )}
         onRowClick={onRowClick}
         onToggleSelected={onToggleSelected}
+        onEnterSelection={onEnterSelection}
+        touchOptions={touchOptions}
+        onTouchDragStart={canReorder && listeners?.onTouchStart
+          ? event => listeners.onTouchStart(event)
+          : undefined}
       />
     </div>
   )
