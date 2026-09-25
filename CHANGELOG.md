@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.3.0](https://github.com/rastuhacode/soundgrammy/compare/v3.2.0...v3.3.0) (2026-09-25)
+
+
+### Features
+
+* add PlaylistTrackDropdownMenu component and enhance track options handling in playlist UI ([220a139](https://github.com/rastuhacode/soundgrammy/commit/220a1390887e47b4ea315833fa9009443a860bd2))
+* add touch screen support and enhance playlist interaction with long press selection ([5d24085](https://github.com/rastuhacode/soundgrammy/commit/5d24085a5f6b3c7f041e1400715fe0ead15d8e4f))
+
 ## [3.2.0](https://github.com/rastuhacode/soundgrammy/compare/v3.1.1...v3.2.0) (2026-09-24)
 
 
