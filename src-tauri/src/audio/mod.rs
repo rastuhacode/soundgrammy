@@ -43,7 +43,7 @@ pub struct AudioError {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub diagnostic: Option<String>,
 }
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct Range {
     start: f64,
     end: f64,
@@ -110,6 +110,8 @@ pub enum Control {
         enabled: Option<bool>,
         clear: bool,
     },
+    CacheStream(i64, Arc<crate::streaming::TrackStream>),
+    CacheReady(i64),
     Stop,
     Complete(u64),
     Sync,
@@ -141,6 +143,10 @@ impl Envelope {
         matches!(self.control, Control::Remote(_) | Control::Lifecycle(_))
             || self.page_epoch == page
             || matches!(self.control, Control::Complete(_))
+            || matches!(
+                self.control,
+                Control::CacheStream(_, _) | Control::CacheReady(_)
+            )
             || matches!(&self.control, Control::Player(command) if matches!(command.as_ref(), session::Command::Clear))
     }
 }
@@ -161,6 +167,23 @@ pub struct NativeAudioService {
     protection: Arc<Mutex<Option<(u64, PathBuf)>>>,
 }
 impl NativeAudioService {
+    pub async fn observe_cache(
+        &self,
+        app: AppHandle,
+        track_id: i64,
+        stream: Arc<crate::streaming::TrackStream>,
+    ) {
+        if self.snapshot().track_id == Some(track_id) {
+            let _ = self
+                .command(app, Control::CacheStream(track_id, stream))
+                .await;
+        }
+    }
+    pub async fn cache_ready(&self, app: AppHandle, track_id: i64) {
+        if self.snapshot().track_id == Some(track_id) {
+            let _ = self.command(app, Control::CacheReady(track_id)).await;
+        }
+    }
     pub fn clear_session(&self) {
         self.epochs.session.fetch_add(1, Ordering::AcqRel);
         self.epochs.page.fetch_add(1, Ordering::AcqRel);
@@ -337,14 +360,62 @@ struct Pipeline {
     waiting_seek: bool,
     seek_started: Option<Instant>,
     availability: Arc<availability::Availability>,
+    observer: Option<CoverageObserver>,
     source_diagnostic: Arc<Mutex<Option<String>>>,
+}
+// The packet scanner can outlive mobile audio output while a paused track caches.
+struct CoverageObserver {
+    active: Arc<AtomicBool>,
+    availability: Arc<availability::Availability>,
+}
+impl Drop for CoverageObserver {
+    fn drop(&mut self) {
+        self.active.store(false, Ordering::Release);
+        self.availability.scan_seek.cancel_read();
+    }
+}
+fn refresh_paused_buffer(snapshot: &mut Snapshot, observer: Option<&CoverageObserver>) -> bool {
+    let Some(observer) = observer else {
+        return false;
+    };
+    let ranges = observer.availability.ranges(snapshot.duration_seconds);
+    if snapshot.buffered_ranges == ranges {
+        return false;
+    }
+    snapshot.buffered_ranges = ranges;
+    true
+}
+fn reconnect_cache_observer(
+    snapshot: &Snapshot,
+    has_pipeline: bool,
+    paused: &mut Option<CoverageObserver>,
+    track_id: i64,
+    spawn: impl FnOnce(Arc<AtomicBool>, Arc<availability::Availability>) -> std::io::Result<()>,
+) -> bool {
+    if snapshot.track_id != Some(track_id) || snapshot.status != "paused" || has_pipeline {
+        return false;
+    }
+    let availability = Arc::new(availability::Availability::default());
+    if let Some(previous) = paused.as_ref() {
+        for range in previous.availability.ranges(snapshot.duration_seconds) {
+            availability.record(range.start, range.end);
+        }
+    }
+    let active = Arc::new(AtomicBool::new(true));
+    if spawn(active.clone(), availability.clone()).is_err() {
+        return false;
+    }
+    *paused = Some(CoverageObserver {
+        active,
+        availability,
+    });
+    true
 }
 impl Drop for Pipeline {
     fn drop(&mut self) {
         self.output.clock.playing.store(false, Ordering::Release);
         self.active.store(false, Ordering::Release);
         self.seek.cancel_read();
-        self.availability.scan_seek.cancel_read();
         if let Some(worker) = self.decoder.take() {
             let deadline = Instant::now() + Duration::from_millis(250);
             while !worker.is_finished() && Instant::now() < deadline {
@@ -373,9 +444,11 @@ fn pipeline(
     let clock = output.clock.clone();
     let seek = Arc::new(seek::SeekControl::default());
     let availability = Arc::new(availability::Availability::default());
+    let observer_active = Arc::new(AtomicBool::new(true));
     let source_diagnostic = Arc::new(Mutex::new(None));
     let decoder_seek = seek.clone();
     let decoder_availability = availability.clone();
+    let decoder_observer_active = observer_active.clone();
     let decoder_diagnostic = source_diagnostic.clone();
     let decoder = std::thread::Builder::new()
         .name("native-audio-decode".into())
@@ -386,6 +459,7 @@ fn pipeline(
                     track,
                     generation,
                     token.clone(),
+                    decoder_observer_active,
                     decoder_seek.clone(),
                     decoder_availability.clone(),
                     decoder_diagnostic,
@@ -426,7 +500,11 @@ fn pipeline(
         seek_revision: 0,
         waiting_seek: false,
         seek_started: None,
-        availability,
+        availability: availability.clone(),
+        observer: Some(CoverageObserver {
+            active: observer_active,
+            availability,
+        }),
         source_diagnostic,
     })
 }
@@ -491,6 +569,7 @@ fn run(
     let mut snapshot = Snapshot::default();
     let mut request: Option<Request> = None;
     let mut current: Option<Pipeline> = None;
+    let mut paused_observer: Option<CoverageObserver> = None;
     let mut generation = 0;
     let mut desired = false;
     let mut lifecycle = lifecycle::Policy::default();
@@ -620,6 +699,7 @@ fn run(
                     activity.finish(&app, crate::listen_stats::EndReason::Stopped);
                     desired = false;
                     current = None;
+                    paused_observer = None;
                     snapshot.current_time_seconds = 0.0;
                     snapshot.status = "paused";
                     snapshot.seeking = false;
@@ -630,6 +710,9 @@ fn run(
                 Control::Lifecycle(event) => {
                     if lifecycle.apply(event) {
                         desired = false;
+                        if let Some(p) = current.as_mut() {
+                            paused_observer = p.observer.take();
+                        }
                         current = None;
                     }
                     if !lifecycle.blocked() && desired && current.is_none() {
@@ -659,6 +742,36 @@ fn run(
                     }
                     state.audio.accounting_epoch.fetch_add(1, Ordering::AcqRel);
                     activity.settings(&app);
+                }
+                Control::CacheStream(track_id, stream) => {
+                    reconnect_cache_observer(
+                        &snapshot,
+                        current.is_some(),
+                        &mut paused_observer,
+                        track_id,
+                        |active, availability| {
+                            source::spawn_observer(
+                                stream,
+                                active,
+                                availability,
+                                Arc::new(Mutex::new(None)),
+                            )
+                        },
+                    );
+                }
+                Control::CacheReady(track_id) => {
+                    if snapshot.track_id == Some(track_id) && snapshot.duration_seconds > 0.0 {
+                        if let Some(p) = current.as_ref() {
+                            p.availability.complete.store(true, Ordering::Release);
+                        }
+                        if let Some(p) = paused_observer.as_ref() {
+                            p.availability.complete.store(true, Ordering::Release);
+                        }
+                        snapshot.buffered_ranges = vec![Range {
+                            start: 0.0,
+                            end: snapshot.duration_seconds,
+                        }];
+                    }
                 }
                 Control::Sync => {
                     if snapshot.status == "ended" && !session.is_playing {
@@ -701,6 +814,7 @@ fn run(
                     lifecycle.apply(lifecycle::Event::PermanentLoss);
                     activity.finish(&app, crate::listen_stats::EndReason::Stopped);
                     current = None;
+                    paused_observer = None;
                     request = None;
                     desired = false;
                     ended = false;
@@ -731,6 +845,10 @@ fn run(
                     if cfg!(any(target_os = "android", target_os = "ios"))
                         || matches!(snapshot.status, "loading" | "buffering")
                     {
+                        // Keep mapping verified chunks after releasing the output pipeline.
+                        if let Some(p) = current.as_mut() {
+                            paused_observer = p.observer.take();
+                        }
                         current = None;
                     }
                     if request.is_some() && snapshot.status != "error" {
@@ -789,6 +907,7 @@ fn run(
                 );
             }
             if let Some(origin) = restart {
+                paused_observer = None;
                 current = None;
                 generation += 1;
                 // Install a generation watermark before async source resolution.
@@ -971,6 +1090,7 @@ fn run(
                 }
             }
         }
+        dirty |= refresh_paused_buffer(&mut snapshot, paused_observer.as_ref());
         if let Some((code, diagnostic)) = error {
             current = None;
             desired = false;
@@ -1003,6 +1123,7 @@ fn run(
     );
     activity.finish(&app, crate::listen_stats::EndReason::Interrupted);
     drop(current);
+    drop(paused_observer);
     #[cfg(target_os = "ios")]
     ios::deactivate();
     *protection.lock().unwrap_or_else(|p| p.into_inner()) = None;
@@ -1011,6 +1132,92 @@ fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn detached_cache_scanner_advances_a_paused_native_buffer() {
+        let availability = Arc::new(availability::Availability::default());
+        availability.record(0.0, 5.0);
+        let old_active = Arc::new(AtomicBool::new(true));
+        let mut paused = Some(CoverageObserver {
+            active: old_active.clone(),
+            availability,
+        });
+        let mut snapshot = Snapshot {
+            status: "paused",
+            track_id: Some(7),
+            duration_seconds: 120.0,
+            buffered_ranges: vec![Range {
+                start: 0.0,
+                end: 5.0,
+            }],
+            ..Default::default()
+        };
+        assert!(!reconnect_cache_observer(
+            &snapshot,
+            false,
+            &mut paused,
+            8,
+            |_, _| unreachable!("a different track cannot replace the observer"),
+        ));
+        let mut worker = None;
+        assert!(reconnect_cache_observer(
+            &snapshot,
+            false,
+            &mut paused,
+            7,
+            |active, coverage| {
+                worker = Some(source::spawn_scanner(
+                    Box::new(std::io::Cursor::new(
+                        include_bytes!("../../tests/fixtures/audio/long-tone.mp3").to_vec(),
+                    )),
+                    active,
+                    coverage,
+                )?);
+                Ok(())
+            },
+        ));
+        assert!(!old_active.load(Ordering::Acquire));
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while snapshot.buffered_ranges[0].end <= 60.0 && Instant::now() < deadline {
+            refresh_paused_buffer(&mut snapshot, paused.as_ref());
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert!(snapshot.buffered_ranges[0].end > 60.0);
+        assert_eq!(snapshot.status, "paused");
+        drop(paused);
+        worker.unwrap().join().unwrap();
+    }
+    #[test]
+    fn paused_mobile_observer_keeps_updating_buffer_without_playback() {
+        let availability = Arc::new(availability::Availability::default());
+        let active = Arc::new(AtomicBool::new(true));
+        let observer = CoverageObserver {
+            active: active.clone(),
+            availability: availability.clone(),
+        };
+        let mut snapshot = Snapshot {
+            status: "paused",
+            duration_seconds: 120.0,
+            buffered_ranges: vec![Range {
+                start: 0.0,
+                end: 5.0,
+            }],
+            ..Default::default()
+        };
+
+        availability.record(0.0, 5.0);
+        assert!(!refresh_paused_buffer(&mut snapshot, Some(&observer)));
+        availability.record(5.0, 50.0);
+        assert!(refresh_paused_buffer(&mut snapshot, Some(&observer)));
+        assert_eq!(snapshot.status, "paused");
+        assert_eq!(snapshot.buffered_ranges[0].end, 50.0);
+        assert!(active.load(Ordering::Acquire));
+
+        availability.complete.store(true, Ordering::Release);
+        assert!(refresh_paused_buffer(&mut snapshot, Some(&observer)));
+        assert_eq!(snapshot.buffered_ranges[0].end, 120.0);
+        drop(observer);
+        assert!(!active.load(Ordering::Acquire));
+    }
     #[test]
     fn page_recreation_invalidates_ui_commands_but_not_completion_or_logout() {
         let envelope = |control| {

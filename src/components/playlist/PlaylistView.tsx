@@ -2,6 +2,7 @@ import { revealItemInDir } from '@tauri-apps/plugin-opener'
 import { usePlaylistsStore } from '@/stores/playlists-store'
 import { usePlaylistJobsStore } from '@/stores/playlist-jobs-store'
 import { usePlaylistView } from '@/hooks/use-playlist-view'
+import { useAndroidBackAction } from '@/hooks/use-android-back'
 import {
   Dialog,
   DialogContent,
@@ -77,6 +78,7 @@ export function PlaylistView({ onBack }: { onBack?: () => void }) {
 function PlaylistViewContent({ onBack }: { onBack?: () => void }) {
   const view = usePlaylistView()
   const hasTracks = view.playlistTracks.length > 0
+  useAndroidBackAction(view.selectionMode, view.handleExitSelection)
 
   return (
     <>

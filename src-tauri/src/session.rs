@@ -188,6 +188,37 @@ pub fn clear(data_dir: &Path) -> AppResult<()> {
         .map_err(|e| AppError::msg(format!("failed to clear session: {e}")))
 }
 
+/// Android Auto Backup can restore the encrypted credential and session file
+/// after uninstall, but Android Keystore does not restore their encryption key.
+/// Discard only that unusable login state; keep the SQLite music library.
+#[cfg(target_os = "android")]
+pub fn repair_android_restored_session(data_dir: &Path) -> AppResult<()> {
+    let entry = credential_store::Entry::new(KEYRING_SERVICE, KEYRING_USER)
+        .map_err(|e| AppError::msg(format!("keychain unavailable: {e}")))?;
+
+    let unreadable = match entry.get_password() {
+        Ok(encoded) => B64
+            .decode(encoded.as_bytes())
+            .map_or(true, |key| key.len() != 32),
+        Err(credential_store::Error::NoEntry) => {
+            // A restored session.enc without its key cannot be decrypted.
+            return clear(data_dir);
+        }
+        Err(credential_store::Error::BadDataFormat(_, _))
+        | Err(credential_store::Error::BadEncoding(_)) => true,
+        // A temporarily unavailable credential store must not erase a valid session.
+        Err(_) => return Ok(()),
+    };
+
+    if unreadable {
+        entry
+            .delete_credential()
+            .map_err(|e| AppError::msg(format!("failed to clear unreadable session key: {e}")))?;
+        clear(data_dir)?;
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

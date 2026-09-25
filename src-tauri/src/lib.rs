@@ -56,6 +56,9 @@ pub fn run() {
             std::fs::create_dir_all(&data_dir)?;
             std::fs::create_dir_all(&cache_dir)?;
 
+            #[cfg(target_os = "android")]
+            session::repair_android_restored_session(&data_dir)?;
+
             let db = db::Db::open(&data_dir.join("library.db"))?;
             app.manage(AppState::new(
                 config, db, None, data_dir, cache_dir, false, None,

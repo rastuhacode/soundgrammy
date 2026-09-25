@@ -68,6 +68,7 @@ pub async fn ensure_audio(state: &AppState, app: &AppHandle, track_id: i64) -> A
     let dest = audio_path(state, &track)?;
     if dest.exists() {
         let _ = state.db.touch_audio_cache(track_id);
+        state.audio.cache_ready(app.clone(), track_id).await;
         return Ok(dest);
     }
 
@@ -76,11 +77,16 @@ pub async fn ensure_audio(state: &AppState, app: &AppHandle, track_id: i64) -> A
         .streaming
         .start(app.clone(), track, dest.clone())
         .await?;
+    state
+        .audio
+        .observe_cache(app.clone(), track_id, stream.clone())
+        .await;
     // Start first so a resumable partial for this track is protected from the
     // eviction pass, and reserve only the bytes it is still missing.
     let remaining = stream.total().saturating_sub(stream.received().await);
     let _ = evict_for_room(state, app, remaining).await;
     let path = stream.download_complete().await?;
+    state.audio.cache_ready(app.clone(), track_id).await;
     emit_cache_changed(app, &[track_id], true);
     Ok(path)
 }

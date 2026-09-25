@@ -73,14 +73,19 @@ export function PlaylistTrackRowView({
     <div
       role="row"
       tabIndex={onRowClick ? 0 : -1}
-      onClick={() => {
-        if (suppressClick.current) {
-          suppressClick.current = false
-          return
-        }
+      onClickCapture={(event) => {
+        if (!event.currentTarget.contains(event.target as Node) || !suppressClick.current) return
+        suppressClick.current = false
+        event.preventDefault()
+        event.stopPropagation()
+      }}
+      onClick={(event) => {
+        // Portaled menu items still bubble through this row in React.
+        if (!event.currentTarget.contains(event.target as Node)) return
         onRowClick?.()
       }}
       onPointerDown={(event) => {
+        if (!event.currentTarget.contains(event.target as Node)) return
         lastTouchAt.current = event.pointerType === 'touch' ? Date.now() : null
         suppressClick.current = false
         if (event.pointerType !== 'touch' || selectionMode || !onEnterSelection) return
