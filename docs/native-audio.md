@@ -50,6 +50,10 @@ same process, but are not persisted across process termination.
   two output channels and additional output channels receive silence.
 - `audio/output.rs`: a two-second SPSC PCM ring, 50 ms startup watermark,
   atomic gain, silence on underrun, and a bounded presentation timestamp ledger.
+  Output opens the device's current format first, including mono voice rates
+  when a headset microphone is active. If opening fails, it tries supported
+  alternatives ordered by proximity to the current rate. The converter mixes
+  stereo into mono and resamples to the selected output rate.
   The callback performs no allocation, mutex locking, decoding, I/O, logging,
   network requests, or event emission. CPAL timestamps account for device delay;
   natural completion waits for the final queued frames to be presented.
