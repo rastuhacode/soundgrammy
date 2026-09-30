@@ -1,9 +1,9 @@
 //! Stateful band-limited conversion. Delay is trimmed once, tails flushed once.
 use super::output::sanitize;
-use rubato::{FftFixedInOut, Resampler};
+use rubato::{audioadapter_buffers::direct::SequentialSliceOfVecs, Fft, FixedSync, Resampler};
 
 pub struct Converter {
-    resampler: Option<FftFixedInOut<f32>>,
+    resampler: Option<Fft<f32>>,
     pending: Vec<Vec<f32>>,
     channels: usize,
     input_rate: u32,
@@ -19,8 +19,14 @@ impl Converter {
         }
         let resampler = if input != output {
             Some(
-                FftFixedInOut::new(input as usize, output as usize, 1024, channels)
-                    .map_err(|_| "decode-failed")?,
+                Fft::new(
+                    input as usize,
+                    output as usize,
+                    1024,
+                    channels,
+                    FixedSync::Both,
+                )
+                .map_err(|_| "decode-failed")?,
             )
         } else {
             None
@@ -83,7 +89,20 @@ impl Converter {
                 source.drain(..available);
             }
             let output = match self.resampler.as_mut() {
-                Some(r) => r.process(&input, None).map_err(|_| "decode-failed")?,
+                Some(r) => {
+                    let input = SequentialSliceOfVecs::new(&input, self.channels, chunk)
+                        .map_err(|_| "decode-failed")?;
+                    let mut output = vec![vec![0.0; r.output_frames_next()]; self.channels];
+                    let mut buffer = SequentialSliceOfVecs::new_mut(
+                        &mut output,
+                        self.channels,
+                        r.output_frames_next(),
+                    )
+                    .map_err(|_| "decode-failed")?;
+                    r.process_into_buffer(&input, &mut buffer, None)
+                        .map_err(|_| "decode-failed")?;
+                    output
+                }
                 None => input,
             };
             for frame in 0..output[0].len() {
