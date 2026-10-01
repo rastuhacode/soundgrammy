@@ -267,7 +267,7 @@ export function PlaylistToolbar({
 
   return (
     <div className="flex h-fit w-full min-w-0 shrink-0 items-center gap-4 px-4">
-      <div className="flex min-w-0 shrink items-center gap-2 overflow-x-auto pb-1">
+      <div className="flex min-w-0 shrink items-center gap-2 overflow-x-auto">
         <ToolbarIconButton label="Play" variant="default" onClick={onPlay}>
           <Play className="size-4 text-foreground fill-foreground" />
         </ToolbarIconButton>
