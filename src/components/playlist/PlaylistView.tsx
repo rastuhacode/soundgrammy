@@ -1,3 +1,8 @@
+import { useRef, useState } from 'react'
+import { ArrowLeft, X } from 'lucide-react'
+import { useCompactDisplay } from '@/hooks/use-compact-display'
+import { usePlayerStore } from '@/stores/player-store'
+import { Input } from '@/components/ui/input'
 import { revealItemInDir } from '@tauri-apps/plugin-opener'
 import { usePlaylistsStore } from '@/stores/playlists-store'
 import { usePlaylistJobsStore } from '@/stores/playlist-jobs-store'
@@ -77,8 +82,58 @@ export function PlaylistView({ onBack }: { onBack?: () => void }) {
 
 function PlaylistViewContent({ onBack }: { onBack?: () => void }) {
   const view = usePlaylistView()
+  const [searchOpen, setSearchOpen] = useState(false)
+  const searchInputRef = useRef<HTMLInputElement>(null)
+  const searchButtonRef = useRef<HTMLButtonElement>(null)
+  const { isCompact } = useCompactDisplay()
+  const [previousCompact, setPreviousCompact] = useState(isCompact)
+  const hasPlayer = usePlayerStore(state => state.currentTrack !== null)
   const hasTracks = view.playlistTracks.length > 0
   useAndroidBackAction(view.selectionMode, view.handleExitSelection)
+
+  // Search belongs to the current layout; resizing must not carry a modal query
+  // into the desktop playlist, or leave the compact playlist filtered behind it.
+  if (previousCompact !== isCompact) {
+    setPreviousCompact(isCompact)
+    setSearchOpen(false)
+    view.setSearch('')
+  }
+
+  const handleSearchOpenChange = (open: boolean) => {
+    setSearchOpen(open)
+    if (!open) view.setSearch('')
+  }
+
+  const trackTable = (
+    <PlaylistTracksTable
+      hideHeader={searchOpen}
+      tracks={view.filteredTracks}
+      sourceIndices={view.filteredSourceIndices}
+      currentPlaylist={view.selectedPlaylist}
+      customPlaylists={view.customPlaylists}
+      playingSourceIndex={view.playingSourceIndex}
+      isPlaying={view.isPlaying}
+      isTrackLiked={view.checkTrackLiked}
+      selectionMode={view.selectionMode}
+      rowSelection={view.rowSelection}
+      onRowSelectionChange={view.setRowSelection}
+      sorting={view.sorting}
+      onSortingChange={view.setSorting}
+      canReorder={view.canReorder}
+      onReorderTracks={view.handleReorderTracks}
+      onEnterSelection={view.handleEnterSelection}
+      onTrackPlay={view.handleTrackSelect}
+      onToggleLike={view.handleToggleLike}
+      onAddToPlaylist={view.handleAddToPlaylist}
+      onDeleteFromPlaylist={view.handleDeleteFromPlaylist}
+      onPlayNext={view.handlePlayNext}
+      onAddToEnd={view.handleAddToEnd}
+      onCache={view.handleCache}
+      onDownload={view.handleDownload}
+      onRemoveFromCache={view.handleRemoveFromCache}
+      onShowInfo={view.handleShowInfo}
+    />
+  )
 
   return (
     <>
@@ -89,6 +144,8 @@ function PlaylistViewContent({ onBack }: { onBack?: () => void }) {
             hasTracks={hasTracks}
             search={view.search}
             onSearchChange={view.setSearch}
+            onOpenSearch={() => handleSearchOpenChange(true)}
+            searchButtonRef={searchButtonRef}
             selectionMode={view.selectionMode}
             selectedTrackIds={view.selectedTrackIds}
             selectedPositions={view.selectedSourceIndices}
@@ -116,35 +173,9 @@ function PlaylistViewContent({ onBack }: { onBack?: () => void }) {
           />
         )}
 
-        {hasTracks
+        {!searchOpen && (hasTracks
           ? (
-              <PlaylistTracksTable
-                tracks={view.filteredTracks}
-                sourceIndices={view.filteredSourceIndices}
-                currentPlaylist={view.selectedPlaylist}
-                customPlaylists={view.customPlaylists}
-                playingSourceIndex={view.playingSourceIndex}
-                isPlaying={view.isPlaying}
-                isTrackLiked={view.checkTrackLiked}
-                selectionMode={view.selectionMode}
-                rowSelection={view.rowSelection}
-                onRowSelectionChange={view.setRowSelection}
-                sorting={view.sorting}
-                onSortingChange={view.setSorting}
-                canReorder={view.canReorder}
-                onReorderTracks={view.handleReorderTracks}
-                onEnterSelection={view.handleEnterSelection}
-                onTrackPlay={view.handleTrackSelect}
-                onToggleLike={view.handleToggleLike}
-                onAddToPlaylist={view.handleAddToPlaylist}
-                onDeleteFromPlaylist={view.handleDeleteFromPlaylist}
-                onPlayNext={view.handlePlayNext}
-                onAddToEnd={view.handleAddToEnd}
-                onCache={view.handleCache}
-                onDownload={view.handleDownload}
-                onRemoveFromCache={view.handleRemoveFromCache}
-                onShowInfo={view.handleShowInfo}
-              />
+              trackTable
             )
           : (
               <PlaylistEmptyState
@@ -152,8 +183,65 @@ function PlaylistViewContent({ onBack }: { onBack?: () => void }) {
                 playlistId={view.playlistId}
                 isCustom={view.isCustom}
               />
-            )}
+            ))}
       </div>
+
+      <Dialog open={isCompact && searchOpen} onOpenChange={handleSearchOpenChange} modal={false} disablePointerDismissal>
+        <DialogContent
+          className="playlist-search-overlay flex flex-col gap-0 overflow-hidden p-0"
+          showCloseButton={false}
+          overlayClassName="hidden"
+          initialFocus={searchInputRef}
+          finalFocus={searchButtonRef}
+          style={{ height: hasPlayer ? 'calc(100dvh - 6rem)' : '100dvh' }}
+        >
+          <DialogTitle className="sr-only">Search tracks</DialogTitle>
+          <header className="android-overlay-inset flex shrink-0 items-center gap-2 border-b border-border px-3 py-3">
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Close track search"
+              onClick={() => handleSearchOpenChange(false)}
+            >
+              <ArrowLeft className="size-5" />
+            </Button>
+            <Input
+              ref={searchInputRef}
+              type="search"
+              aria-label="Search tracks"
+              placeholder="Search tracks"
+              value={view.search}
+              onChange={event => view.setSearch(event.target.value)}
+              className="min-w-0 flex-1 border-none bg-transparent text-base shadow-none focus-visible:ring-0 dark:bg-transparent [&::-webkit-search-cancel-button]:hidden"
+            />
+            {view.search && (
+              <Button
+                variant="ghost"
+                size="icon"
+                aria-label="Clear track search"
+                onClick={() => {
+                  view.setSearch('')
+                  searchInputRef.current?.focus()
+                }}
+              >
+                <X className="size-5" />
+              </Button>
+            )}
+          </header>
+          <p className="shrink-0 px-5 py-3 text-sm text-muted-foreground" aria-live="polite">
+            {view.filteredTracks.length}
+            {' '}
+            {view.filteredTracks.length === 1 ? 'track' : 'tracks'}
+            {' '}
+            in
+            {' '}
+            {view.selectedPlaylist.name}
+          </p>
+          {view.filteredTracks.length > 0
+            ? trackTable
+            : <p className="px-5 py-6 text-sm text-muted-foreground">No tracks found.</p>}
+        </DialogContent>
+      </Dialog>
 
       <TrackInfoDialog
         track={view.infoTrack}

@@ -29,8 +29,9 @@ import {
 } from '@tanstack/react-table'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react'
-import { useMemo, useRef } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
 import { useTouchScreen } from '@/hooks/use-touch-screen'
+import { useCompactDisplay } from '@/hooks/use-compact-display'
 import type { Track } from '@/lib/db'
 import type { ResolvedSelectedPlaylist } from '@/stores/playlists-store'
 import { cn } from '@/lib/utils'
@@ -42,6 +43,7 @@ import {
   TRACK_GRID_CLASS,
   TRACK_GRID_CLASS_SELECT,
   TRACK_ROW_STRIDE,
+  COMPACT_TRACK_ROW_STRIDE,
   PlaylistTrackRow,
 } from './PlaylistTrackRow'
 import {
@@ -64,6 +66,7 @@ const restrictToVerticalAxis: Modifier = ({ transform }) => ({
 })
 
 export interface PlaylistTracksTableProps {
+  hideHeader?: boolean
   tracks: Track[]
   sourceIndices: number[]
   currentPlaylist: ResolvedSelectedPlaylist
@@ -102,6 +105,7 @@ function SortIcon({ sorted }: { sorted: false | 'asc' | 'desc' }) {
 }
 
 export function PlaylistTracksTable({
+  hideHeader = false,
   tracks,
   sourceIndices,
   currentPlaylist,
@@ -130,6 +134,8 @@ export function PlaylistTracksTable({
 }: PlaylistTracksTableProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const touchScreen = useTouchScreen()
+  const { isCompact } = useCompactDisplay()
+  const rowStride = isCompact ? COMPACT_TRACK_ROW_STRIDE : TRACK_ROW_STRIDE
 
   const columns = useMemo<ColumnDef<typeof playlistTableFeatures, Track>[]>(() => {
     const defs: ColumnDef<typeof playlistTableFeatures, Track>[] = []
@@ -243,9 +249,13 @@ export function PlaylistTracksTable({
     count: rows.length,
     getScrollElement: () => scrollRef.current,
     // Stride includes former gap so item height matches sortable strategy shifts.
-    estimateSize: () => TRACK_ROW_STRIDE,
+    estimateSize: () => rowStride,
     overscan: 8,
   })
+
+  useEffect(() => {
+    virtualizer.measure()
+  }, [rowStride, virtualizer])
 
   const headerGridClass = selectionMode || (touchScreen && canReorder)
     ? TRACK_GRID_CLASS_SELECT
@@ -279,72 +289,74 @@ export function PlaylistTracksTable({
       aria-label={`${currentPlaylist.name} tracks`}
       className="flex min-h-0 min-w-0 grow flex-col px-2 md:px-4 pb-2 md:pb-4"
     >
-      <div
-        role="rowgroup"
-        className="mb-2 shrink-0 rounded-md bg-sidebar px-1"
-      >
+      {!hideHeader && (
         <div
-          role="row"
-          className={cn('grid h-9 items-center gap-2 px-2 text-[11px] font-medium tracking-wide text-muted-foreground uppercase md:gap-3 md:px-2.5', headerGridClass)}
+          role="rowgroup"
+          className="mb-2 shrink-0 rounded-md bg-sidebar px-1"
         >
-          {table.getHeaderGroups().map(headerGroup =>
-            headerGroup.headers.map((header) => {
-              const canSort = header.column.getCanSort()
-              const sorted = header.column.getIsSorted()
+          <div
+            role="row"
+            className={cn('grid h-12 md:h-9 items-center gap-2 px-2 text-[11px] font-medium tracking-wide text-muted-foreground uppercase md:gap-3 md:px-2.5', headerGridClass)}
+          >
+            {table.getHeaderGroups().map(headerGroup =>
+              headerGroup.headers.map((header) => {
+                const canSort = header.column.getCanSort()
+                const sorted = header.column.getIsSorted()
 
-              if (header.id === 'select' || header.id === 'drag') {
+                if (header.id === 'select' || header.id === 'drag') {
+                  return (
+                    <div
+                      key={header.id}
+                      role="columnheader"
+                      className="flex size-full items-center justify-center"
+                    >
+                      {flexRender(
+                        header.column.columnDef.header,
+                        header.getContext(),
+                      )}
+                    </div>
+                  )
+                }
+
                 return (
                   <div
                     key={header.id}
                     role="columnheader"
-                    className="flex size-full items-center justify-center"
-                  >
-                    {flexRender(
-                      header.column.columnDef.header,
-                      header.getContext(),
+                    className={cn(
+                      header.id === 'duration' && 'justify-self-end',
+                      header.id === 'performer' && 'hidden md:block',
                     )}
-                  </div>
-                )
-              }
-
-              return (
-                <div
-                  key={header.id}
-                  role="columnheader"
-                  className={cn(
-                    header.id === 'duration' && 'justify-self-end',
-                    header.id === 'performer' && 'hidden md:block',
-                  )}
-                >
-                  {canSort
-                    ? (
-                        <button
-                          type="button"
-                          className={cn(
-                            'inline-flex items-center gap-1 text-xs transition-colors hover:text-foreground',
-                            sorted && 'text-foreground',
-                          )}
-                          onClick={header.column.getToggleSortingHandler()}
-                        >
-                          {flexRender(
+                  >
+                    {canSort
+                      ? (
+                          <button
+                            type="button"
+                            className={cn(
+                              'inline-flex items-center gap-1 text-xs transition-colors hover:text-foreground',
+                              sorted && 'text-foreground',
+                            )}
+                            onClick={header.column.getToggleSortingHandler()}
+                          >
+                            {flexRender(
+                              header.column.columnDef.header,
+                              header.getContext(),
+                            )}
+                            <SortIcon sorted={sorted} />
+                          </button>
+                        )
+                      : (
+                          flexRender(
                             header.column.columnDef.header,
                             header.getContext(),
-                          )}
-                          <SortIcon sorted={sorted} />
-                        </button>
-                      )
-                    : (
-                        flexRender(
-                          header.column.columnDef.header,
-                          header.getContext(),
-                        )
-                      )}
-                </div>
-              )
-            }),
-          )}
+                          )
+                        )}
+                  </div>
+                )
+              }),
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
       <ScrollArea
         className="min-h-0 grow"

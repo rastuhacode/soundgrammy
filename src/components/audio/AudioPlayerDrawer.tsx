@@ -26,7 +26,7 @@ export function AudioPlayerDrawer(props: AudioPlayerDrawerProps) {
   return (
     <Drawer open={props.open} onOpenChange={props.onOpenChange}>
       <DrawerContent
-        className="overflow-hidden rounded-none border-none p-0"
+        className="audio-player-drawer overflow-hidden rounded-none border-none p-0"
         style={{
           '--drawer-inset': '0px',
           '--drawer-height': '100dvh',
@@ -79,7 +79,7 @@ export function AudioPlayerDrawer(props: AudioPlayerDrawerProps) {
             </div>
           </div>
 
-          <div className="shrink-0 px-6 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+          <div className="audio-player-drawer-footer mx-auto w-full shrink-0 px-[clamp(1rem,4vw,2rem)] pb-[max(1.25rem,env(safe-area-inset-bottom))]">
             <div className="flex min-w-0 items-center justify-between gap-3">
               <div className="min-w-0">
                 <h2 className="truncate text-xl font-semibold text-foreground">
@@ -108,7 +108,7 @@ export function AudioPlayerDrawer(props: AudioPlayerDrawerProps) {
               <span>{formatTime(props.duration)}</span>
             </div>
 
-            <div className="flex justify-center">
+            <div className="mt-3 flex justify-center">
               <AudioMainOperations />
             </div>
           </div>

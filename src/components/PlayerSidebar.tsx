@@ -84,7 +84,7 @@ export function PlayerSidebar(props: { onLogout: () => void, onSelectPlaylist: (
             Library
           </h2>
         </div>
-        <div className="flex items-center gap-0.5">
+        <div className="flex items-center gap-2 md:gap-0.5">
           <SidebarPlaylistsToolbar
             search={search}
             onSearchChange={setSearch}

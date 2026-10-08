@@ -15,6 +15,7 @@ import {
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
 import { useLocalStorage } from '@mantine/hooks'
+import { useCompactDisplay } from '@/hooks/use-compact-display'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { ChevronRight, ListPlus, ListX, MoreHorizontal, Trash2, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -74,6 +75,7 @@ export interface QueuePopoverPanelProps {
 }
 
 export function QueuePopoverPanel({ onClose, hasTracks }: QueuePopoverPanelProps) {
+  const { isCompact } = useCompactDisplay()
   const queue = usePlayerStore(state => state.queue)
   const jumpToQueueIndex = usePlayerStore(state => state.jumpToQueueIndex)
   const removeFromQueue = usePlayerStore(state => state.removeFromQueue)
@@ -120,7 +122,7 @@ export function QueuePopoverPanel({ onClose, hasTracks }: QueuePopoverPanelProps
   const virtualizer = useVirtualizer({
     count: listItems.length,
     getScrollElement: () => scrollRef.current,
-    estimateSize: index => estimateQueueListItemSize(listItems[index]),
+    estimateSize: index => estimateQueueListItemSize(listItems[index], isCompact),
     getItemKey: (index) => {
       const item = listItems[index]
       if (!item) return index
@@ -130,6 +132,10 @@ export function QueuePopoverPanel({ onClose, hasTracks }: QueuePopoverPanelProps
     },
     overscan: 8,
   })
+
+  useEffect(() => {
+    virtualizer.measure()
+  }, [isCompact, virtualizer])
 
   useEffect(() => {
     if (didScrollToCurrentRef.current || listItems.length === 0) return
@@ -174,7 +180,7 @@ export function QueuePopoverPanel({ onClose, hasTracks }: QueuePopoverPanelProps
       className="flex max-h-[min(28rem,70vh)] flex-col"
       onPointerLeave={() => setHoveredIndex(null)}
     >
-      <div className="flex items-start justify-between gap-2 border-b border-border px-3 py-2.5">
+      <div className="flex items-center justify-between gap-2 border-b border-border px-3 py-2.5">
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <h2 className="text-sm font-medium">Queue</h2>
@@ -269,6 +275,7 @@ export function QueuePopoverPanel({ onClose, hasTracks }: QueuePopoverPanelProps
                       onHistoryOpenChange={setHistoryOpen}
                       onUpNextOpenChange={setUpNextOpen}
                       hoveredIndex={hoveredIndex}
+                      alwaysShowRemove={isCompact}
                       onHoverIndex={setHoveredIndex}
                       onPlay={jumpToQueueIndex}
                       onRemove={index => removeFromQueue([index])}
@@ -295,6 +302,7 @@ function QueueListRow({
   onHistoryOpenChange,
   onUpNextOpenChange,
   hoveredIndex,
+  alwaysShowRemove,
   onHoverIndex,
   onPlay,
   onRemove,
@@ -307,6 +315,7 @@ function QueueListRow({
   onHistoryOpenChange: (open: boolean) => void
   onUpNextOpenChange: (open: boolean) => void
   hoveredIndex: number | null
+  alwaysShowRemove: boolean
   onHoverIndex: (index: number | null | ((prev: number | null) => number | null)) => void
   onPlay: (index: number) => void
   onRemove: (index: number) => void
@@ -337,7 +346,7 @@ function QueueListRow({
       track={track}
       index={item.queueIndex}
       isCurrent={item.queueIndex === cursor}
-      showRemove={hoveredIndex === item.queueIndex}
+      showRemove={alwaysShowRemove || hoveredIndex === item.queueIndex}
       onHoverChange={(hovered) => {
         if (hovered) onHoverIndex(item.queueIndex)
         else onHoverIndex(prev => (prev === item.queueIndex ? null : prev))
@@ -367,7 +376,7 @@ function QueueSectionHeader({
 
   if (!onOpenChange) {
     return (
-      <p className="flex h-7 items-center px-2 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
+      <p className="flex h-[var(--queue-header-height,1.75rem)] items-center px-2 text-[10px] font-medium tracking-wide text-muted-foreground uppercase">
         {label}
       </p>
     )
@@ -377,7 +386,7 @@ function QueueSectionHeader({
     <Collapsible open={open} onOpenChange={onOpenChange}>
       <CollapsibleTrigger
         className={cn(
-          'flex h-7 w-full items-center gap-1 rounded-md px-2',
+          'flex h-[var(--queue-header-height,1.75rem)] w-full items-center gap-1 rounded-md px-2',
           'text-[10px] font-medium tracking-wide text-muted-foreground uppercase',
           'hover:bg-muted/60 hover:text-foreground',
         )}
@@ -429,7 +438,7 @@ function QueueEntryRow({
       style={{
         transform: CSS.Transform.toString(transform),
         transition,
-        height: estimateQueueListItemSize({ type: 'track', queueIndex: index }),
+        height: 'var(--queue-row-height, 56px)',
       }}
       className={cn(
         'flex items-center gap-2 rounded-md px-2',
@@ -472,7 +481,7 @@ function QueueEntryRow({
             </Button>
           )
         : (
-            <span aria-hidden className="size-7 shrink-0" />
+            <span aria-hidden className="size-12 md:size-7 shrink-0" />
           )}
     </div>
   )

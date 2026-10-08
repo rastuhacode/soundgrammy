@@ -89,7 +89,7 @@ export function SidebarPlaylistItem({
           transition,
         }}
         className={cn(
-          'group flex w-full items-center gap-3 rounded-lg px-2 py-2.5 transition-colors md:py-2',
+          'group flex min-h-18 md:min-h-0 w-full items-center gap-3 rounded-lg px-2 py-3 transition-colors md:py-2',
           isActive
             ? 'bg-accent text-accent-foreground'
             : 'text-foreground hover:bg-muted/70',
@@ -136,7 +136,7 @@ export function SidebarPlaylistItem({
             {count}
           </span>
 
-          <div className="flex size-9 shrink-0 items-center justify-center md:size-6">
+          <div className="flex size-12 shrink-0 items-center justify-center md:size-6">
             {hasMenu
               ? (
                   <DropdownMenu>

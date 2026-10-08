@@ -14,8 +14,9 @@ export const TRACK_ROW_HEIGHT = 70
 /** Space between rows; baked into stride so DnD measuring matches layout. */
 export const TRACK_ROW_GAP = 8
 export const TRACK_ROW_STRIDE = TRACK_ROW_HEIGHT + TRACK_ROW_GAP
-export const TRACK_GRID_CLASS = 'grid-cols-[minmax(0,1fr)_3rem_2.25rem] md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_4.5rem_2.25rem]'
-export const TRACK_GRID_CLASS_SELECT = 'grid-cols-[2.25rem_minmax(0,1fr)_3rem_2.25rem] md:grid-cols-[2.25rem_minmax(0,1.4fr)_minmax(0,1fr)_4.5rem_2.25rem]'
+export const COMPACT_TRACK_ROW_STRIDE = 80 + TRACK_ROW_GAP
+export const TRACK_GRID_CLASS = 'grid-cols-[minmax(0,1fr)_3rem_3rem] md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_4.5rem_2.25rem]'
+export const TRACK_GRID_CLASS_SELECT = 'grid-cols-[3rem_minmax(0,1fr)_3rem_3rem] md:grid-cols-[2.25rem_minmax(0,1.4fr)_minmax(0,1fr)_4.5rem_2.25rem]'
 
 export interface PlaylistTrackRowViewProps {
   track: Track
@@ -139,7 +140,7 @@ export function PlaylistTrackRowView({
         className,
       )}
       style={{
-        height: TRACK_ROW_HEIGHT,
+        height: `var(--track-row-height, ${TRACK_ROW_HEIGHT}px)`,
         ...style,
       }}
     >
@@ -324,7 +325,7 @@ export function PlaylistTrackRow({
       )}
       style={{
         // Stride height (row + gap) so virtualizer and sortable strategy agree.
-        height: TRACK_ROW_STRIDE,
+        height: `var(--track-row-stride, ${TRACK_ROW_STRIDE}px)`,
         top: virtualStart,
         transform: CSS.Transform.toString(transform),
         transition,

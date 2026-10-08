@@ -17,7 +17,7 @@ export function AudioTrackDescription(props: AudioTrackDescriptionProps) {
       <div className="group/thumbnail relative shrink-0">
         {failed || !url
           ? (
-              <div className="flex size-11 items-center justify-center rounded-lg bg-muted text-muted-foreground md:size-16">
+              <div className="flex size-12 min-[360px]:size-14 items-center justify-center rounded-lg bg-muted text-muted-foreground md:size-16">
                 <Music className="size-5" />
               </div>
             )
@@ -26,7 +26,7 @@ export function AudioTrackDescription(props: AudioTrackDescriptionProps) {
                 src={url}
                 alt="Thumbnail"
                 onError={onError}
-                className="size-11 rounded-lg object-cover ring-1 ring-border md:size-16"
+                className="size-12 min-[360px]:size-14 rounded-lg object-cover ring-1 ring-border md:size-16"
               />
             )}
         <button
