@@ -1,9 +1,8 @@
-//! Initialize the Android credential store before the WebView can sign in.
+//! Retain Android JNI handles and initialize credentials after Tao sets up ndk-context.
 use jni::{objects::JObject, JNIEnv};
 use std::sync::OnceLock;
 
-// ndk-context retains a raw jobject, so keep its Application global reference
-// alive for the entire process, including activity recreation.
+// Downloads use these handles independently of the Activity lifecycle.
 static CONTEXT: OnceLock<jni::objects::GlobalRef> = OnceLock::new();
 static VM: OnceLock<jni::JavaVM> = OnceLock::new();
 static INITIALIZED: OnceLock<Result<(), String>> = OnceLock::new();
@@ -18,6 +17,14 @@ pub(crate) fn java_context(
     ))
 }
 
+/// Tauri setup runs after Tao initializes the process-owned ndk-context and
+/// before session repair or any frontend command can access credentials.
+pub(crate) fn initialize_store() -> Result<(), String> {
+    let store = android_native_keyring_store::Store::new().map_err(|e| e.to_string())?;
+    keyring_core::set_default_store(store);
+    Ok(())
+}
+
 #[no_mangle]
 pub extern "system" fn Java_com_soundgrammy_app_MainActivity_initializeNativeStorage(
     mut env: JNIEnv<'_>,
@@ -27,24 +34,14 @@ pub extern "system" fn Java_com_soundgrammy_app_MainActivity_initializeNativeSto
     let result = INITIALIZED.get_or_init(|| {
         let context = env.new_global_ref(application).map_err(|e| e.to_string())?;
         let vm = env.get_java_vm().map_err(|e| e.to_string())?;
-        let context = CONTEXT.get_or_init(|| context);
-        // SAFETY: INITIALIZED is set once, and CONTEXT holds a global JNI ref
-        // for the lifetime of the process. The VM is owned by Android.
-        unsafe {
-            ndk_context::initialize_android_context(
-                vm.get_java_vm_pointer().cast(),
-                context.as_obj().as_raw().cast(),
-            );
-        }
+        let _ = CONTEXT.set(context);
         let _ = VM.set(vm);
-        let store = android_native_keyring_store::Store::new().map_err(|e| e.to_string())?;
-        keyring_core::set_default_store(store);
         Ok(())
     });
     if let Err(error) = result {
         let _ = env.throw_new(
             "java/lang/IllegalStateException",
-            format!("Android secure storage initialization failed: {error}"),
+            format!("Android JNI context initialization failed: {error}"),
         );
     }
 }

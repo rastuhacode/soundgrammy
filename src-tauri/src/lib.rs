@@ -47,6 +47,9 @@ pub fn run() {
         .setup(|app| {
             let handle = app.handle();
 
+            #[cfg(target_os = "android")]
+            android_keyring::initialize_store().map_err(error::AppError::msg)?;
+
             app.manage(display_wake::DisplayWakeState::new()?);
 
             let config = config::Config::load()?;
