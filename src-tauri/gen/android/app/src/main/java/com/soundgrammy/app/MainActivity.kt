@@ -8,8 +8,8 @@ class MainActivity : TauriActivity() {
 
   override fun onCreate(savedInstanceState: Bundle?) {
     enableEdgeToEdge()
-    // Rust's generated loader runs from super.onCreate; initialize the store
-    // first so the WebView cannot race an auth/session read.
+    // Retain JNI handles for Downloads. Tao initializes ndk-context in
+    // super.onCreate; Rust app setup then initializes the credential store.
     System.loadLibrary("soundgrammy_lib")
     initializeNativeStorage(applicationContext)
     super.onCreate(savedInstanceState)
