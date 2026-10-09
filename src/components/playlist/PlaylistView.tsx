@@ -123,15 +123,7 @@ function PlaylistViewContent({ onBack }: { onBack?: () => void }) {
       onReorderTracks={view.handleReorderTracks}
       onEnterSelection={view.handleEnterSelection}
       onTrackPlay={view.handleTrackSelect}
-      onToggleLike={view.handleToggleLike}
-      onAddToPlaylist={view.handleAddToPlaylist}
-      onDeleteFromPlaylist={view.handleDeleteFromPlaylist}
-      onPlayNext={view.handlePlayNext}
-      onAddToEnd={view.handleAddToEnd}
-      onCache={view.handleCache}
-      onDownload={view.handleDownload}
-      onRemoveFromCache={view.handleRemoveFromCache}
-      onShowInfo={view.handleShowInfo}
+      trackActions={view.trackActions}
     />
   )
 

@@ -13,8 +13,10 @@ interface ThumbnailState {
 const pathCache = new Map<string, string | null>()
 const requestCache = new Map<string, Promise<string | null>>()
 let thumbnailRevision = 0
+let cacheGeneration = 0
 
 export function clearThumbnailMemoryCache(): void {
+  cacheGeneration++
   pathCache.clear()
   requestCache.clear()
 }
@@ -32,14 +34,15 @@ export function loadThumbnailPath(
   const pending = requestCache.get(cacheKey)
   if (pending) return pending
 
+  const generation = cacheGeneration
   const request = api
     .getTrackThumbnail(trackId, highQuality)
     .then((path) => {
-      pathCache.set(cacheKey, path)
+      if (generation === cacheGeneration) pathCache.set(cacheKey, path)
       return path
     })
     .finally(() => {
-      requestCache.delete(cacheKey)
+      if (requestCache.get(cacheKey) === request) requestCache.delete(cacheKey)
     })
   requestCache.set(cacheKey, request)
   return request

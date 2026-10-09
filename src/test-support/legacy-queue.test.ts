@@ -15,8 +15,8 @@ import {
   trackIdsForSaveScope,
   trackOccurrenceAtIndex,
   type QueueSnapshot,
-} from './index'
-import { resolvePlayingSourceIndex } from './playing-source-index'
+} from '@/test-support/legacy-queue'
+import { resolvePlayingSourceIndex } from '@/lib/queue/playing-source-index'
 
 function track(id: number): Track {
   return {

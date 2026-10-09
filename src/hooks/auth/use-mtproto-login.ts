@@ -36,6 +36,10 @@ export function useMtprotoLogin(onAuthenticated: (user: AuthUser) => void) {
     onAuthenticatedRef.current = onAuthenticated
   }, [onAuthenticated])
 
+  useEffect(() => () => {
+    generationRef.current += 1
+  }, [])
+
   const renderQr = useCallback(async (url: string) => {
     if (lastUrlRef.current === url) return
     lastUrlRef.current = url
@@ -203,6 +207,7 @@ export function useMtprotoLogin(onAuthenticated: (user: AuthUser) => void) {
   }, [])
 
   const handleSendCode = useCallback(async (phone: string) => {
+    const generation = generationRef.current
     setError(null)
     setPhoneNumber(phone)
 
@@ -220,10 +225,12 @@ export function useMtprotoLogin(onAuthenticated: (user: AuthUser) => void) {
         outcome = await api.phoneSendCode(phone)
       }
       catch {
+        if (generation !== generationRef.current) return
         // After an interrupted QR attempt, Telegram often rejects the first
         // sendCode; one immediate retry usually succeeds.
         outcome = await api.phoneSendCode(phone)
       }
+      if (generation !== generationRef.current) return
       if (outcome.status === 'authorized') {
         codeSentForPhoneRef.current = null
         onAuthenticatedRef.current(outcome.user)
@@ -233,18 +240,21 @@ export function useMtprotoLogin(onAuthenticated: (user: AuthUser) => void) {
       setStep('code')
     }
     catch (err) {
+      if (generation !== generationRef.current) return
       setError(loginErrorMessage(err, 'Failed to send code'))
     }
     finally {
-      setBusy(false)
+      if (generation === generationRef.current) setBusy(false)
     }
   }, [])
 
   const handleSignIn = useCallback(async (loginCode: string) => {
+    const generation = generationRef.current
     setError(null)
     setBusy(true)
     try {
       const outcome = await api.phoneSignIn(loginCode)
+      if (generation !== generationRef.current) return
       if (outcome.status === 'passwordRequired') {
         // Phone token was consumed; a later "send code" must hit the API again.
         codeSentForPhoneRef.current = null
@@ -256,27 +266,31 @@ export function useMtprotoLogin(onAuthenticated: (user: AuthUser) => void) {
       onAuthenticatedRef.current(outcome.user)
     }
     catch (err) {
+      if (generation !== generationRef.current) return
       setError(loginErrorMessage(err, 'Failed to sign in'))
     }
     finally {
-      setBusy(false)
+      if (generation === generationRef.current) setBusy(false)
     }
   }, [])
 
   const handlePassword = useCallback(async (loginPassword: string) => {
+    const generation = generationRef.current
     setError(null)
     setBusy(true)
     try {
       const user = step === 'qr-password'
         ? await api.qrCheckPassword(loginPassword)
         : await api.phoneCheckPassword(loginPassword)
+      if (generation !== generationRef.current) return
       onAuthenticatedRef.current(user)
     }
     catch (err) {
+      if (generation !== generationRef.current) return
       setError(loginErrorMessage(err, 'Invalid password'))
     }
     finally {
-      setBusy(false)
+      if (generation === generationRef.current) setBusy(false)
     }
   }, [step])
 

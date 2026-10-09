@@ -1,9 +1,9 @@
 import type { Track } from '@/lib/db'
 import {
-  ALL_TRACKS_PLAYLIST_ID,
+  BUILTIN_PLAYLISTS,
   LIKED_PLAYLIST_ID,
   type ResolvedSelectedPlaylist,
-} from '@/stores/playlists-store'
+} from '@/lib/playlists'
 
 export interface CustomPlaylistRef {
   id: number
@@ -68,19 +68,14 @@ export function canRemoveFromPlaylist(
 export function canDownloadPlaylist(
   playlist: Pick<ResolvedSelectedPlaylist, 'id' | 'isCustom'>,
 ): boolean {
-  if (playlist.isCustom) return true
-  return (
-    playlist.id === ALL_TRACKS_PLAYLIST_ID
-    || playlist.id === LIKED_PLAYLIST_ID
-  )
+  return playlist.isCustom || (typeof playlist.id === 'string' && BUILTIN_PLAYLISTS[playlist.id].downloadable)
 }
 
 /** Liked and custom playlists can be exported as a JSON recipe. */
 export function canExportPlaylist(
   playlist: Pick<ResolvedSelectedPlaylist, 'id' | 'isCustom'>,
 ): boolean {
-  if (playlist.isCustom) return true
-  return playlist.id === LIKED_PLAYLIST_ID
+  return playlist.isCustom || (typeof playlist.id === 'string' && BUILTIN_PLAYLISTS[playlist.id].exportable)
 }
 
 /**
@@ -154,8 +149,9 @@ export function toPlayablePlaylist(
 export function sortIndexedPlaylistTracks(
   tracks: Track[],
   sort: TrackSortState | null,
+  sourceIndices?: number[],
 ): { track: Track, sourceIndex: number }[] {
-  const indexed = tracks.map((track, sourceIndex) => ({ track, sourceIndex }))
+  const indexed = tracks.map((track, index) => ({ track, sourceIndex: sourceIndices?.[index] ?? index }))
   if (!sort) return indexed
   return [...indexed].sort((a, b) => {
     const cmp = compareTracks(a.track, b.track, sort)

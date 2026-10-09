@@ -1,3 +1,5 @@
+import { captureSession, isSessionCurrent } from '@/stores/session-store'
+import { ownEventListeners } from '@/lib/events'
 import { useEffect, useRef } from 'react'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { api } from '@/lib/api'
@@ -9,6 +11,7 @@ export function useLastFmIntegration(enabled: boolean) {
 
   useEffect(() => {
     if (!enabled) return
+    const generation = captureSession()
     useLastFmStore.getState().hydrate().catch(() => {})
     const listener = startLastFmStatusListener()
     const focusListener = getCurrentWindow().onFocusChanged(({ payload: focused }) => {
@@ -16,19 +19,19 @@ export function useLastFmIntegration(enabled: boolean) {
       if (useLastFmStore.getState().status?.state !== 'waiting_for_browser_approval') return
       completingRef.current = true
       api.completeLastFmAuth()
-        .then(status => useLastFmStore.getState().setStatus(status))
+        .then((status) => { if (isSessionCurrent(generation)) useLastFmStore.getState().setStatus(status) })
         .catch(() => {})
         .finally(() => {
           completingRef.current = false
         })
     })
+    const unlisten = ownEventListeners([listener, focusListener])
     const onOnline = () => {
       api.flushLastFmQueue().catch(() => {})
     }
     window.addEventListener('online', onOnline)
     return () => {
-      listener.then(unlisten => unlisten())
-      focusListener.then(unlisten => unlisten())
+      unlisten()
       window.removeEventListener('online', onOnline)
     }
   }, [enabled])

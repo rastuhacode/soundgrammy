@@ -1,8 +1,9 @@
+import { api } from '@/lib/api'
+import { captureSession, isSessionCurrent } from '@/stores/session-store'
 import { create } from 'zustand'
-import type { Track } from '@/lib/db'
 import type { TrackListenStats } from '@/types'
 
-export type SmartPlaylistSort = 'likeness' | 'last_played'
+export * from '@/lib/listen-stats'
 
 function statsToMap(
   stats: TrackListenStats[],
@@ -14,100 +15,63 @@ function statsToMap(
   return next
 }
 
-/** Library tracks that have listen history, sorted for a smart playlist. */
-export function resolveSmartPlaylistTracks(
-  libraryTracks: Track[],
-  statsByTrackId: ReadonlyMap<number, TrackListenStats>,
-  sort: SmartPlaylistSort,
-): Track[] {
-  const withStats: Array<{ track: Track, stats: TrackListenStats }> = []
-  for (const track of libraryTracks) {
-    const stats = statsByTrackId.get(track.id)
-    if (stats) {
-      withStats.push({ track, stats })
-    }
-  }
-
-  if (sort === 'likeness') {
-    withStats.sort((a, b) => {
-      const likenessDiff = b.stats.likeness - a.stats.likeness
-      if (likenessDiff !== 0) return likenessDiff
-      return a.track.id - b.track.id
-    })
-  }
-  else {
-    withStats.sort((a, b) => {
-      const aLast = a.stats.last_played_at_ms
-      const bLast = b.stats.last_played_at_ms
-      if (aLast == null && bLast == null) {
-        return a.track.id - b.track.id
-      }
-      if (aLast == null) return 1
-      if (bLast == null) return -1
-      if (bLast !== aLast) return bLast - aLast
-      return a.track.id - b.track.id
-    })
-  }
-
-  return withStats.map(entry => entry.track)
-}
-
-export function smartPlaylistTrackCount(
-  libraryTracks: Track[],
-  statsByTrackId: ReadonlyMap<number, TrackListenStats>,
-): number {
-  let count = 0
-  for (const track of libraryTracks) {
-    if (statsByTrackId.has(track.id)) count += 1
-  }
-  return count
-}
-
-/** Newest last_played_at_ms among library tracks that have stats (for Recency sort). */
-export function smartPlaylistUpdatedAt(
-  libraryTracks: Track[],
-  statsByTrackId: ReadonlyMap<number, TrackListenStats>,
-): string {
-  let newest: number | null = null
-  for (const track of libraryTracks) {
-    const last = statsByTrackId.get(track.id)?.last_played_at_ms
-    if (last == null) continue
-    if (newest == null || last > newest) newest = last
-  }
-  return newest == null ? '' : String(newest)
-}
-
 interface ListenStatsState {
   enabled: boolean
+  revision: number
+  settingsRevision: number
   clearEpoch: number
   statsByTrackId: Map<number, TrackListenStats>
+  refresh: () => Promise<void>
+  reset: () => void
   hydrate: (enabled: boolean, stats: TrackListenStats[]) => void
   setEnabled: (enabled: boolean) => void
   upsert: (stats: TrackListenStats) => void
   clear: () => void
 }
 
-export const useListenStatsStore = create<ListenStatsState>(set => ({
+export const useListenStatsStore = create<ListenStatsState>((set, get) => ({
+  revision: 0,
+  settingsRevision: 0,
   enabled: true,
   clearEpoch: 0,
   statsByTrackId: new Map(),
 
+  reset: () => {
+    get().clear()
+    get().setEnabled(true)
+  },
+  refresh: async () => {
+    const generation = captureSession()
+    const { revision, settingsRevision } = get()
+    await Promise.allSettled([
+      api.getListenStatisticsEnabled().then((enabled) => {
+        if (isSessionCurrent(generation) && get().settingsRevision === settingsRevision) get().setEnabled(enabled)
+      }),
+      api.listListenStats().then((stats) => {
+        // A live upsert or clear after request dispatch wins over this snapshot.
+        if (isSessionCurrent(generation) && get().revision === revision) {
+          set({ statsByTrackId: statsToMap(stats), revision: revision + 1 })
+        }
+      }),
+    ])
+  },
   hydrate: (enabled, stats) => {
-    set({ enabled, statsByTrackId: statsToMap(stats) })
+    set(state => ({ enabled, statsByTrackId: statsToMap(stats), revision: state.revision + 1, settingsRevision: state.settingsRevision + 1 }))
   },
 
-  setEnabled: enabled => set({ enabled }),
+  setEnabled: enabled => set(state => ({ enabled, settingsRevision: state.settingsRevision + 1 })),
 
   upsert: (stats) => {
     set((state) => {
       const next = new Map(state.statsByTrackId)
       next.set(stats.track_id, stats)
-      return { statsByTrackId: next }
+      return { statsByTrackId: next, revision: state.revision + 1 }
     })
   },
 
   clear: () => set(state => ({
     statsByTrackId: new Map(),
     clearEpoch: state.clearEpoch + 1,
+    revision: state.revision + 1,
   })),
 }))

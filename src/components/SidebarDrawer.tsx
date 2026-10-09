@@ -37,9 +37,7 @@ import {
   DrawerTrigger,
 } from '@/components/ui/drawer'
 import { SettingsDialog } from '@/components/settings/SettingsDialog'
-import { DeadSpace } from '@/components/DeadSpace'
 import { cn } from '@/lib/utils'
-import { Separator } from './ui/separator'
 import { TauriLink } from './tauri/TauriLink'
 import { SyncStatusDot } from './SyncStatusDot'
 
@@ -209,10 +207,6 @@ export function SidebarDrawer({ onLogout }: SidebarDrawerProps) {
               <span>Settings</span>
             </SidebarDrawerItem>
           </nav>
-
-          <Separator />
-          <DeadSpace />
-          <Separator />
 
           <DrawerFooter className="gap-3 border-t border-sidebar-border p-0 pb-4 pt-2">
             <SidebarDrawerItem onClick={confirmLogout} disabled={isLoggingOut} className="text-destructive transition-colors hover:bg-destructive/10 focus-visible:ring-destructive/30 disabled:opacity-50">

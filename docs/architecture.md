@@ -23,10 +23,10 @@ flowchart LR
 ## Bootstrap
 
 1. `auth_status` — **local only** (`session.enc` + SQLite profile). No MTProto. Unauthorized → login UI.
-2. On authorized: hydrate session store, `list_tracks` + `list_playlists` + `list_listen_stats` → UI **ready**.
-3. Background reconnect loop: `refresh_auth` with exponential backoff (and immediate retry on browser `online`); on success, `sync_saved_music`. On sync `changed`, reload library into stores.
+2. On authorized: `useAppSession` hydrates the session and independently loads tracks, playlists, listen statistics, and cache status → UI **ready**. Optional statistics/cache failures do not block library hydration; track/playlist failures expose a retry.
+3. Automatic reconnect and manual sync share the `connectivity-store` coordinator and one response-driven library reload. Background reconnect loop: `refresh_auth` with exponential backoff (and immediate retry on browser `online`); on success, `sync_saved_music`. On sync `changed`, reload library into stores.
 4. Network timeouts / unreachable leave the cached library and local session as-is; sync-dot shows offline / connecting and keeps retrying.
-5. Server-proven session death (`AUTH_KEY_*` / `SESSION_REVOKED`, etc.) clears local session, emits `auth:revoked`, UI returns to login.
+5. Logout or account change invalidates account-scoped responses with a session generation and clears job presentation, statistics, cache mirrors, and thumbnail memory. Server-proven session death (`AUTH_KEY_*` / `SESSION_REVOKED`, etc.) clears local session, emits `auth:revoked`, UI returns to login.
 6. Sync errors leave the cached library as-is; reconnect will retry sync after auth succeeds again.
 
 Optional **MTProto proxy** (tg-ws-proxy compatible: server / port / secret or `tg://proxy?…`) is stored in SQLite `app_settings` and applied when building the ferogram client. Changing proxy settings rebuilds the client in-process. If a configured proxy fails at startup, the app falls back to a direct connection so the login UI can still load and the user can disable the proxy.
@@ -48,6 +48,12 @@ The UI reconnect loop refreshes library/auth presentation. Playback-critical dow
 | Pending Last.fm scrobbles | App (qualified playback attempts) | SQLite immutable queue |
 
 **Playlist JSON recipe** (`export_playlist_json` / `analyze_playlist_json` / `import_playlist_json`): same-account cross-device sync for Liked and custom playlists. File contains ordered Telegram document ids (`file_unique_id`) and exporter `tgUserId`. Import is a prepare-then-create flow in the Create playlist dialog (analyze matches first; name can be edited). Import always creates a new custom playlist (duplicate names allowed); other-account files are rejected. Distinct from **Download playlist** (audio files + M3U under Downloads).
+
+## Frontend playlist ownership
+
+`playlists-store` serializes playlist mutations and refreshes within an account lifetime. Components express mutation intent; they do not merge captured bundles after asynchronous commands. Creating a playlist with queue tracks and removing a viewed set of custom-playlist positions are SQLite transactions. Bulk removal validates the expected ordered membership before deleting; bulk like actions apply a desired state and report failed track IDs for retry.
+
+Selection uses the exact ordered membership snapshot and clears if that snapshot changes, preventing positions from silently targeting other tracks. Stable persistent membership IDs are not yet exposed by the IPC contract. Pure playlist metadata and action rules live under `src/lib`; desktop context and touch dropdown menus share one action tree. Historical web playback algorithms are isolated under `src/test-support` and are not used by the production player.
 
 ## Media
 
@@ -106,7 +112,7 @@ Listeners live in `src/lib/api.ts`.
 - **Popular** (`id: popular`) / **Recent** (`id: recent`) — virtual smart playlists from listen stats ∩ library. Ordered by likeness / last played. Immutable membership; not drag-reorderable.
 - **Custom playlists** — editable membership; the same track may appear more than once as distinct ordered entries. Context menu and bulk actions may show “Remove from playlist” (removes one occurrence by position). Track order persisted with `reorder_playlist_tracks`.
 
-Tracklist actions are gated in `src/components/playlist/track-actions.ts` so non-custom playlists never expose remove-from-playlist. Drag-reorder is enabled only for Liked/custom when search and column sort are clear and selection mode is off.
+Tracklist actions are gated in `src/lib/playlist-track-actions.ts` so non-custom playlists never expose remove-from-playlist. Drag-reorder is enabled only for Liked/custom when search and column sort are clear and selection mode is off.
 
 See [Audio engine boundary](audio-engine.md) for transport ownership, implementation selection, and the native proxy contract.
 

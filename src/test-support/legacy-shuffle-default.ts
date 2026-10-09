@@ -1,4 +1,4 @@
-import type { ShuffleAlgorithm } from './model'
+import type { ShuffleAlgorithm } from '@/lib/shuffle/model'
 
 export function fisherYates<T>(
   playlist: T[],

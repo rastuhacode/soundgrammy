@@ -17,7 +17,7 @@ export function useAudioVolume(engine: AudioEngine) {
     if (next > 0) preMuteVolumeRef.current = next
     volumeRef.current = next
     setStoredVolume(next)
-    void engine.setVolume(next)
+    void engine.setVolume(next).catch(() => {})
   }
   const handleMuteToggle = () => {
     handleVolumeChange(volumeRef.current === 0 ? preMuteVolumeRef.current : 0)
@@ -25,7 +25,7 @@ export function useAudioVolume(engine: AudioEngine) {
   useEffect(() => {
     volumeRef.current = volume
     if (volume > 0) preMuteVolumeRef.current = volume
-    void engine.setVolume(volume)
+    void engine.setVolume(volume).catch(() => {})
   }, [engine, volume])
   return { volume, handleVolumeChange, handleMuteToggle }
 }

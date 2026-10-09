@@ -45,7 +45,9 @@ export function PlaylistFormDialog({
 }: PlaylistFormDialogProps) {
   const formId = useId()
   const data = usePlaylistsStore(state => state.data)
-  const setData = usePlaylistsStore(state => state.setData)
+  const createPlaylist = usePlaylistsStore(state => state.createPlaylist)
+  const updatePlaylist = usePlaylistsStore(state => state.updatePlaylist)
+  const importPlaylist = usePlaylistsStore(state => state.importPlaylist)
   const setSelectedPlaylist = usePlaylistsStore(state => state.setSelectedPlaylist)
 
   const isEdit = mode === 'edit'
@@ -132,26 +134,16 @@ export function PlaylistFormDialog({
     setIsSubmitting(true)
     try {
       if (isEdit && playlist) {
-        const updated = await api.updatePlaylist({
-          playlistId: playlist.id,
-          name: trimmed,
-        })
-        setData({
-          ...data,
-          custom: data.custom.map(item =>
-            item.id === updated.id ? updated : item,
-          ),
-        })
+        await updatePlaylist(playlist.id, trimmed)
       }
       else {
-        const created = await api.createPlaylist({ name: trimmed })
-        setData({ ...data, custom: [...data.custom, created] })
+        await createPlaylist(trimmed)
       }
       onOpenChange(false)
     }
     catch (err) {
       setSaveError(
-        err instanceof Error ? err.message : 'Failed to save playlist',
+        formatInvokeError(err),
       )
     }
     finally {
@@ -172,9 +164,7 @@ export function PlaylistFormDialog({
     setIsSubmitting(true)
     setImportError(null)
     try {
-      const result = await api.importPlaylistJson(importPath, name.trim())
-      const playlists = await api.listPlaylists()
-      setData(playlists)
+      const result = await importPlaylist(importPath, name.trim())
       setSelectedPlaylist(result.playlistId)
       onOpenChange(false)
     }

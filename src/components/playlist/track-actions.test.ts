@@ -17,7 +17,7 @@ import {
   sortIndexedPlaylistTracks,
   sortTracks,
   toPlayablePlaylist,
-} from './track-actions'
+} from '@/lib/playlist-track-actions'
 
 function track(
   id: number,

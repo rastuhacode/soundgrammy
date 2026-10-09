@@ -1,18 +1,13 @@
 // Shared types mirroring the Rust command payloads (serde field names).
 
-export interface Track {
-  id: number
-  tg_user_id: number
-  file_id: string
-  file_unique_id: string
-  title: string | null
-  performer: string | null
-  duration: number | null
-  source: string
-  mime_type: string | null
-  file_size: number | null
-  created_at: string
-}
+import { z } from 'zod'
+
+export const trackSchema = z.object({
+  id: z.number().int(), tg_user_id: z.number().int(), file_id: z.string(), file_unique_id: z.string(),
+  title: z.string().nullable(), performer: z.string().nullable(), duration: z.number().nullable(),
+  source: z.string(), mime_type: z.string().nullable(), file_size: z.number().nullable(), created_at: z.string(),
+})
+export type Track = z.infer<typeof trackSchema>
 
 export interface LikedPlaylist {
   id: number

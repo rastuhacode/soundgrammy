@@ -126,6 +126,7 @@ pub fn run() {
             commands::playlists::add_track_to_playlist,
             commands::playlists::add_tracks_to_playlist,
             commands::playlists::remove_track_from_playlist,
+            commands::playlists::remove_tracks_from_playlist,
             commands::playlists::reorder_playlist_tracks,
             commands::playlists::toggle_like,
             commands::playlists::export_playlist_json,

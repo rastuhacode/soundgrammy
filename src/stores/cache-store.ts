@@ -1,3 +1,4 @@
+import { captureSession, isSessionCurrent } from '@/stores/session-store'
 import { create } from 'zustand'
 import { api, onCacheChanged, onDownloadProgress } from '@/lib/api'
 
@@ -7,6 +8,7 @@ interface CacheState {
   /** Refcount per track so overlapping jobs do not clear each other's busy state. */
   busyCounts: Map<number, number>
   progressById: Map<number, number>
+  revision: number
   hydrated: boolean
   hydrate: () => Promise<void>
   markCached: (trackIds: number[]) => void
@@ -26,15 +28,18 @@ export const useCacheStore = create<CacheState>((set, get) => ({
   busyIds: new Set(),
   busyCounts: new Map(),
   progressById: new Map(),
+  revision: 0,
   hydrated: false,
 
   hydrate: async () => {
+    const generation = captureSession()
+    const revision = get().revision
     try {
       const ids = await api.getCacheStatus()
-      set({ cachedIds: new Set(ids), hydrated: true })
+      if (isSessionCurrent(generation) && get().revision === revision) set({ cachedIds: new Set(ids), hydrated: true, revision: revision + 1 })
     }
     catch {
-      set({ hydrated: true })
+      if (isSessionCurrent(generation)) set({ hydrated: true })
     }
   },
 
@@ -43,7 +48,7 @@ export const useCacheStore = create<CacheState>((set, get) => ({
     set((state) => {
       const next = new Set(state.cachedIds)
       for (const id of trackIds) next.add(id)
-      return { cachedIds: next }
+      return { cachedIds: next, revision: state.revision + 1 }
     })
   },
 
@@ -52,7 +57,7 @@ export const useCacheStore = create<CacheState>((set, get) => ({
     set((state) => {
       const next = new Set(state.cachedIds)
       for (const id of trackIds) next.delete(id)
-      return { cachedIds: next }
+      return { cachedIds: next, revision: state.revision + 1 }
     })
   },
 
@@ -113,12 +118,14 @@ export const useCacheStore = create<CacheState>((set, get) => ({
     })
   },
 
-  clearAll: () => set({
+  clearAll: () => set(state => ({
+    revision: state.revision + 1,
+    hydrated: false,
     cachedIds: new Set(),
     busyIds: new Set(),
     busyCounts: new Map(),
     progressById: new Map(),
-  }),
+  })),
 
   isCached: trackId => get().cachedIds.has(trackId),
 
@@ -133,7 +140,9 @@ export const useCacheStore = create<CacheState>((set, get) => ({
 
 /** Subscribe once after login; updates borders when cache changes. */
 export function startCacheStatusListener(): Promise<() => void> {
+  const generation = captureSession()
   return onCacheChanged((payload) => {
+    if (!isSessionCurrent(generation)) return
     const store = useCacheStore.getState()
     if (payload.cleared) {
       store.clearAll()
@@ -150,7 +159,9 @@ export function startCacheStatusListener(): Promise<() => void> {
 
 /** Subscribe once after login; drives thumbnail download progress. */
 export function startDownloadProgressListener(): Promise<() => void> {
+  const generation = captureSession()
   return onDownloadProgress((progress) => {
+    if (!isSessionCurrent(generation)) return
     const store = useCacheStore.getState()
     if (progress.complete) {
       store.clearProgress(progress.trackId)

@@ -1,22 +1,19 @@
+import { captureSession, isSessionCurrent } from '@/stores/session-store'
+import { useTrackFileActions } from '@/hooks/use-track-file-actions'
+import { playlistMembershipKey, playlistMembershipIndices, canReorderPlaylist } from '@/lib/playlists'
+import type { OnChangeFn, RowSelectionState, SortingState } from '@tanstack/react-table'
+import { errorMessage } from '@/lib/errors'
 import type { Track } from '@/lib/db'
 import { useLibraryStore } from '@/stores/library-store'
 import { usePlayerStore } from '@/stores/player-store'
 import {
-  ALL_TRACKS_PLAYLIST_ID,
   getLikedTrackIdSet,
-  isTrackLiked,
-  LIKED_PLAYLIST_ID,
-  POPULAR_PLAYLIST_ID,
-  RECENT_PLAYLIST_ID,
   resolveSelectedPlaylistTracks,
   usePlaylistsStore,
 } from '@/stores/playlists-store'
 import type { CustomPlaylistId } from '@/stores/playlists-store'
 import { useListenStatsStore } from '@/stores/listen-stats-store'
 import { useMemo, useState } from 'react'
-import type { RowSelectionState, SortingState } from '@tanstack/react-table'
-import { api } from '@/lib/api'
-import { exportTrackAndReveal } from '@/lib/export-track'
 import { resolvePlayingSourceIndex } from '@/lib/queue/playing-source-index'
 import { useFilter } from '@/hooks/utils/use-filter'
 import {
@@ -24,23 +21,13 @@ import {
   enterSelectionWithTrack,
   sortIndexedPlaylistTracks,
   sortingStateToTrackSort,
-} from '@/components/playlist/track-actions'
+} from '@/lib/playlist-track-actions'
 import { useCacheStore } from '@/stores/cache-store'
 import { usePlaylistJobsStore } from '@/stores/playlist-jobs-store'
 
-function errorMessage(error: unknown): string {
-  if (error && typeof error === 'object' && 'message' in error) {
-    const message = (error as { message?: unknown }).message
-    if (typeof message === 'string' && message.length > 0) return message
-  }
-  if (error instanceof Error && error.message) return error.message
-  return 'Something went wrong'
-}
-
 export function usePlaylistView() {
   const [search, setSearch] = useState('')
-  const [selectionMode, setSelectionMode] = useState(false)
-  const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
+  const [selection, setSelection] = useState<{ key: string, rows: RowSelectionState } | null>(null)
   const [sorting, setSorting] = useState<SortingState>([])
   const [infoTrack, setInfoTrack] = useState<Track | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
@@ -61,7 +48,6 @@ export function usePlaylistView() {
   const selectedPlaylistId = usePlaylistsStore(
     state => state.selectedPlaylistId,
   )
-  const setData = usePlaylistsStore(state => state.setData)
 
   const downloadJob = usePlaylistJobsStore((state) => {
     const jobId = state.downloadJobByPlaylist[String(selectedPlaylistId)]
@@ -93,11 +79,22 @@ export function usePlaylistView() {
     id: playlistId,
   } = selectedPlaylist
 
+  const membershipKey = useMemo(() => playlistMembershipKey(selectedPlaylist), [selectedPlaylist])
+  const membershipIndices = useMemo(() => playlistMembershipIndices(selectedPlaylist), [selectedPlaylist])
+  const selectionMode = selection?.key === membershipKey
+  const rowSelection = useMemo<RowSelectionState>(() => selectionMode ? selection!.rows : {}, [selection, selectionMode])
+  if (selection && !selectionMode) setSelection(null)
+  const setRowSelection: OnChangeFn<RowSelectionState> = (update) => {
+    setSelection(previous => ({ key: membershipKey, rows: typeof update === 'function'
+      ? update(previous?.key === membershipKey ? previous.rows : {})
+      : update }))
+  }
+
   const playingSourceIndex = useMemo(() => {
     return resolvePlayingSourceIndex({
       currentTrackId,
       playlistId,
-      playlistTrackIds: playlistTracks.map(track => track.id),
+      playlistTrackIds: selectedPlaylist.trackIds,
       queue: {
         cursor: queue.cursor,
         source: queue.source,
@@ -108,7 +105,7 @@ export function usePlaylistView() {
   }, [
     currentTrackId,
     playlistId,
-    playlistTracks,
+    selectedPlaylist.trackIds,
     queue.cursor,
     queue.source,
     queue.sourceIndices,
@@ -118,11 +115,11 @@ export function usePlaylistView() {
   const filteredIndexedTracks = useMemo(
     () =>
       playlistTracks
-        .map((track, sourceIndex) => ({ track, sourceIndex }))
+        .map((track, index) => ({ track, sourceIndex: membershipIndices[index]! }))
         .filter(({ track }) =>
           contains(`${track.performer} - ${track.title}`, search),
         ),
-    [playlistTracks, contains, search],
+    [playlistTracks, membershipIndices, contains, search],
   )
 
   const filteredTracks = useMemo(
@@ -148,25 +145,22 @@ export function usePlaylistView() {
   const selectedTrackIds = useMemo(
     () =>
       selectedSourceIndices
-        .map(index => playlistTracks[index]?.id)
+        .map(index => playlistTracks[membershipIndices.indexOf(index)]?.id)
         .filter((id): id is number => id !== undefined),
-    [playlistTracks, selectedSourceIndices],
+    [playlistTracks, membershipIndices, selectedSourceIndices],
   )
 
-  const canReorder
-    = selectedPlaylistId !== ALL_TRACKS_PLAYLIST_ID
-      && selectedPlaylistId !== POPULAR_PLAYLIST_ID
-      && selectedPlaylistId !== RECENT_PLAYLIST_ID
-      && search.length === 0
-      && sorting.length === 0
-      && !selectionMode
+  const canReorder = canReorderPlaylist(selectedPlaylistId)
+    && playlistTracks.length === selectedPlaylist.trackIds.length
+    && search.length === 0 && sorting.length === 0 && !selectionMode
 
   const playableEntries = useMemo(
     () => sortIndexedPlaylistTracks(
       playlistTracks,
       sortingStateToTrackSort(sorting),
+      membershipIndices,
     ),
-    [playlistTracks, sorting],
+    [playlistTracks, membershipIndices, sorting],
   )
 
   const customPlaylists = data?.custom ?? []
@@ -185,253 +179,65 @@ export function usePlaylistView() {
     })
   }
 
-  const handleReorderTracks = async (
-    trackIds: number[],
-    move: { fromIndex: number, toIndex: number },
-  ) => {
-    const latest = usePlaylistsStore.getState().data
-    if (!latest) return
-
-    const dbPlaylistId
-      = selectedPlaylistId === LIKED_PLAYLIST_ID
-        ? latest.liked.id
-        : typeof selectedPlaylistId === 'number'
-          ? selectedPlaylistId
-          : null
-    if (dbPlaylistId === null) return
-
-    const previousTrackIds
-      = selectedPlaylistId === LIKED_PLAYLIST_ID
-        ? latest.liked.trackIds
-        : latest.custom.find(playlist => playlist.id === selectedPlaylistId)
-          ?.trackIds
-    if (!previousTrackIds) return
-
-    const trackIdsMatch = (current: number[]) =>
-      current.length === trackIds.length
-      && current.every((id, index) => id === trackIds[index])
-
-    const resolveTracks = (ids: number[]) => {
-      const trackById = new Map(libraryTracks.map(track => [track.id, track]))
-      return ids
-        .map(id => trackById.get(id))
-        .filter((track): track is Track => track !== undefined)
-    }
-
-    const realignQueue = (
-      ids: number[],
-      reorderMove: { fromIndex: number, toIndex: number },
-    ) => {
-      usePlayerStore.getState().realignQueueToPlaylist(
-        selectedPlaylistId,
-        resolveTracks(ids),
-        reorderMove,
-      )
-    }
-
-    if (selectedPlaylistId === LIKED_PLAYLIST_ID) {
-      setData({
-        ...latest,
-        liked: { ...latest.liked, trackIds },
-      })
-    }
-    else {
-      setData({
-        ...latest,
-        custom: latest.custom.map(playlist =>
-          playlist.id === selectedPlaylistId
-            ? { ...playlist, trackIds }
-            : playlist,
-        ),
-      })
-    }
-    realignQueue(trackIds, move)
-
+  const reportAction = async (operation: () => Promise<unknown>) => {
+    const generation = captureSession()
     try {
-      const updatedAt = await api.reorderPlaylistTracks(dbPlaylistId, trackIds)
-      const after = usePlaylistsStore.getState().data
-      if (!after) return
-      // Only stamp updatedAt if this playlist still has our optimistic order.
-      if (selectedPlaylistId === LIKED_PLAYLIST_ID) {
-        if (!trackIdsMatch(after.liked.trackIds)) return
-        setData({
-          ...after,
-          liked: { ...after.liked, updatedAt },
-        })
-      }
-      else {
-        const current = after.custom.find(
-          playlist => playlist.id === selectedPlaylistId,
-        )
-        if (!current || !trackIdsMatch(current.trackIds)) return
-        setData({
-          ...after,
-          custom: after.custom.map(playlist =>
-            playlist.id === selectedPlaylistId
-              ? { ...playlist, updatedAt }
-              : playlist,
-          ),
-        })
-      }
+      await operation()
+      return true
     }
-    catch {
-      const after = usePlaylistsStore.getState().data
-      if (!after) return
-      const reverseMove = {
-        fromIndex: move.toIndex,
-        toIndex: move.fromIndex,
-      }
-      // Roll back only this playlist, and only if nothing else changed its order.
-      if (selectedPlaylistId === LIKED_PLAYLIST_ID) {
-        if (!trackIdsMatch(after.liked.trackIds)) return
-        setData({
-          ...after,
-          liked: { ...after.liked, trackIds: previousTrackIds },
-        })
-        realignQueue(previousTrackIds, reverseMove)
-      }
-      else {
-        const current = after.custom.find(
-          playlist => playlist.id === selectedPlaylistId,
-        )
-        if (!current || !trackIdsMatch(current.trackIds)) return
-        setData({
-          ...after,
-          custom: after.custom.map(playlist =>
-            playlist.id === selectedPlaylistId
-              ? { ...playlist, trackIds: previousTrackIds }
-              : playlist,
-          ),
-        })
-        realignQueue(previousTrackIds, reverseMove)
-      }
+    catch (error) {
+      if (isSessionCurrent(generation)) setActionError(errorMessage(error))
+      return false
     }
   }
 
+  const handleReorderTracks = (trackIds: number[], move: { fromIndex: number, toIndex: number }) =>
+    reportAction(() => usePlaylistsStore.getState().reorderTracks(playlistId, trackIds, selectedPlaylist.trackIds, move))
+
   const handleEnterSelection = (sourceIndex: number) => {
     const next = enterSelectionWithTrack(sourceIndex)
-    setSelectionMode(next.selectionMode)
     setRowSelection(next.rowSelection)
   }
 
   const handleExitSelection = () => {
-    setSelectionMode(false)
-    setRowSelection({})
+    setSelection(null)
   }
 
-  const handleToggleLike = async (trackId: number) => {
-    if (!usePlaylistsStore.getState().data) return
-    try {
-      const liked = await api.toggleLike(trackId)
-      const latest = usePlaylistsStore.getState().data
-      if (!latest) return
-      setData({ ...latest, liked })
-    }
-    catch {
-      // keep UI unchanged on failure
-    }
-  }
+  const handleToggleLike = (trackId: number) =>
+    reportAction(() => usePlaylistsStore.getState().toggleLike(trackId))
 
-  const handleBulkAddToLiked = async (trackIds: number[]) => {
-    for (const trackId of trackIds) {
-      await handleToggleLike(trackId)
-    }
+  const handleBulkLiked = async (trackIds: number[], liked: boolean) => {
+    await reportAction(async () => {
+      const { failedTrackIds } = await usePlaylistsStore.getState().setLiked(trackIds, liked)
+      const latest = resolveSelectedPlaylistTracks(
+        useLibraryStore.getState().library,
+        usePlaylistsStore.getState().data,
+        playlistId,
+        useListenStatsStore.getState().statsByTrackId,
+      )
+      if (!failedTrackIds.length) {
+        setSelection(null)
+        return
+      }
+      const failed = new Set(failedTrackIds)
+      setSelection({ key: playlistMembershipKey(latest), rows: Object.fromEntries(
+        latest.tracks.flatMap((track, index) => failed.has(track.id) ? [[String(playlistMembershipIndices(latest)[index]), true]] : []),
+      ) })
+      if (failedTrackIds.length) throw new Error(`Could not update ${failedTrackIds.length} selected tracks. They remain selected for retry.`)
+    })
   }
-
-  const handleBulkRemoveFromLiked = async (trackIds: number[]) => {
-    for (const trackId of trackIds) {
-      await handleToggleLike(trackId)
+  const handleBulkAddToLiked = (trackIds: number[]) => handleBulkLiked(trackIds, true)
+  const handleBulkRemoveFromLiked = (trackIds: number[]) => handleBulkLiked(trackIds, false)
+  const handleAddToPlaylist = (targetId: number, trackId: number) =>
+    reportAction(() => usePlaylistsStore.getState().addTracks(targetId, [trackId]))
+  const handleBulkAddToPlaylist = (targetId: number, trackIds: number[]) =>
+    reportAction(() => usePlaylistsStore.getState().addTracks(targetId, trackIds))
+  const handleDeleteFromPlaylist = (targetId: CustomPlaylistId, position: number) =>
+    reportAction(() => usePlaylistsStore.getState().removeTracks(targetId, [position], selectedPlaylist.trackIds))
+  const handleBulkRemoveFromPlaylist = async (targetId: number, positions: number[]) => {
+    if (await reportAction(() => usePlaylistsStore.getState().removeTracks(targetId, positions, selectedPlaylist.trackIds))) {
+      setRowSelection({})
     }
-    setRowSelection({})
-  }
-
-  const handleAddToPlaylist = async (targetId: number, trackId: number) => {
-    if (!usePlaylistsStore.getState().data) return
-    try {
-      const updatedAt = await api.addTrackToPlaylist(targetId, trackId)
-      const latest = usePlaylistsStore.getState().data
-      if (!latest) return
-      setData({
-        ...latest,
-        custom: latest.custom.map(playlist =>
-          playlist.id === targetId
-            ? {
-                ...playlist,
-                updatedAt,
-                trackIds: [...playlist.trackIds, trackId],
-              }
-            : playlist,
-        ),
-      })
-    }
-    catch {
-      // keep UI unchanged on failure
-    }
-  }
-
-  const handleBulkAddToPlaylist = async (
-    targetId: number,
-    trackIds: number[],
-  ) => {
-    if (!usePlaylistsStore.getState().data || trackIds.length === 0) return
-    try {
-      const updatedAt = await api.addTracksToPlaylist(targetId, trackIds)
-      const latest = usePlaylistsStore.getState().data
-      if (!latest) return
-      setData({
-        ...latest,
-        custom: latest.custom.map(playlist =>
-          playlist.id === targetId
-            ? {
-                ...playlist,
-                updatedAt,
-                trackIds: [...playlist.trackIds, ...trackIds],
-              }
-            : playlist,
-        ),
-      })
-    }
-    catch {
-      // keep UI unchanged on failure
-    }
-  }
-
-  const handleDeleteFromPlaylist = async (
-    targetId: CustomPlaylistId,
-    position: number,
-  ) => {
-    if (!usePlaylistsStore.getState().data) return
-    try {
-      const updatedAt = await api.removeTrackFromPlaylist(targetId, position)
-      const latest = usePlaylistsStore.getState().data
-      if (!latest) return
-      setData({
-        ...latest,
-        custom: latest.custom.map(playlist =>
-          playlist.id === targetId
-            ? {
-                ...playlist,
-                updatedAt,
-                trackIds: playlist.trackIds.filter((_, index) => index !== position),
-              }
-            : playlist,
-        ),
-      })
-    }
-    catch {
-      // keep UI unchanged on failure
-    }
-  }
-
-  const handleBulkRemoveFromPlaylist = async (
-    targetId: number,
-    positions: number[],
-  ) => {
-    const descending = [...positions].sort((a, b) => b - a)
-    for (const position of descending) {
-      await handleDeleteFromPlaylist(targetId, position)
-    }
-    setRowSelection({})
   }
 
   const handlePlayNext = (track: Track) => {
@@ -445,7 +251,7 @@ export function usePlaylistView() {
   const handleBulkPlayNext = () => {
     enqueueNext(
       selectedSourceIndices
-        .map(index => playlistTracks[index])
+        .map(index => playlistTracks[membershipIndices.indexOf(index)])
         .filter((track): track is Track => track !== undefined),
     )
   }
@@ -453,104 +259,16 @@ export function usePlaylistView() {
   const handleBulkAddToEnd = () => {
     appendToQueue(
       selectedSourceIndices
-        .map(index => playlistTracks[index])
+        .map(index => playlistTracks[membershipIndices.indexOf(index)])
         .filter((track): track is Track => track !== undefined),
     )
   }
 
-  const handleCache = async (track: Track) => {
-    const cache = useCacheStore.getState()
-    if (cache.isBusy(track.id)) return
-    cache.markBusy([track.id])
-    try {
-      await api.cacheTrack(track.id)
-      useCacheStore.getState().markCached([track.id])
-    }
-    catch (error) {
-      setActionError(errorMessage(error))
-    }
-    finally {
-      useCacheStore.getState().clearBusy([track.id])
-    }
-  }
-
-  const handleBulkCache = async (trackIds: number[]) => {
-    if (trackIds.length === 0) return
-    const cache = useCacheStore.getState()
-    const ids = trackIds.filter(id => !cache.isBusy(id))
-    if (ids.length === 0) return
-    cache.markBusy(ids)
-    try {
-      const cached = await api.cacheTracks(ids)
-      useCacheStore.getState().markCached(cached)
-    }
-    catch (error) {
-      setActionError(errorMessage(error))
-    }
-    finally {
-      useCacheStore.getState().clearBusy(ids)
-    }
-  }
-
-  const handleCachePlaylist = () => {
-    runCachePlaylist({
-      playlistId,
-      name: selectedPlaylist.name,
-      trackIds: playlistTracks.map(track => track.id),
-    })
-  }
-
-  const handleDownload = async (track: Track) => {
-    const cache = useCacheStore.getState()
-    if (cache.isBusy(track.id)) return
-    cache.markBusy([track.id])
-    try {
-      await exportTrackAndReveal(track.id)
-    }
-    catch (error) {
-      setActionError(errorMessage(error))
-    }
-    finally {
-      useCacheStore.getState().clearBusy([track.id])
-    }
-  }
-
-  const handleBulkDownload = async (trackIds: number[]) => {
-    if (trackIds.length === 0) return
-    const cache = useCacheStore.getState()
-    const ids = trackIds.filter(id => !cache.isBusy(id))
-    if (ids.length === 0) return
-    cache.markBusy(ids)
-    try {
-      await api.exportTracks(ids)
-    }
-    catch (error) {
-      setActionError(errorMessage(error))
-    }
-    finally {
-      useCacheStore.getState().clearBusy(ids)
-    }
-  }
-
+  const fileActions = useTrackFileActions(setActionError)
+  const handleCachePlaylist = () => runCachePlaylist({ playlistId, name: selectedPlaylist.name, trackIds: playlistTracks.map(track => track.id) })
   const handleDownloadPlaylist = () => {
-    if (!canDownloadPlaylist(selectedPlaylist) || playlistTracks.length === 0) {
-      return
-    }
-    runDownloadPlaylist({
-      playlistId,
-      name: selectedPlaylist.name,
-      trackIds: playlistTracks.map(track => track.id),
-    })
-  }
-
-  const handleRemoveFromCache = async (track: Track) => {
-    try {
-      await api.removeTrackFromCache(track.id)
-      useCacheStore.getState().markUncached([track.id])
-    }
-    catch (error) {
-      setActionError(errorMessage(error))
-    }
+    if (!canDownloadPlaylist(selectedPlaylist) || !playlistTracks.length) return
+    return runDownloadPlaylist({ playlistId, name: selectedPlaylist.name, trackIds: playlistTracks.map(track => track.id) })
   }
 
   function handlePlaylistPlay() {
@@ -581,13 +299,20 @@ export function usePlaylistView() {
     if (!open) setActionError(null)
   }
 
-  const checkTrackLiked = (trackId: number) => isTrackLiked(data, trackId)
+  const checkTrackLiked = (trackId: number) => likedTrackIds.has(trackId)
   const cachedIds = useCacheStore(state => state.cachedIds)
   const playlistCached
     = playlistTracks.length > 0
       && playlistTracks.every(track => cachedIds.has(track.id))
 
   return {
+    trackActions: {
+      onToggleLike: handleToggleLike, onAddToPlaylist: handleAddToPlaylist, onDeleteFromPlaylist: handleDeleteFromPlaylist,
+      onPlayNext: handlePlayNext, onAddToEnd: handleAddToEnd, onShowInfo: handleShowInfo,
+      onCache: fileActions.handleCache, onDownload: fileActions.handleDownload, onRemoveFromCache: fileActions.handleRemoveFromCache,
+    },
+    handleBulkCache: fileActions.handleBulkCache,
+    handleBulkDownload: fileActions.handleBulkDownload,
     search,
     setSearch,
     selectionMode,
@@ -621,27 +346,16 @@ export function usePlaylistView() {
     handleReorderTracks,
     handleEnterSelection,
     handleExitSelection,
-    handleToggleLike,
     handleBulkAddToLiked,
     handleBulkRemoveFromLiked,
-    handleAddToPlaylist,
     handleBulkAddToPlaylist,
-    handleDeleteFromPlaylist,
     handleBulkRemoveFromPlaylist,
-    handlePlayNext,
-    handleAddToEnd,
     handleBulkPlayNext,
     handleBulkAddToEnd,
-    handleCache,
-    handleBulkCache,
     handleCachePlaylist,
-    handleDownload,
-    handleBulkDownload,
     handleDownloadPlaylist,
-    handleRemoveFromCache,
     handlePlaylistPlay,
     handlePlaylistShuffle,
-    handleShowInfo,
     handleInfoOpenChange,
     handleActionErrorOpenChange,
   }

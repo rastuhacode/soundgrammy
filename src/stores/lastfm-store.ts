@@ -1,3 +1,4 @@
+import { captureSession, isSessionCurrent } from '@/stores/session-store'
 import { create } from 'zustand'
 import { api, onLastFmStatusChanged } from '@/lib/api'
 import type { LastFmStatus } from '@/types'
@@ -12,11 +13,15 @@ export const useLastFmStore = create<LastFmState>(set => ({
   status: null,
   setStatus: status => set({ status }),
   hydrate: async () => {
+    const generation = captureSession()
     const status = await api.getLastFmStatus()
-    set({ status })
+    if (isSessionCurrent(generation)) set({ status })
   },
 }))
 
 export async function startLastFmStatusListener() {
-  return onLastFmStatusChanged(status => useLastFmStore.getState().setStatus(status))
+  const generation = captureSession()
+  return onLastFmStatusChanged((status) => {
+    if (isSessionCurrent(generation)) useLastFmStore.getState().setStatus(status)
+  })
 }

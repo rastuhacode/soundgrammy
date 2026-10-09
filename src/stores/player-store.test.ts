@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/lib/api'
 import type { Track } from '@/types'
 import type { PlaybackSession } from '@/types/playback'
-import { takePendingListenEndReason } from '@/lib/listen-tracker'
 import { acceptPlayerResponse, applyPlaybackSession, sendPlayerCommand, usePlayerStore } from './player-store'
 import { useRepeatStore } from './repeat-store'
 import { useShuffleStore } from './shuffle-store'
@@ -36,13 +35,12 @@ describe('native player mirror', () => {
     expect(usePlayerStore.getState().currentTrack?.id).toBe(1)
     expect(usePlayerStore.getState().isPlaying).toBe(true)
   })
-  it('adopts native duplicate attempts, playback modes and completion reason', () => {
+  it('adopts native duplicate attempts, playback modes', () => {
     applyPlaybackSession(session())
     const next = { ...session(2, 1, 2), endReason: 'completed', preferences: { repeat: 'all' as const, shuffle: 'on' as const, mode: 'smart' as const } }
     applyPlaybackSession(next)
     expect(usePlayerStore.getState().queue.cursor).toBe(1)
     expect(usePlayerStore.getState().listenAttemptEpoch).toBe(2)
-    expect(takePendingListenEndReason('skipped')).toBe('completed')
     expect(useRepeatStore.getState().repeat).toBe('all')
     expect(useShuffleStore.getState().mode).toBe('smart')
   })

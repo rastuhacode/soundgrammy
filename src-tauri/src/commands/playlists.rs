@@ -15,9 +15,12 @@ pub async fn list_playlists(state: State<'_, AppState>) -> AppResult<PlaylistsBu
 pub async fn create_playlist(
     state: State<'_, AppState>,
     name: String,
+    track_ids: Option<Vec<i64>>,
 ) -> AppResult<CustomPlaylistSummary> {
     let uid = require_uid(&state)?;
-    state.db.create_playlist(uid, &name)
+    state
+        .db
+        .create_playlist_with_tracks(uid, &name, &track_ids.unwrap_or_default())
 }
 
 #[tauri::command]
@@ -68,6 +71,19 @@ pub async fn remove_track_from_playlist(
     state
         .db
         .remove_track_from_playlist(playlist_id, position, uid)
+}
+
+#[tauri::command]
+pub async fn remove_tracks_from_playlist(
+    state: State<'_, AppState>,
+    playlist_id: i64,
+    positions: Vec<i64>,
+    expected_track_ids: Vec<i64>,
+) -> AppResult<String> {
+    let uid = require_uid(&state)?;
+    state
+        .db
+        .remove_playlist_tracks(playlist_id, &positions, &expected_track_ids, uid)
 }
 
 #[tauri::command]

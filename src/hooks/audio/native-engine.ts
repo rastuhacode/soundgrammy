@@ -96,6 +96,12 @@ export class NativeRustAudioEngine implements AudioEngine {
     }
     catch (error) {
       this.unlisten.splice(0).forEach(fn => fn())
+      if (!this.destroyed) {
+        this.snapshot = Object.freeze({ ...this.snapshot, revision: this.snapshot.revision + 1,
+          status: 'error', error: { code: 'interrupted' as const, message: 'Could not attach to native playback. Restart SoundGrammy to reconnect.', recoverable: true },
+        })
+        this.emit({ type: 'state', snapshot: this.snapshot })
+      }
       throw error
     }
   }

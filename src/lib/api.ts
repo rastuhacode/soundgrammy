@@ -1,5 +1,5 @@
 import type { PlayerCommand } from '@/types/playback'
-import type { AudioTrackRequest } from '@/hooks/audio/engine'
+import type { AudioTrackRequest } from '@/types/audio'
 import { invoke as tauriInvoke, convertFileSrc } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { appLogger } from '@/lib/app-logger'
@@ -154,9 +154,10 @@ export const api = {
 
   // ---- playlists --------------------------------------------------------
   listPlaylists: () => invoke<PlaylistsBundle>('list_playlists'),
-  createPlaylist: (input: { name: string }) =>
+  createPlaylist: (input: { name: string, trackIds?: number[] }) =>
     invoke<CustomPlaylistSummary>('create_playlist', {
       name: input.name,
+      trackIds: input.trackIds ?? [],
     }),
   updatePlaylist: (input: {
     playlistId: number
@@ -172,6 +173,8 @@ export const api = {
     invoke<string>('add_track_to_playlist', { playlistId, trackId }),
   addTracksToPlaylist: (playlistId: number, trackIds: number[]) =>
     invoke<string>('add_tracks_to_playlist', { playlistId, trackIds }),
+  removeTracksFromPlaylist: (playlistId: number, positions: number[], expectedTrackIds: number[]) =>
+    invoke<string>('remove_tracks_from_playlist', { playlistId, positions, expectedTrackIds }),
   removeTrackFromPlaylist: (playlistId: number, position: number) =>
     invoke<string>('remove_track_from_playlist', { playlistId, position }),
   reorderPlaylistTracks: (playlistId: number, trackIds: number[]) =>

@@ -1,8 +1,35 @@
 import { z } from 'zod'
 import type { Track } from '@/types'
-import type { Queue } from '@/stores/player-store'
+import { commonPlaylistIdSchema, type PlaylistId } from '@/lib/playlists'
+import type { PlaylistQueueEntry } from '@/lib/shuffle/model'
+import { RepeatSchema } from '@/lib/repeat/model'
+import { ShuffleSchema, ShuffleModeSchema } from '@/lib/shuffle/model'
+import { trackSchema } from '@/types'
 import type { RepeatState } from '@/lib/repeat'
 import type { ShuffleMode, ShuffleState } from '@/lib/shuffle'
+
+export interface QueueSource {
+  type: 'playlist'
+  playlistId: PlaylistId
+  name: string
+  trackIds: number[]
+}
+
+export interface Queue {
+  source: QueueSource | null
+  tracks: Track[]
+  cursor: number
+  /**
+   * Parallel to `tracks`: playlist membership index for each queue slot.
+   * Null after queue edits diverge from the source playlist.
+   */
+  sourceIndices: number[] | null
+  /**
+   * Unshuffled session order (membership-aware), e.g. UI column sort.
+   * Shuffle on/off reshuffles / restores this — not raw playlist membership.
+   */
+  baseEntries: PlaylistQueueEntry[] | null
+}
 
 export interface PlaybackPreferences {
   repeat: RepeatState
@@ -35,18 +62,13 @@ export type PlayerCommand
     | { type: 'shuffle', shuffle: ShuffleState }
     | { type: 'shuffleMode', mode: ShuffleMode }
 
-const trackSchema = z.object({
-  id: z.number().int(), tg_user_id: z.number().int(), file_id: z.string(), file_unique_id: z.string(),
-  title: z.string().nullable(), performer: z.string().nullable(), duration: z.number().nullable(),
-  source: z.string(), mime_type: z.string().nullable(), file_size: z.number().nullable(), created_at: z.string(),
-})
 export const playbackSessionSchema = z.object({
   revision: z.number().int().nonnegative(), attempt: z.number().int().nonnegative(),
   isPlaying: z.boolean(), endReason: z.string(),
-  preferences: z.object({ repeat: z.enum(['none', 'one', 'all']), shuffle: z.enum(['off', 'on']), mode: z.enum(['random', 'variety', 'rediscover', 'smart', 'fresh', 'duration']) }),
+  preferences: z.object({ repeat: RepeatSchema, shuffle: ShuffleSchema, mode: ShuffleModeSchema }),
   queue: z.object({
     tracks: z.array(trackSchema), cursor: z.number().int(),
-    source: z.object({ type: z.literal('playlist'), playlistId: z.union([z.number(), z.enum(['all', 'liked', 'popular', 'recent'])]), name: z.string(), trackIds: z.array(z.number().int()) }).nullable(),
+    source: z.object({ type: z.literal('playlist'), playlistId: z.union([z.number(), commonPlaylistIdSchema]), name: z.string(), trackIds: z.array(z.number().int()) }).nullable(),
     sourceIndices: z.array(z.number().int().nonnegative()).nullable(),
     baseEntries: z.array(z.object({ track: trackSchema, sourceIndex: z.number().int().nonnegative() })).nullable(),
   }).refine(q => q.tracks.length === 0 ? q.cursor === -1 : q.cursor >= 0 && q.cursor < q.tracks.length),

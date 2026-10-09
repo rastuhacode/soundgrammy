@@ -4,7 +4,7 @@ React 19 + Zustand + Vite + Tailwind. Import alias: `@/` → `src/`.
 
 ## Bootstrap
 
-[App.tsx](App.tsx): local `auth_status` (`session.enc` + SQLite profile) → login or hydrate session → `listTracks` / `listPlaylists` → UI ready → background reconnect loop (`useTelegramReconnect`: `refresh_auth` + backoff + browser `online`/`offline`) then `sync_saved_music`. Network failures leave the cached library intact; `auth:revoked` forces login.
+[use-app-session.ts](hooks/use-app-session.ts) owns auth, hydration, and subscriptions; [App.tsx](App.tsx) owns layout. Local `auth_status` (`session.enc` + SQLite profile) → login or hydrate session → `listTracks` / `listPlaylists` → UI ready → background reconnect loop (`useTelegramReconnect`: `refresh_auth` + backoff + browser `online`/`offline`) then `sync_saved_music`. Network failures leave the cached library intact; `auth:revoked` forces login.
 
 ## Boundaries
 
@@ -20,9 +20,9 @@ Zustand stores under `stores/`:
 | Store | Owns |
 |-------|------|
 | `session-store` | Logged-in user display fields |
-| `connectivity-store` | Telegram reachability (`connecting` / `online` / `offline`) |
+| `connectivity-store` | Telegram reachability and one shared automatic/manual sync coordinator |
 | `library-store` | Track list |
-| `playlists-store` | Liked + custom playlists, selection |
+| `playlists-store` | Liked + custom playlists, selection, serialized mutations and refreshes |
 | `listen-stats-store` | Per-track listen aggregates (smart playlists) |
 | `player-store` | Native queue/current-track/intent mirror; actions send native commands |
 | `cache-store` | Which tracks are fully present in app audio cache |
@@ -39,3 +39,13 @@ Proxy / connection settings are edited via Settings and the login-screen panel; 
 - Components by area: `components/audio/`, `playlist/`, `auth/`, `ui/`.
 - Reuse `components/ui/` primitives; match existing Tailwind patterns.
 - Keep components thin: data via stores + `api`, not ad-hoc backend calls.
+
+## Async ownership and domain rules
+
+- Capture the session generation before account-scoped work; discard results after logout/account change.
+- Playlist mutations belong to `playlists-store`; components must not write whole bundles after awaiting commands.
+- `lib/library-hydration.ts` loads each domain independently. Statistics/cache failures must not block tracks or playlists.
+- Positional row selection belongs to an exact ordered membership snapshot and resets when that snapshot changes.
+- `lib/playlists.ts` owns built-in playlist metadata/types/resolvers; `lib/playlist-track-actions.ts` owns pure action rules.
+- Shared playback/transport contracts live in `types/`; they must not import stores or React hooks.
+- `test-support/legacy-*` contains historical web playback fixtures only. Production queue policy and listen accounting belong to Rust; frontend fixture tests do not validate native policy.

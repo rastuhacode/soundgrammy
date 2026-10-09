@@ -1,3 +1,4 @@
+import type { TrackMenuHandlers } from './TrackMenuContent'
 import {
   closestCenter,
   DndContext,
@@ -51,7 +52,7 @@ import {
   getTrackSortableIds,
   reorderByIndex,
   type CustomPlaylistRef,
-} from './track-actions'
+} from '@/lib/playlist-track-actions'
 
 const playlistTableFeatures = tableFeatures({
   columnSizingFeature,
@@ -87,15 +88,7 @@ export interface PlaylistTracksTableProps {
   ) => void
   onEnterSelection: (sourceIndex: number) => void
   onTrackPlay: (track: Track, startIndex: number) => void
-  onToggleLike: (trackId: number) => void
-  onAddToPlaylist: (playlistId: number, trackId: number) => void
-  onDeleteFromPlaylist: (playlistId: number, position: number) => void
-  onPlayNext: (track: Track) => void
-  onAddToEnd: (track: Track) => void
-  onCache: (track: Track) => void
-  onDownload: (track: Track) => void
-  onRemoveFromCache: (track: Track) => void
-  onShowInfo: (track: Track) => void
+  trackActions: TrackMenuHandlers
 }
 
 function SortIcon({ sorted }: { sorted: false | 'asc' | 'desc' }) {
@@ -122,15 +115,7 @@ export function PlaylistTracksTable({
   onReorderTracks,
   onEnterSelection,
   onTrackPlay,
-  onToggleLike,
-  onAddToPlaylist,
-  onDeleteFromPlaylist,
-  onPlayNext,
-  onAddToEnd,
-  onCache,
-  onDownload,
-  onRemoveFromCache,
-  onShowInfo,
+  trackActions,
 }: PlaylistTracksTableProps) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const touchScreen = useTouchScreen()
@@ -395,15 +380,7 @@ export function PlaylistTracksTable({
                   currentPlaylist,
                   customPlaylists,
                   onSelect: onEnterSelection,
-                  onToggleLike,
-                  onAddToPlaylist,
-                  onDeleteFromPlaylist,
-                  onPlayNext,
-                  onAddToEnd,
-                  onCache,
-                  onDownload,
-                  onRemoveFromCache,
-                  onShowInfo,
+                  ...trackActions,
                 }
 
                 return (

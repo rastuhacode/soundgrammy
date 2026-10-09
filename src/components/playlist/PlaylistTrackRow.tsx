@@ -8,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { openContextMenuFromPointerEvent } from './SidebarPlaylistContextMenu'
 import { TrackThumbnail } from './PlaylistTrackThumbnail'
-import { formatTrackDuration } from './track-actions'
+import { formatTrackDuration } from '@/lib/playlist-track-actions'
 
 export const TRACK_ROW_HEIGHT = 70
 /** Space between rows; baked into stride so DnD measuring matches layout. */

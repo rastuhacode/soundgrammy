@@ -8,7 +8,6 @@ import {
   SortableContext,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
-import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -29,7 +28,7 @@ import {
 } from '@/lib/playlist-recipe-io'
 import type { PlaylistRecipeSource } from '@/types'
 import type { PlaylistId } from '@/stores/playlists-store'
-import { canExportPlaylist } from '@/components/playlist/track-actions'
+import { canExportPlaylist } from '@/lib/playlist-track-actions'
 import { SidebarDrawer } from './SidebarDrawer'
 
 const restrictToVerticalAxis: Modifier = ({ transform }) => ({
@@ -39,6 +38,8 @@ const restrictToVerticalAxis: Modifier = ({ transform }) => ({
 
 export function PlayerSidebar(props: { onLogout: () => void, onSelectPlaylist: (id: PlaylistId) => void }) {
   const {
+    actionError,
+    setActionError,
     selectedPlaylistId,
     dialogState,
     setDialogState,
@@ -58,8 +59,6 @@ export function PlayerSidebar(props: { onLogout: () => void, onSelectPlaylist: (
     handleUnhide,
     handleDelete,
   } = useSidebarPlaylists()
-
-  const [actionError, setActionError] = useState<string | null>(null)
 
   const title = 'Create playlist'
 

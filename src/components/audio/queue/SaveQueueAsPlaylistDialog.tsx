@@ -1,7 +1,8 @@
 import { useEffect, useId, useState } from 'react'
 import type { QueueSaveScope } from '@/lib/queue'
 import { trackIdsForSaveScope } from '@/lib/queue'
-import { api } from '@/lib/api'
+import { errorMessage } from '@/lib/errors'
+import { validatePlaylistName } from '@/lib/playlist-form'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -47,7 +48,7 @@ export function SaveQueueAsPlaylistDialog({
   const formId = useId()
   const queue = usePlayerStore(state => state.queue)
   const data = usePlaylistsStore(state => state.data)
-  const setData = usePlaylistsStore(state => state.setData)
+  const createPlaylist = usePlaylistsStore(state => state.createPlaylist)
   const setSelectedPlaylist = usePlaylistsStore(
     state => state.setSelectedPlaylist,
   )
@@ -73,12 +74,9 @@ export function SaveQueueAsPlaylistDialog({
     if (!data) return
 
     const trimmed = name.trim()
-    if (trimmed.length === 0) {
-      setNameError('Playlist name is required')
-      return
-    }
-    if (trimmed.length > 100) {
-      setNameError('Playlist name must be at most 100 characters')
+    const issue = validatePlaylistName(name)
+    if (issue) {
+      setNameError(issue)
       return
     }
     setNameError(null)
@@ -92,27 +90,13 @@ export function SaveQueueAsPlaylistDialog({
 
     setIsSubmitting(true)
     try {
-      const created = await api.createPlaylist({ name: trimmed })
-      const updatedAt = await api.addTracksToPlaylist(created.id, trackIds)
-      const latest = usePlaylistsStore.getState().data
-      if (!latest) return
-      setData({
-        ...latest,
-        custom: [
-          ...latest.custom.filter(playlist => playlist.id !== created.id),
-          {
-            ...created,
-            trackIds,
-            updatedAt,
-          },
-        ],
-      })
+      const created = await createPlaylist(trimmed, trackIds)
       setSelectedPlaylist(created.id)
       onOpenChange(false)
     }
     catch (err) {
       setScopeError(
-        err instanceof Error ? err.message : 'Failed to save playlist',
+        errorMessage(err),
       )
     }
     finally {
@@ -122,7 +106,7 @@ export function SaveQueueAsPlaylistDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="z-[100] sm:max-w-md" overlayClassName="z-[90]">
+      <DialogContent className="z-100 sm:max-w-md" overlayClassName="z-[90]">
         <DialogHeader>
           <DialogTitle>Save queue as playlist</DialogTitle>
           <DialogDescription>

@@ -28,7 +28,7 @@ import {
 } from '@/components/ui/dropdown-menu'
 import type { ResolvedSelectedPlaylist } from '@/stores/playlists-store'
 import { PlaylistBulkActions } from './PlaylistBulkActions'
-import { canDownloadPlaylist, type CustomPlaylistRef } from './track-actions'
+import { canDownloadPlaylist, type CustomPlaylistRef } from '@/lib/playlist-track-actions'
 
 function ToolbarIconButton({
   label,

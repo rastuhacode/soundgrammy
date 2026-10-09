@@ -1,37 +1,16 @@
+import { captureSession, isSessionCurrent } from '@/stores/session-store'
 import { create } from 'zustand'
 import { api } from '@/lib/api'
 import type { Track } from '@/lib/db'
-import { setPendingListenEndReason } from '@/lib/listen-tracker'
 import { trackIdsForSaveScope, type QueueSaveScope } from '@/lib/queue'
 import { readLegacyRepeat, useRepeatStore } from '@/stores/repeat-store'
 import { readLegacyShuffle, useShuffleStore } from '@/stores/shuffle-store'
 import type { RepeatState } from '@/lib/repeat'
 import { buildPlaylistEntries, type PlaylistQueueEntry, type ShuffleMode, type ShuffleState } from '@/lib/shuffle'
-import type { PlaylistId, ResolvedSelectedPlaylist } from '@/stores/playlists-store'
-import { playbackSessionSchema, type PlaybackSession, type PlayerCommand } from '@/types/playback'
+import { playlistMembershipIndices, type PlaylistId, type ResolvedSelectedPlaylist } from '@/stores/playlists-store'
+import { playbackSessionSchema, type PlaybackSession, type PlayerCommand, type Queue } from '@/types/playback'
 
-export interface QueueSource {
-  type: 'playlist'
-  playlistId: PlaylistId
-  name: string
-  trackIds: number[]
-}
-
-export interface Queue {
-  source: QueueSource | null
-  tracks: Track[]
-  cursor: number
-  /**
-   * Parallel to `tracks`: playlist membership index for each queue slot.
-   * Null after queue edits diverge from the source playlist.
-   */
-  sourceIndices: number[] | null
-  /**
-   * Unshuffled session order (membership-aware), e.g. UI column sort.
-   * Shuffle on/off reshuffles / restores this — not raw playlist membership.
-   */
-  baseEntries: PlaylistQueueEntry[] | null
-}
+export type { Queue, QueueSource } from '@/types/playback'
 
 interface GenerateQueueOptions {
   playlist: ResolvedSelectedPlaylist
@@ -102,16 +81,21 @@ interface PlayerState {
 // Commands express intent; only acknowledged native snapshots mutate playback state.
 let commands: Promise<void> = Promise.resolve()
 export function sendPlayerCommand(command: PlayerCommand): Promise<void> {
+  const generation = captureSession()
   const run = commands.then(async () => {
+    if (!isSessionCurrent(generation)) return
     const result = await api.nativePlayerCommand(command)
+    if (!isSessionCurrent(generation)) return
     acceptPlayerResponse(result)
     usePlayerStore.setState({ commandError: null })
   })
   commands = run.catch(async (error: unknown) => {
+    if (!isSessionCurrent(generation)) return
     usePlayerStore.setState({ commandError: error instanceof Error ? error.message : String(error) })
     // A rejected stale index command never retries against a different row.
     try {
-      acceptPlayerResponse(await api.nativeAudioSnapshot())
+      const snapshot = await api.nativeAudioSnapshot()
+      if (isSessionCurrent(generation)) acceptPlayerResponse(snapshot)
     }
     catch { /* Keep the last acknowledged state until reattachment succeeds. */ }
   })
@@ -126,9 +110,6 @@ export function acceptPlayerResponse(value: unknown) {
 }
 export function applyPlaybackSession(session: PlaybackSession) {
   if (session.revision <= usePlayerStore.getState().nativeRevision) return
-  if (session.attempt !== usePlayerStore.getState().listenAttemptEpoch && ['completed', 'skipped', 'replaced', 'stopped'].includes(session.endReason)) {
-    setPendingListenEndReason(session.endReason as 'completed' | 'skipped' | 'replaced' | 'stopped')
-  }
   useRepeatStore.setState({ repeat: session.preferences.repeat })
   useShuffleStore.setState({ shuffle: session.preferences.shuffle, mode: session.preferences.mode })
   usePlayerStore.setState({
@@ -155,7 +136,8 @@ export const usePlayerStore = create<PlayerState>((_set, get) => ({
   commandError: null,
   // UI sorting defines the base membership order. Native policy applies shuffle.
   generateQueue: ({ playlist, start, startIndex, orderedEntries }) => {
-    const entries = orderedEntries ?? buildPlaylistEntries(playlist.tracks)
+    const sourceIndices = playlistMembershipIndices(playlist)
+    const entries = orderedEntries ?? buildPlaylistEntries(playlist.tracks).map((entry, index) => ({ ...entry, sourceIndex: sourceIndices[index]! }))
     const index = startIndex ?? (start ? entries.findIndex(e => e.track.id === start.id) : 0)
     return {
       source: { type: 'playlist', playlistId: playlist.id, name: playlist.name, trackIds: playlist.trackIds },
