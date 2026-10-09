@@ -1,5 +1,21 @@
 # Changelog
 
+## [3.4.0](https://github.com/rastuhacode/soundgrammy/compare/v3.3.0...v3.4.0) (2026-10-09)
+
+
+### Features
+
+* added extended selection with shift + left click ([26e9d21](https://github.com/rastuhacode/soundgrammy/commit/26e9d21acb465850fb158cc8e83acd7daddeda89))
+* enhance Android session management with backup rules and session repair logic ([575dd48](https://github.com/rastuhacode/soundgrammy/commit/575dd489d0026dac3a79f4f195c8d4e396002064))
+* improve audio output handling with enhanced format support and fallback configurations ([7f6e44f](https://github.com/rastuhacode/soundgrammy/commit/7f6e44fb94204c051b6b70effc6ec7a2e7fe722d))
+
+
+### Bug Fixes
+
+* even toolbar buttns with search ([c850029](https://github.com/rastuhacode/soundgrammy/commit/c8500298d9372b2b6dc3049e2cb41c70b4f5b40f))
+* fix lint errors ([a9e4553](https://github.com/rastuhacode/soundgrammy/commit/a9e45534aad804317ed44b242d81d97b40ce5fbf))
+* fix multiple issues with mobile view ([a274b7e](https://github.com/rastuhacode/soundgrammy/commit/a274b7e2f6d55920c866d0fd3b73e3dfe9e45238))
+
 ## [3.3.0](https://github.com/rastuhacode/soundgrammy/compare/v3.2.0...v3.3.0) (2026-09-25)
 
 
