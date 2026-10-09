@@ -1,5 +1,13 @@
 # Changelog
 
+## [3.4.1](https://github.com/rastuhacode/soundgrammy/compare/v3.4.0...v3.4.1) (2026-10-09)
+
+
+### Bug Fixes
+
+* fix double initialization on Android ([d96e6cb](https://github.com/rastuhacode/soundgrammy/commit/d96e6cb0fba64c98cc54b249825f420e0a33a857))
+* fix double initialization on Android ([f82d90e](https://github.com/rastuhacode/soundgrammy/commit/f82d90e40d81bb3e7857035c6bfbbfa60ed76027))
+
 ## [3.4.0](https://github.com/rastuhacode/soundgrammy/compare/v3.3.0...v3.4.0) (2026-10-09)
 
 
