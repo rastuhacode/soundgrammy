@@ -5,18 +5,12 @@ import {
   canExportPlaylist,
   canRemoveFromPlaylist,
   compareTracks,
-  enterSelectionWithTrack,
-  filterAndSortTrackIds,
+  sortPlaylistEntries,
   getAvailableCustomPlaylists,
   getBulkActions,
   getTrackContextActions,
   getTrackSortableIds,
   reorderByIndex,
-  reorderTrackIds,
-  selectionModeAfterPlaylistChange,
-  sortIndexedPlaylistTracks,
-  sortTracks,
-  toPlayablePlaylist,
 } from '@/lib/playlist-track-actions'
 
 function track(
@@ -178,90 +172,18 @@ describe('getAvailableCustomPlaylists', () => {
   })
 })
 
-describe('filterAndSortTrackIds (regression)', () => {
-  const tracks = [
-    track(1, { title: 'Banana', performer: 'Zed', duration: 30 }),
-    track(2, { title: 'Apple', performer: 'Ann', duration: 10 }),
-    track(3, { title: 'Cherry', performer: 'Bob', duration: 20 }),
-  ]
-
-  const contains = (haystack: string, needle: string) =>
-    needle.trim() === ''
-    || haystack.toLowerCase().includes(needle.toLowerCase())
-
-  it('filters by performer - title then sorts by title asc', () => {
-    expect(
-      filterAndSortTrackIds(tracks, '', { id: 'title', desc: false }, contains),
-    ).toEqual([2, 1, 3])
-  })
-
-  it('sorts by duration desc', () => {
-    expect(
-      filterAndSortTrackIds(tracks, '', { id: 'duration', desc: true }, contains),
-    ).toEqual([1, 3, 2])
-  })
-
-  it('applies search before sort', () => {
-    expect(
-      filterAndSortTrackIds(tracks, 'ann', { id: 'title', desc: false }, contains),
-    ).toEqual([2])
-  })
-
-  it('preserves input order when sort is null', () => {
-    expect(filterAndSortTrackIds(tracks, '', null, contains)).toEqual([1, 2, 3])
-  })
-})
-
-describe('toPlayablePlaylist', () => {
-  it('reorders trackIds to match the visible sorted tracks', () => {
-    const playlist = {
-      id: 'all' as const,
-      name: 'All tracks',
-      isCustom: false as const,
-      trackIds: [1, 2, 3],
-      tracks: [track(1), track(2), track(3)],
-    }
-    const ordered = [track(3), track(1)]
-    const playable = toPlayablePlaylist(playlist, ordered)
-    expect(playable.trackIds).toEqual([3, 1])
-    expect(playable.tracks.map(t => t.id)).toEqual([3, 1])
-  })
-})
-
-describe('sortIndexedPlaylistTracks', () => {
-  it('sorts by title while preserving membership indexes', () => {
-    const tracks = [
-      track(1, { title: 'C' }),
-      track(2, { title: 'A' }),
-      track(1, { title: 'C' }), // duplicate id, later membership
+describe('sortPlaylistEntries', () => {
+  it('uses every sort column and preserves duplicate membership indexes on ties', () => {
+    const entries = [
+      { track: track(1, { title: 'Same', performer: 'Zed' }), sourceIndex: 0 },
+      { track: track(2, { title: 'Same', performer: 'Ann' }), sourceIndex: 1 },
+      { track: track(1, { title: 'Same', performer: 'Zed' }), sourceIndex: 2 },
+      { track: track(3, { title: null }), sourceIndex: 3 },
     ]
-    const ordered = sortIndexedPlaylistTracks(tracks, { id: 'title', desc: false })
-    expect(ordered.map(entry => entry.track.title)).toEqual(['A', 'C', 'C'])
-    expect(ordered.map(entry => entry.sourceIndex)).toEqual([1, 0, 2])
-  })
-
-  it('returns identity order when sort is null', () => {
-    const tracks = [track(1), track(2)]
-    expect(sortIndexedPlaylistTracks(tracks, null)).toEqual([
-      { track: tracks[0], sourceIndex: 0 },
-      { track: tracks[1], sourceIndex: 1 },
-    ])
-  })
-})
-
-describe('sortTracks', () => {
-  it('returns the same reference when sort is null', () => {
-    const tracks = [track(1), track(2)]
-    expect(sortTracks(tracks, null)).toBe(tracks)
-  })
-
-  it('orders by title ascending', () => {
-    const tracks = [
-      track(1, { title: 'B' }),
-      track(2, { title: 'A' }),
-    ]
-    expect(sortTracks(tracks, { id: 'title', desc: false }).map(t => t.id))
-      .toEqual([2, 1])
+    const result = sortPlaylistEntries(entries, [{ id: 'title', desc: false }, { id: 'performer', desc: false }])
+    expect(result.map(entry => entry.sourceIndex)).toEqual([1, 0, 2, 3])
+    expect(entries.map(entry => entry.sourceIndex)).toEqual([0, 1, 2, 3])
+    expect(sortPlaylistEntries(entries, [])).toBe(entries)
   })
 })
 
@@ -270,22 +192,6 @@ describe('compareTracks', () => {
     const named = track(1, { title: 'A' })
     const missing = track(2, { title: null })
     expect(compareTracks(named, missing, { id: 'title', desc: false })).toBeLessThan(0)
-  })
-})
-
-describe('selection mode helpers', () => {
-  it('enters selection with the chosen track', () => {
-    expect(enterSelectionWithTrack(42)).toEqual({
-      selectionMode: true,
-      rowSelection: { 42: true },
-    })
-  })
-
-  it('clears selection when playlist changes', () => {
-    expect(selectionModeAfterPlaylistChange()).toEqual({
-      selectionMode: false,
-      rowSelection: {},
-    })
   })
 })
 
@@ -309,17 +215,5 @@ describe('getTrackSortableIds', () => {
       '2:1',
       '2:2',
     ])
-  })
-})
-
-describe('reorderTrackIds', () => {
-  it('moves active id to over id index', () => {
-    expect(reorderTrackIds([1, 2, 3, 4], 1, 3)).toEqual([2, 3, 1, 4])
-  })
-
-  it('returns the same array when ids are missing or unchanged', () => {
-    const order = [1, 2, 3]
-    expect(reorderTrackIds(order, 1, 1)).toBe(order)
-    expect(reorderTrackIds(order, 9, 2)).toBe(order)
   })
 })

@@ -17,7 +17,6 @@ import {
 } from '@dnd-kit/sortable'
 import {
   columnSizingFeature,
-  createSortedRowModel,
   flexRender,
   rowSelectionFeature,
   rowSortingFeature,
@@ -49,7 +48,6 @@ import {
   PlaylistTrackRow,
 } from './PlaylistTrackRow'
 import {
-  compareTracks,
   getTrackSortableIds,
   reorderByIndex,
   type CustomPlaylistRef,
@@ -59,7 +57,6 @@ const playlistTableFeatures = tableFeatures({
   columnSizingFeature,
   rowSelectionFeature,
   rowSortingFeature,
-  sortedRowModel: createSortedRowModel(),
 })
 
 const restrictToVerticalAxis: Modifier = ({ transform }) => ({
@@ -158,31 +155,16 @@ export function PlaylistTracksTable({
         accessorKey: 'title',
         header: 'Title',
         cell: () => null,
-        sortFn: (rowA, rowB) =>
-          compareTracks(rowA.original, rowB.original, {
-            id: 'title',
-            desc: false,
-          }),
       },
       {
         accessorKey: 'performer',
         header: 'Artist',
         cell: () => null,
-        sortFn: (rowA, rowB) =>
-          compareTracks(rowA.original, rowB.original, {
-            id: 'performer',
-            desc: false,
-          }),
       },
       {
         accessorKey: 'duration',
         header: 'Time',
         cell: () => null,
-        sortFn: (rowA, rowB) =>
-          compareTracks(rowA.original, rowB.original, {
-            id: 'duration',
-            desc: false,
-          }),
       },
       {
         id: 'actions',
@@ -204,6 +186,7 @@ export function PlaylistTracksTable({
       rowSelection,
     },
     getRowId: (_row, index) => String(entries[index]!.sourceIndex),
+    manualSorting: true,
     enableRowSelection: selectionMode,
     onSortingChange,
     onRowSelectionChange,

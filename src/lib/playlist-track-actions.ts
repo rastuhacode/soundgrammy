@@ -124,67 +124,22 @@ export function getBulkActions(
   }
 }
 
-/** Build a playable playlist snapshot from an explicit track order. */
-export function toPlayablePlaylist(
-  playlist: ResolvedSelectedPlaylist,
-  orderedTracks: Track[],
-): ResolvedSelectedPlaylist {
-  const trackIds = orderedTracks.map(track => track.id)
-
-  if (playlist.isCustom) {
-    return {
-      ...playlist,
-      trackIds,
-      tracks: orderedTracks,
-    }
-  }
-
-  return {
-    ...playlist,
-    trackIds,
-    tracks: orderedTracks,
-  }
-}
-
-/** Membership-aware sort so duplicate track ids keep a stable slot order. */
-export function sortIndexedPlaylistTracks(
-  tracks: Track[],
-  sort: TrackSortState | null,
-  sourceIndices?: number[],
-): { track: Track, sourceIndex: number }[] {
-  const indexed = tracks.map((track, index) => ({ track, sourceIndex: sourceIndices?.[index] ?? index }))
-  return sortPlaylistEntries(indexed, sort)
-}
-
-export function sortPlaylistEntries(entries: PlaylistEntry[], sort: TrackSortState | null): PlaylistEntry[] {
-  if (!sort) return entries
-  return [...entries].sort((a, b) => {
-    const cmp = compareTracks(a.track, b.track, sort)
-    return cmp !== 0 ? cmp : a.sourceIndex - b.sourceIndex
-  })
-}
-
-export function sortTracks(
-  tracks: Track[],
-  sort: TrackSortState | null,
-): Track[] {
-  if (!sort) return tracks
-  return sortIndexedPlaylistTracks(tracks, sort).map(({ track }) => track)
-}
-
-export function sortingStateToTrackSort(
+/** One ordered membership model for table rendering and playback. */
+export function sortPlaylistEntries(
+  entries: PlaylistEntry[],
   sorting: { id: string, desc: boolean }[],
-): TrackSortState | null {
-  const first = sorting[0]
-  if (!first) return null
-  if (
-    first.id !== 'title'
-    && first.id !== 'performer'
-    && first.id !== 'duration'
-  ) {
-    return null
-  }
-  return { id: first.id, desc: first.desc }
+): PlaylistEntry[] {
+  const sorts = sorting.filter((sort): sort is TrackSortState =>
+    sort.id === 'title' || sort.id === 'performer' || sort.id === 'duration',
+  )
+  if (!sorts.length) return entries
+  return [...entries].sort((a, b) => {
+    for (const sort of sorts) {
+      const compared = compareTracks(a.track, b.track, sort)
+      if (compared !== 0) return compared
+    }
+    return a.sourceIndex - b.sourceIndex
+  })
 }
 
 export type TrackSortColumn = 'title' | 'performer' | 'duration'
@@ -228,48 +183,11 @@ export function compareTracks(
   return sort.desc ? -result : result
 }
 
-/** Search filter → sort → ordered track ids (regression surface for the table pipeline). */
-export function filterAndSortTrackIds(
-  tracks: Track[],
-  search: string,
-  sort: TrackSortState | null,
-  contains: (haystack: string, needle: string) => boolean,
-): number[] {
-  const filtered = tracks.filter(track =>
-    contains(`${track.performer} - ${track.title}`, search),
-  )
-
-  if (!sort) {
-    return filtered.map(track => track.id)
-  }
-
-  return [...filtered]
-    .sort((a, b) => compareTracks(a, b, sort))
-    .map(track => track.id)
-}
-
 export function formatTrackDuration(seconds: number | null): string {
   if (seconds === null) return '--:--'
   const mins = Math.floor(seconds / 60)
   const secs = seconds % 60
   return `${mins}:${secs.toString().padStart(2, '0')}`
-}
-
-export function selectionModeAfterPlaylistChange(): {
-  selectionMode: false
-  rowSelection: Record<string, true>
-} {
-  return { selectionMode: false, rowSelection: {} }
-}
-
-export function enterSelectionWithTrack(rowId: number): {
-  selectionMode: true
-  rowSelection: Record<string, true>
-} {
-  return {
-    selectionMode: true,
-    rowSelection: { [String(rowId)]: true },
-  }
 }
 
 /** Move the item at `fromIndex` to `toIndex` within a list. */
@@ -301,18 +219,4 @@ export function getTrackSortableIds(trackIds: number[]): string[] {
     occurrences.set(trackId, occurrence + 1)
     return `${trackId}:${occurrence}`
   })
-}
-
-/** Move `activeId` to the index of `overId` within a track id list. */
-export function reorderTrackIds(
-  order: number[],
-  activeId: number,
-  overId: number,
-): number[] {
-  const oldIndex = order.indexOf(activeId)
-  const newIndex = order.indexOf(overId)
-  if (oldIndex < 0 || newIndex < 0 || oldIndex === newIndex) {
-    return order
-  }
-  return reorderByIndex(order, oldIndex, newIndex)
 }

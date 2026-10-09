@@ -14,6 +14,40 @@ import { playlists, track } from '@/test-support/fixtures'
 vi.mock('@/lib/api', () => ({ api: { nativePlayerCommand: vi.fn(async () => undefined), nativeAudioSnapshot: vi.fn(async () => undefined) } }))
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 describe('membership-scoped selection', () => {
+  it('shares multi-column order between displayed memberships and playback, including search', async () => {
+    vi.clearAllMocks()
+    const first = { ...track(1), title: 'Same', performer: 'Zed' }
+    const second = { ...track(2), title: 'Same', performer: 'Ann' }
+    const third = { ...track(3), title: 'Other', performer: null }
+    useLibraryStore.getState().setLibrary([first, second, third])
+    usePlaylistsStore.getState().hydrate(playlists([1, 2, 1, 3]))
+    usePlaylistsStore.getState().setSelectedPlaylist(20)
+    let view!: ReturnType<typeof usePlaylistView>
+    function Probe() {
+      view = usePlaylistView()
+      return null
+    }
+    const root = createRoot(document.createElement('div'))
+    try {
+      await act(async () => root.render(createElement(Probe)))
+      await act(async () => view.table.onSortingChange([
+        { id: 'title', desc: true }, { id: 'performer', desc: false },
+      ]))
+      expect(view.table.entries.map(entry => entry.sourceIndex)).toEqual([1, 0, 2, 3])
+      await act(async () => view.search.setValue('Same'))
+      expect(view.table.entries.map(entry => entry.sourceIndex)).toEqual([1, 0, 2])
+      await act(async () => {
+        view.table.onTrackPlay(first, 2)
+        await sendPlayerCommand({ type: 'attach' })
+      })
+      expect(api.nativePlayerCommand).toHaveBeenCalledWith(expect.objectContaining({
+        type: 'playPlaylist', queue: expect.objectContaining({
+          cursor: 2, sourceIndices: [1, 0, 2, 3], tracks: [second, first, first, third],
+        }),
+      }))
+    }
+    finally { await act(async () => root.unmount()) }
+  })
   it('preserves duplicate membership positions through search, sort, and playback', async () => {
     vi.clearAllMocks()
     useSessionStore.getState().clearSession()

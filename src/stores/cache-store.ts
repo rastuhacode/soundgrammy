@@ -10,6 +10,7 @@ interface CacheState {
   busyCounts: Map<number, number>
   progressById: Map<number, number>
   revision: number
+  clearEpoch: number
   hydrated: boolean
   hydrate: () => Promise<void>
   markCached: (trackIds: number[]) => void
@@ -27,6 +28,8 @@ interface CacheState {
 }
 
 const mutate = createSessionQueue()
+let snapshotRequest = 0
+const changedAt = new Map<number, number>()
 
 /** Shared busy ownership for track operations and playlist jobs. */
 export async function withBusyTracks<T>(trackIds: number[], operation: (generation: number) => Promise<T>): Promise<T> {
@@ -48,6 +51,7 @@ export const useCacheStore = create<CacheState>((set, get) => ({
   busyCounts: new Map(),
   progressById: new Map(),
   revision: 0,
+  clearEpoch: 0,
   hydrated: false,
 
   saveSettings: settings => mutate(async (generation) => {
@@ -70,13 +74,24 @@ export const useCacheStore = create<CacheState>((set, get) => ({
 
   hydrate: async () => {
     const generation = captureSession()
-    const revision = get().revision
+    const { revision, clearEpoch } = get()
+    const request = ++snapshotRequest
+    const current = () => isSessionCurrent(generation) && get().clearEpoch === clearEpoch && request === snapshotRequest
     try {
       const ids = await api.getCacheStatus()
-      if (isSessionCurrent(generation) && get().revision === revision) set({ cachedIds: new Set(ids), hydrated: true, revision: revision + 1 })
+      if (!current()) return
+      const latest = get()
+      const cachedIds = new Set(ids)
+      // Replay live additions/removals, including removals absent from the old mirror.
+      for (const [id, changedRevision] of changedAt) {
+        if (changedRevision <= revision) continue
+        if (latest.cachedIds.has(id)) cachedIds.add(id)
+        else cachedIds.delete(id)
+      }
+      set({ cachedIds, hydrated: true, revision: latest.revision + 1 })
     }
     catch {
-      if (isSessionCurrent(generation)) set({ hydrated: true })
+      if (current()) set({ hydrated: true })
     }
   },
 
@@ -84,7 +99,10 @@ export const useCacheStore = create<CacheState>((set, get) => ({
     if (trackIds.length === 0) return
     set((state) => {
       const next = new Set(state.cachedIds)
-      for (const id of trackIds) next.add(id)
+      for (const id of trackIds) {
+        next.add(id)
+        changedAt.set(id, state.revision + 1)
+      }
       return { cachedIds: next, revision: state.revision + 1 }
     })
   },
@@ -93,7 +111,10 @@ export const useCacheStore = create<CacheState>((set, get) => ({
     if (trackIds.length === 0) return
     set((state) => {
       const next = new Set(state.cachedIds)
-      for (const id of trackIds) next.delete(id)
+      for (const id of trackIds) {
+        next.delete(id)
+        changedAt.set(id, state.revision + 1)
+      }
       return { cachedIds: next, revision: state.revision + 1 }
     })
   },
@@ -155,14 +176,18 @@ export const useCacheStore = create<CacheState>((set, get) => ({
     })
   },
 
-  clearAll: () => set(state => ({
-    revision: state.revision + 1,
-    hydrated: false,
-    cachedIds: new Set(),
-    busyIds: new Set(),
-    busyCounts: new Map(),
-    progressById: new Map(),
-  })),
+  clearAll: () => {
+    changedAt.clear()
+    set(state => ({
+      revision: state.revision + 1,
+      clearEpoch: state.clearEpoch + 1,
+      hydrated: false,
+      cachedIds: new Set(),
+      busyIds: new Set(),
+      busyCounts: new Map(),
+      progressById: new Map(),
+    }))
+  },
 
   isCached: trackId => get().cachedIds.has(trackId),
 

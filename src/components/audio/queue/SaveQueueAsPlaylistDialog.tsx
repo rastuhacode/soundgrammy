@@ -14,6 +14,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import { useAsyncScope } from '@/hooks/use-async-scope'
 import { usePlayerStore } from '@/stores/player-store'
 import { usePlaylistsStore } from '@/stores/playlists-store'
 import { cn } from '@/lib/utils'
@@ -46,6 +47,11 @@ export function SaveQueueAsPlaylistDialog({
   onOpenChange,
 }: SaveQueueAsPlaylistDialogProps) {
   const formId = useId()
+  const { capture, invalidate } = useAsyncScope(open)
+  const handleOpenChange = (next: boolean) => {
+    if (!next) invalidate()
+    onOpenChange(next)
+  }
   const queue = usePlayerStore(state => state.queue)
   const data = usePlaylistsStore(state => state.data)
   const createPlaylist = usePlaylistsStore(state => state.createPlaylist)
@@ -62,6 +68,7 @@ export function SaveQueueAsPlaylistDialog({
   useEffect(() => {
     if (!open) return
     /* eslint-disable react-hooks/set-state-in-effect -- Reset draft when dialog opens. */
+    setIsSubmitting(false)
     setName('')
     setScope('full')
     setNameError(null)
@@ -71,7 +78,8 @@ export function SaveQueueAsPlaylistDialog({
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
-    if (!data) return
+    if (!data || !open || isSubmitting) return
+    const current = capture()
 
     const trimmed = name.trim()
     const issue = validatePlaylistName(name)
@@ -91,21 +99,23 @@ export function SaveQueueAsPlaylistDialog({
     setIsSubmitting(true)
     try {
       const created = await createPlaylist(trimmed, trackIds)
+      if (!current()) return
       setSelectedPlaylist(created.id)
-      onOpenChange(false)
+      handleOpenChange(false)
     }
     catch (err) {
+      if (!current()) return
       setScopeError(
         errorMessage(err),
       )
     }
     finally {
-      setIsSubmitting(false)
+      if (current()) setIsSubmitting(false)
     }
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="z-100 sm:max-w-md" overlayClassName="z-[90]">
         <DialogHeader>
           <DialogTitle>Save queue as playlist</DialogTitle>
@@ -185,7 +195,7 @@ export function SaveQueueAsPlaylistDialog({
           <Button
             type="button"
             variant="outline"
-            onClick={() => onOpenChange(false)}
+            onClick={() => handleOpenChange(false)}
             disabled={isSubmitting}
           >
             Cancel

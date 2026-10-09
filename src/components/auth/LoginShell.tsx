@@ -1,5 +1,5 @@
-import { useEffect, useState, type ReactNode } from 'react'
-import { api } from '@/lib/api'
+import { useState, type ReactNode } from 'react'
+import { useProxySettings } from '@/hooks/use-proxy-settings'
 import { ProxySettingsForm } from '@/components/settings/forms/ProxySettingsForm'
 import { Button } from '@/components/ui/button'
 import {
@@ -10,7 +10,6 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import { getProxyDisplayState } from '@/lib/proxy-status'
-import type { ProxySettingsView } from '@/types'
 
 const proxyIndicatorClassNames = {
   checking: 'bg-muted-foreground/50',
@@ -22,23 +21,8 @@ const proxyIndicatorClassNames = {
 
 export function LoginShell({ children }: { children: ReactNode }) {
   const [proxyDialogOpen, setProxyDialogOpen] = useState(false)
-  const [proxyView, setProxyView] = useState<ProxySettingsView | null>(null)
-
-  useEffect(() => {
-    let cancelled = false
-    api.getProxySettings()
-      .then((view) => {
-        if (!cancelled) setProxyView(view)
-      })
-      .catch(() => {
-        // Login still works if proxy status cannot be loaded.
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [])
-
-  const proxyDisplay = getProxyDisplayState(proxyView)
+  const proxy = useProxySettings()
+  const proxyDisplay = getProxyDisplayState(proxy.view)
 
   return (
     <div className="hifi-bg relative flex min-h-screen justify-center overflow-y-auto px-5 pb-12 pt-16 sm:pt-20">
@@ -88,7 +72,7 @@ export function LoginShell({ children }: { children: ReactNode }) {
             <div className="rounded-lg border border-border/70 bg-muted/20 px-3 py-3">
               <ProxySettingsForm
                 compact
-                onApplied={setProxyView}
+                controller={proxy}
               />
             </div>
           </DialogContent>

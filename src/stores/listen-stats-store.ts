@@ -33,6 +33,8 @@ interface ListenStatsState {
 }
 
 const mutate = createSessionQueue()
+let snapshotRequest = 0
+const changedAt = new Map<number, number>()
 
 export const useListenStatsStore = create<ListenStatsState>((set, get) => ({
   revision: 0,
@@ -66,20 +68,26 @@ export const useListenStatsStore = create<ListenStatsState>((set, get) => ({
   },
   refresh: async () => {
     const generation = captureSession()
-    const { revision, settingsRevision } = get()
+    const { revision, settingsRevision, clearEpoch } = get()
+    const request = ++snapshotRequest
     await Promise.allSettled([
       api.getListenStatisticsEnabled().then((enabled) => {
         if (isSessionCurrent(generation) && get().settingsRevision === settingsRevision) get().setEnabled(enabled)
       }),
       api.listListenStats().then((stats) => {
-        // A live upsert or clear after request dispatch wins over this snapshot.
-        if (isSessionCurrent(generation) && get().revision === revision) {
-          set({ statsByTrackId: statsToMap(stats), revision: revision + 1 })
+        if (!isSessionCurrent(generation) || get().clearEpoch !== clearEpoch || request !== snapshotRequest) return
+        const latest = get()
+        const statsByTrackId = statsToMap(stats)
+        for (const [id, changedRevision] of changedAt) {
+          if (changedRevision > revision) statsByTrackId.set(id, latest.statsByTrackId.get(id)!)
         }
+        set({ statsByTrackId, revision: latest.revision + 1 })
       }),
     ])
   },
   hydrate: (enabled, stats) => {
+    ++snapshotRequest
+    changedAt.clear()
     set(state => ({ enabled, statsByTrackId: statsToMap(stats), revision: state.revision + 1, settingsRevision: state.settingsRevision + 1 }))
   },
 
@@ -89,13 +97,17 @@ export const useListenStatsStore = create<ListenStatsState>((set, get) => ({
     set((state) => {
       const next = new Map(state.statsByTrackId)
       next.set(stats.track_id, stats)
+      changedAt.set(stats.track_id, state.revision + 1)
       return { statsByTrackId: next, revision: state.revision + 1 }
     })
   },
 
-  clear: () => set(state => ({
-    statsByTrackId: new Map(),
-    clearEpoch: state.clearEpoch + 1,
-    revision: state.revision + 1,
-  })),
+  clear: () => {
+    changedAt.clear()
+    set(state => ({
+      statsByTrackId: new Map(),
+      clearEpoch: state.clearEpoch + 1,
+      revision: state.revision + 1,
+    }))
+  },
 }))
