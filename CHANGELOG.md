@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.4.3](https://github.com/rastuhacode/soundgrammy/compare/v3.4.2...v3.4.3) (2026-10-09)
+
+
+### Bug Fixes
+
+* block the landscape orientation ([52226d1](https://github.com/rastuhacode/soundgrammy/commit/52226d17865fd268da4b867ce1cf6c555e28ba5a))
+
 ## [3.4.2](https://github.com/rastuhacode/soundgrammy/compare/v3.4.1...v3.4.2) (2026-10-09)
 
 
