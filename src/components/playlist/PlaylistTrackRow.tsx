@@ -28,8 +28,8 @@ export interface PlaylistTrackRowViewProps {
   canReorder?: boolean
   className?: string
   style?: React.CSSProperties
-  onRowClick?: () => void
-  onToggleSelected?: (selected: boolean) => void
+  onRowClick?: (extend?: boolean) => void
+  onToggleSelected?: (selected: boolean, extend?: boolean) => void
   onEnterSelection?: () => void
   onTouchDragStart?: React.TouchEventHandler<HTMLButtonElement>
   touchOptions?: React.ReactNode
@@ -83,7 +83,7 @@ export function PlaylistTrackRowView({
       onClick={(event) => {
         // Portaled menu items still bubble through this row in React.
         if (!event.currentTarget.contains(event.target as Node)) return
-        onRowClick?.()
+        onRowClick?.(event.shiftKey)
       }}
       onPointerDown={(event) => {
         if (!event.currentTarget.contains(event.target as Node)) return
@@ -130,7 +130,7 @@ export function PlaylistTrackRowView({
             : 'Play track'
       }
       className={cn(
-        'group relative grid w-full cursor-default items-center gap-2 rounded-lg px-2 transition-colors md:gap-3 md:px-2.5',
+        'group relative grid w-full select-none cursor-default items-center gap-2 rounded-lg px-2 transition-colors md:gap-3 md:px-2.5',
         selectionMode || (touchScreen && canReorder)
           ? TRACK_GRID_CLASS_SELECT
           : TRACK_GRID_CLASS,
@@ -152,8 +152,8 @@ export function PlaylistTrackRowView({
         >
           <Checkbox
             checked={isSelected}
-            onCheckedChange={(checked) => {
-              onToggleSelected?.(checked)
+            onCheckedChange={(checked, details) => {
+              onToggleSelected?.(checked, 'shiftKey' in details.event && details.event.shiftKey === true)
             }}
             aria-label={`Select ${track.title ?? 'track'}`}
             className="animate-in fade-in-0 zoom-in-95 duration-150"
@@ -280,8 +280,8 @@ export interface PlaylistTrackRowProps {
   canReorder: boolean
   virtualStart: number
   className?: string
-  onRowClick: () => void
-  onToggleSelected: (selected: boolean) => void
+  onRowClick: (extend?: boolean) => void
+  onToggleSelected: (selected: boolean, extend?: boolean) => void
   onEnterSelection: () => void
   touchOptions?: React.ReactNode
 }

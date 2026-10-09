@@ -41,6 +41,8 @@ export function usePlaylistView() {
       entries: tracks.filteredEntries, currentPlaylist: playlist, customPlaylists: tracks.custom,
       playingSourceIndex, isPlaying, isTrackLiked: (id: number) => tracks.likedIds.has(id),
       selectionMode: selection.mode, rowSelection: selection.rows, onRowSelectionChange: selection.setRows,
+      onTrackSelect: (position: number, selected: boolean, extend: boolean) =>
+        selection.select(position, tracks.filteredEntries, extend, selected),
       sorting, onSortingChange: setSorting,
       canReorder: canReorderPlaylist(playlist.id) && tracks.entries.length === playlist.trackIds.length
         && !search.length && !sorting.length && !selection.mode,

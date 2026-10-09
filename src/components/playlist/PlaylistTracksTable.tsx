@@ -76,6 +76,7 @@ export interface PlaylistTracksTableProps {
   selectionMode: boolean
   rowSelection: RowSelectionState
   onRowSelectionChange: OnChangeFn<RowSelectionState>
+  onTrackSelect: (sourceIndex: number, selected: boolean, extend: boolean) => void
   sorting: SortingState
   onSortingChange: OnChangeFn<SortingState>
   canReorder: boolean
@@ -105,6 +106,7 @@ export function PlaylistTracksTable({
   selectionMode,
   rowSelection,
   onRowSelectionChange,
+  onTrackSelect,
   sorting,
   onSortingChange,
   canReorder,
@@ -386,15 +388,15 @@ export function PlaylistTracksTable({
                       touchOptions={touchScreen
                         ? <PlaylistTrackDropdownMenu {...menuProps} />
                         : undefined}
-                      onRowClick={() => {
+                      onRowClick={(extend = false) => {
                         if (selectionMode) {
-                          row.toggleSelected(!isSelected)
+                          onTrackSelect(sourceIndex, !isSelected, extend)
                           return
                         }
                         onTrackPlay(track, sourceIndex)
                       }}
-                      onToggleSelected={(selected) => {
-                        row.toggleSelected(selected)
+                      onToggleSelected={(selected, extend = false) => {
+                        onTrackSelect(sourceIndex, selected, extend)
                       }}
                     />
                   </PlaylistTrackContextMenu>
