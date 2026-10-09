@@ -1,4 +1,3 @@
-import { captureSession, isSessionCurrent } from '@/stores/session-store'
 import { ownEventListeners } from '@/lib/events'
 import { useEffect, useRef } from 'react'
 import { getCurrentWindow } from '@tauri-apps/api/window'
@@ -11,15 +10,13 @@ export function useLastFmIntegration(enabled: boolean) {
 
   useEffect(() => {
     if (!enabled) return
-    const generation = captureSession()
     useLastFmStore.getState().hydrate().catch(() => {})
     const listener = startLastFmStatusListener()
     const focusListener = getCurrentWindow().onFocusChanged(({ payload: focused }) => {
       if (!focused || completingRef.current) return
       if (useLastFmStore.getState().status?.state !== 'waiting_for_browser_approval') return
       completingRef.current = true
-      api.completeLastFmAuth()
-        .then((status) => { if (isSessionCurrent(generation)) useLastFmStore.getState().setStatus(status) })
+      useLastFmStore.getState().completeAuth()
         .catch(() => {})
         .finally(() => {
           completingRef.current = false

@@ -1,3 +1,8 @@
+/** Safe contract diagnostics exclude received values and schema messages. */
+export function contractIssues(issues: readonly { path: PropertyKey[], code: string }[]) {
+  return issues.map(({ path, code }) => ({ path, code }))
+}
+
 export function errorMessage(error: unknown): string {
   if (typeof error === 'string' && error.trim()) return error
   if (error && typeof error === 'object') {

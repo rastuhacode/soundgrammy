@@ -1,6 +1,7 @@
-import { captureSession, isSessionCurrent } from '@/stores/session-store'
+import { assertSession, captureSession, createSessionQueue, isSessionCurrent } from '@/stores/session-store'
 import { create } from 'zustand'
 import { api, onCacheChanged, onDownloadProgress } from '@/lib/api'
+import type { CacheSettings, CacheUsage } from '@/types'
 
 interface CacheState {
   cachedIds: Set<number>
@@ -21,6 +22,24 @@ interface CacheState {
   isCached: (trackId: number) => boolean
   isBusy: (trackId: number) => boolean
   isPlaylistCached: (trackIds: number[]) => boolean
+  saveSettings: (settings: CacheSettings) => Promise<{ settings: CacheSettings, usage: CacheUsage }>
+  clearAudio: () => Promise<CacheUsage>
+}
+
+const mutate = createSessionQueue()
+
+/** Shared busy ownership for track operations and playlist jobs. */
+export async function withBusyTracks<T>(trackIds: number[], operation: (generation: number) => Promise<T>): Promise<T> {
+  const generation = captureSession()
+  useCacheStore.getState().markBusy(trackIds)
+  try {
+    const result = await operation(generation)
+    assertSession(generation)
+    return result
+  }
+  finally {
+    if (isSessionCurrent(generation)) useCacheStore.getState().clearBusy(trackIds)
+  }
 }
 
 export const useCacheStore = create<CacheState>((set, get) => ({
@@ -30,6 +49,24 @@ export const useCacheStore = create<CacheState>((set, get) => ({
   progressById: new Map(),
   revision: 0,
   hydrated: false,
+
+  saveSettings: settings => mutate(async (generation) => {
+    const next = await api.setCacheSettings(settings)
+    assertSession(generation)
+    const usage = await api.getCacheUsage()
+    assertSession(generation)
+    await get().hydrate()
+    assertSession(generation)
+    return { settings: next, usage }
+  }),
+  clearAudio: () => mutate(async (generation) => {
+    await api.clearAudioCache()
+    assertSession(generation)
+    get().clearAll()
+    const usage = await api.getCacheUsage()
+    assertSession(generation)
+    return usage
+  }),
 
   hydrate: async () => {
     const generation = captureSession()

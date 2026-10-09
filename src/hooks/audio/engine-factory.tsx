@@ -1,9 +1,13 @@
+import { installPlayerCommands } from '@/stores/player-store'
+import { nativePlayerCommands } from '@/lib/native-playback'
+import type { PlayerCommandPort } from '@/types/playback'
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react'
 import { NativeRustAudioEngine } from './native-engine'
 import type { AudioEngine } from './engine'
 
 export interface AudioEngineComposition {
   engine: AudioEngine
+  playerCommands: PlayerCommandPort
 }
 export type AudioEngineFactory = () => AudioEngineComposition
 
@@ -26,7 +30,7 @@ export function createAudioEngine(override?: AudioEngineFactory): AudioEngineCom
       throw new AudioEngineCreationError()
     }
   }
-  return { engine: new NativeRustAudioEngine() }
+  return { engine: new NativeRustAudioEngine(), playerCommands: nativePlayerCommands }
 }
 
 const EngineContext = createContext<AudioEngine | null>(null)
@@ -42,6 +46,7 @@ export function AudioEngineProvider({ children, factory }: {
   useEffect(() => {
     let cancelled = false
     let next: AudioEngineComposition | null = null
+    let detachCommands: (() => void) | null = null
     // eslint-disable-next-line react-hooks/set-state-in-effect -- Detach old consumers before replacing their resource.
     setComposition(null)
     void (async () => {
@@ -50,6 +55,7 @@ export function AudioEngineProvider({ children, factory }: {
         await teardownRef.current
         if (cancelled) return
         next = createAudioEngine(factory)
+        detachCommands = installPlayerCommands(next.playerCommands)
         setFailure(null)
         setComposition(next)
       }
@@ -59,6 +65,7 @@ export function AudioEngineProvider({ children, factory }: {
     })()
     return () => {
       cancelled = true
+      detachCommands?.()
       if (!next) return
       teardownRef.current = next.engine.destroy()
       // Preserve cleanup failures for a replacement without leaking a rejection on unmount.

@@ -3,6 +3,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { MtprotoLogin } from '@/components/auth/MtprotoLogin'
 import { PlayerSidebar } from '@/components/PlayerSidebar'
+import { PlaylistJobResults } from '@/components/playlist/PlaylistJobResults'
 import { PlaylistView } from '@/components/playlist/PlaylistView'
 import { AudioPlayer } from '@/components/audio/AudioPlayer'
 import { useAppSession } from '@/hooks/use-app-session'
@@ -106,6 +107,7 @@ export default function App() {
           <Button variant="ghost" size="sm" onClick={() => void hydrateLibrary()}>Retry loading library</Button>
         </div>
       )}
+      <PlaylistJobResults />
       <AudioPlayer />
     </div>
   )

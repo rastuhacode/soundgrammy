@@ -1,10 +1,8 @@
 import { errorMessage } from '@/lib/errors'
-import { isSessionCurrent, captureSession, assertSession } from '@/stores/session-store'
+import { isSessionCurrent, createSessionQueue, assertSession } from '@/stores/session-store'
 import { create } from 'zustand'
 import { api } from '@/lib/api'
 import type { CustomPlaylistSummary, PlaylistImportResult } from '@/types'
-import { usePlayerStore } from '@/stores/player-store'
-import { useLibraryStore } from '@/stores/library-store'
 import { ALL_TRACKS_PLAYLIST_ID, LIKED_PLAYLIST_ID, isCommonPlaylistId, isValidPlaylistId, type PlaylistsData, type PlaylistId } from '@/lib/playlists'
 
 export * from '@/lib/playlists'
@@ -50,22 +48,7 @@ function normalizePlaylistId(
   return playlistId
 }
 
-/** Serialize reads with writes; a new account never waits on an old account's queue. */
-let operations: Promise<unknown> = Promise.resolve()
-let operationGeneration = -1
-function enqueue<T>(operation: (generation: number) => Promise<T>): Promise<T> {
-  const generation = captureSession()
-  if (operationGeneration !== generation) {
-    operations = Promise.resolve()
-    operationGeneration = generation
-  }
-  const next = operations.then(async () => {
-    assertSession(generation)
-    return operation(generation)
-  })
-  operations = next.catch(() => {})
-  return next
-}
+const enqueue = createSessionQueue()
 
 function requireData(): PlaylistsData {
   const data = usePlaylistsStore.getState().data
@@ -116,7 +99,7 @@ interface PlaylistsState {
   setLiked: (trackIds: number[], liked: boolean) => Promise<BulkLikeResult>
   addTracks: (id: number, trackIds: number[]) => Promise<void>
   removeTracks: (id: number, positions: number[], expectedTrackIds: number[]) => Promise<void>
-  reorderTracks: (id: PlaylistId, trackIds: number[], expectedTrackIds: number[], move: { fromIndex: number, toIndex: number }) => Promise<void>
+  reorderTracks: (id: PlaylistId, trackIds: number[], expectedTrackIds: number[]) => Promise<void>
 }
 
 export const usePlaylistsStore = create<PlaylistsState>((set, get) => ({
@@ -207,7 +190,7 @@ export const usePlaylistsStore = create<PlaylistsState>((set, get) => ({
       ? { ...item, updatedAt, trackIds: item.trackIds.filter((_, index) => !removed.has(index)) }
       : item) })
   }),
-  reorderTracks: (id, trackIds, expectedTrackIds, move) => enqueue(async (generation) => {
+  reorderTracks: (id, trackIds, expectedTrackIds) => enqueue(async (generation) => {
     assertOrder(id, expectedTrackIds)
     const data = requireData()
     const dbId = id === LIKED_PLAYLIST_ID ? data.liked.id : id
@@ -217,9 +200,6 @@ export const usePlaylistsStore = create<PlaylistsState>((set, get) => ({
     const latest = requireData()
     if (id === LIKED_PLAYLIST_ID) get().setData({ ...latest, liked: { ...latest.liked, trackIds, updatedAt } })
     else get().setData({ ...latest, custom: latest.custom.map(item => item.id === id ? { ...item, trackIds, updatedAt } : item) })
-    const byId = new Map(useLibraryStore.getState().library.map(track => [track.id, track]))
-    const tracks = trackIds.flatMap(trackId => byId.has(trackId) ? [byId.get(trackId)!] : [])
-    usePlayerStore.getState().realignQueueToPlaylist(id, tracks, move)
   }),
 
   error: null,

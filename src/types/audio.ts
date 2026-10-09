@@ -1,37 +1,50 @@
-import type { PlaybackSession } from '@/types/playback'
+import { z } from 'zod'
+import { playbackSessionSchema } from '@/types/playback'
 /** Native playback observation and transport controls; all payloads are serializable. */
-export type AudioEngineKind = 'native-rust' | 'test'
-export type AudioEngineStatus = 'idle' | 'loading' | 'ready' | 'playing' | 'buffering' | 'paused' | 'ended' | 'error'
+export const audioEngineKindSchema = z.enum(['native-rust', 'test'])
+export type AudioEngineKind = z.infer<typeof audioEngineKindSchema>
+export const audioEngineStatusSchema = z.enum(['idle', 'loading', 'ready', 'playing', 'buffering', 'paused', 'ended', 'error'])
+export type AudioEngineStatus = z.infer<typeof audioEngineStatusSchema>
 export interface AudioTrackRequest {
   trackId: number
   attemptId: string
   expectedDurationSeconds?: number | null
 }
-export interface AudioBufferedRange { start: number, end: number }
-export interface AudioEngineError {
-  code: 'source-unavailable' | 'unsupported-format' | 'decode-failed' | 'output-unavailable' | 'interrupted' | 'unknown'
-  message: string
-  recoverable: boolean
+export interface AudioTransportPort {
+  state(listener: (value: unknown) => void): Promise<() => void>
+  event(listener: (value: unknown) => void): Promise<() => void>
+  snapshot(): Promise<unknown>
+  load(request: AudioTrackRequest): Promise<unknown>
+  unload(): Promise<unknown>
+  play(): Promise<unknown>
+  pause(): Promise<unknown>
+  seek(seconds: number, attemptId?: string): Promise<unknown>
+  volume(percent: number): Promise<unknown>
+}
+const nonnegative = z.number().nonnegative()
+export const audioBufferedRangeSchema = z.object({ start: nonnegative, end: nonnegative })
+export type AudioBufferedRange = z.infer<typeof audioBufferedRangeSchema>
+export const audioEngineErrorSchema = z.object({
+  code: z.enum(['source-unavailable', 'unsupported-format', 'decode-failed', 'output-unavailable', 'interrupted', 'unknown']),
+  message: z.string(), recoverable: z.boolean(),
   /** Sanitized backend detail retained for opt-in diagnostic logs. */
-  diagnostic?: string
-}
-export interface AudioEngineSnapshot {
-  revision: number
-  player?: PlaybackSession
-  kind: AudioEngineKind
-  status: AudioEngineStatus
-  trackId: number | null
-  attemptId: string | null
-  currentTimeSeconds: number
-  durationSeconds: number
-  bufferedRanges: AudioBufferedRange[]
-  volumePercent: number
-  error: AudioEngineError | null
-  /** Initial source acquisition, distinct from later buffering. */
-  initialLoading: boolean
-  /** Requested cursor is provisional until the transport lands. */
-  seeking?: boolean
-}
+  diagnostic: z.string().optional(),
+})
+export type AudioEngineError = z.infer<typeof audioEngineErrorSchema>
+export const audioEngineSnapshotSchema = z.object({
+  revision: nonnegative.int(), kind: audioEngineKindSchema, status: audioEngineStatusSchema,
+  player: playbackSessionSchema.optional(), lastControl: z.string().nullable().optional(),
+  trackId: z.number().int().nullable(), attemptId: z.string().nullable(),
+  currentTimeSeconds: nonnegative, durationSeconds: nonnegative,
+  bufferedRanges: z.array(audioBufferedRangeSchema), volumePercent: nonnegative.max(100),
+  error: audioEngineErrorSchema.nullable(), initialLoading: z.boolean(), seeking: z.boolean().optional(),
+})
+export type AudioEngineSnapshot = z.infer<typeof audioEngineSnapshotSchema>
+export const nativeAudioSnapshotSchema = audioEngineSnapshotSchema.extend({ kind: z.literal('native-rust') })
+export const audioEndedEventSchema = z.object({
+  type: z.literal('ended'), revision: nonnegative.int(), trackId: z.number().int(), attemptId: z.string(),
+})
+
 export type AudioEngineEvent
   = { type: 'state', snapshot: AudioEngineSnapshot }
     | { type: 'ended', trackId: number, attemptId: string, revision: number }

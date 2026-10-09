@@ -9,23 +9,12 @@ export const trackSchema = z.object({
 })
 export type Track = z.infer<typeof trackSchema>
 
-export interface LikedPlaylist {
-  id: number
-  trackIds: number[]
-  updatedAt: string
-}
-
-export interface CustomPlaylistSummary {
-  id: number
-  name: string
-  trackIds: number[]
-  updatedAt: string
-}
-
-export interface PlaylistsBundle {
-  liked: LikedPlaylist
-  custom: CustomPlaylistSummary[]
-}
+export const likedPlaylistSchema = z.object({ id: z.number().int(), trackIds: z.array(z.number().int()), updatedAt: z.string() })
+export type LikedPlaylist = z.infer<typeof likedPlaylistSchema>
+export const customPlaylistSchema = likedPlaylistSchema.extend({ name: z.string() })
+export type CustomPlaylistSummary = z.infer<typeof customPlaylistSchema>
+export const playlistsBundleSchema = z.object({ liked: likedPlaylistSchema, custom: z.array(customPlaylistSchema) })
+export type PlaylistsBundle = z.infer<typeof playlistsBundleSchema>
 
 export interface AuthUser {
   id: number
@@ -112,17 +101,12 @@ export type ListenEndReason
     | 'stopped'
     | 'interrupted'
 
-export interface TrackListenStats {
-  track_id: number
-  starts: number
-  qualified_plays: number
-  completes: number
-  early_skips: number
-  total_listened_ms: number
-  first_played_at_ms: number | null
-  last_played_at_ms: number | null
-  likeness: number
-}
+export const trackListenStatsSchema = z.object({
+  track_id: z.number().int(), starts: z.number(), qualified_plays: z.number(), completes: z.number(),
+  early_skips: z.number(), total_listened_ms: z.number(),
+  first_played_at_ms: z.number().nullable(), last_played_at_ms: z.number().nullable(), likeness: z.number(),
+})
+export type TrackListenStats = z.infer<typeof trackListenStatsSchema>
 
 export interface ListenEndResult {
   qualified: boolean
@@ -166,16 +150,10 @@ export interface LastFmStatus {
 
 export type LastFmPendingAction = 'retain' | 'delete'
 
-export interface CacheSettings {
-  limitBytes: number
-  ttlSecs: number
-}
-
-export interface CacheUsage {
-  usedBytes: number
-  limitBytes: number
-  fileCount: number
-}
+export const cacheSettingsSchema = z.object({ limitBytes: z.number().nonnegative(), ttlSecs: z.number().nonnegative() })
+export type CacheSettings = z.infer<typeof cacheSettingsSchema>
+export const cacheUsageSchema = z.object({ usedBytes: z.number().nonnegative(), limitBytes: z.number().nonnegative(), fileCount: z.number().int().nonnegative() })
+export type CacheUsage = z.infer<typeof cacheUsageSchema>
 
 export type BounceProfileResponse
   = | {

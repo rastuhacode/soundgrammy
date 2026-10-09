@@ -3,6 +3,7 @@ import {
   BUILTIN_PLAYLISTS,
   LIKED_PLAYLIST_ID,
   type ResolvedSelectedPlaylist,
+  type PlaylistEntry,
 } from '@/lib/playlists'
 
 export interface CustomPlaylistRef {
@@ -152,8 +153,12 @@ export function sortIndexedPlaylistTracks(
   sourceIndices?: number[],
 ): { track: Track, sourceIndex: number }[] {
   const indexed = tracks.map((track, index) => ({ track, sourceIndex: sourceIndices?.[index] ?? index }))
-  if (!sort) return indexed
-  return [...indexed].sort((a, b) => {
+  return sortPlaylistEntries(indexed, sort)
+}
+
+export function sortPlaylistEntries(entries: PlaylistEntry[], sort: TrackSortState | null): PlaylistEntry[] {
+  if (!sort) return entries
+  return [...entries].sort((a, b) => {
     const cmp = compareTracks(a.track, b.track, sort)
     return cmp !== 0 ? cmp : a.sourceIndex - b.sourceIndex
   })

@@ -3,14 +3,13 @@ import type { Track } from '@/types'
 import { api } from '@/lib/api'
 import { errorMessage } from '@/lib/errors'
 import { captureSession, isSessionCurrent } from '@/stores/session-store'
-import { usePlayerStore } from '@/stores/player-store'
 
 interface LibraryState {
   library: Track[]
   error: string | null
   revision: number
   setLibrary: (tracks: Track[]) => void
-  refresh: () => Promise<void>
+  refresh: () => Promise<Track[] | null>
 }
 
 export const useLibraryStore = create<LibraryState>((set, get) => ({
@@ -25,12 +24,13 @@ export const useLibraryStore = create<LibraryState>((set, get) => ({
     const current = () => isSessionCurrent(generation) && get().revision === revision
     try {
       const tracks = await api.listTracks()
-      if (!current()) return
+      if (!current()) return null
       set({ library: tracks, error: null })
-      usePlayerStore.getState().refreshQueueTracks(tracks)
+      return tracks
     }
     catch (error) {
       if (current()) set({ error: errorMessage(error) })
+      return null
     }
   },
 }))

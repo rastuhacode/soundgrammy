@@ -1,5 +1,5 @@
 import { api } from '@/lib/api'
-import { captureSession, isSessionCurrent } from '@/stores/session-store'
+import { assertSession, captureSession, createSessionQueue, isSessionCurrent } from '@/stores/session-store'
 import { create } from 'zustand'
 import type { TrackListenStats } from '@/types'
 
@@ -27,7 +27,12 @@ interface ListenStatsState {
   setEnabled: (enabled: boolean) => void
   upsert: (stats: TrackListenStats) => void
   clear: () => void
+  refreshEnabled: () => Promise<boolean>
+  saveEnabled: (enabled: boolean) => Promise<void>
+  clearHistory: () => Promise<void>
 }
+
+const mutate = createSessionQueue()
 
 export const useListenStatsStore = create<ListenStatsState>((set, get) => ({
   revision: 0,
@@ -35,6 +40,25 @@ export const useListenStatsStore = create<ListenStatsState>((set, get) => ({
   enabled: true,
   clearEpoch: 0,
   statsByTrackId: new Map(),
+
+  refreshEnabled: async () => {
+    const generation = captureSession()
+    const revision = get().settingsRevision
+    const enabled = await api.getListenStatisticsEnabled()
+    assertSession(generation)
+    if (get().settingsRevision === revision) get().setEnabled(enabled)
+    return get().enabled
+  },
+  saveEnabled: enabled => mutate(async (generation) => {
+    await api.setListenStatisticsEnabled(enabled)
+    assertSession(generation)
+    get().setEnabled(enabled)
+  }),
+  clearHistory: () => mutate(async (generation) => {
+    await api.clearListenStatistics()
+    assertSession(generation)
+    get().clear()
+  }),
 
   reset: () => {
     get().clear()

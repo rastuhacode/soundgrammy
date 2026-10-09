@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import type { Track } from '@/lib/db'
+import type { PlaylistEntry } from '@/lib/playlists'
 import type { TrackListenStats } from '@/types'
 
 export const ShuffleSchema = z.enum(['off', 'on'])
@@ -18,10 +18,7 @@ export type ShuffleMode = z.infer<typeof ShuffleModeSchema>
 export type ShuffleAlgorithm = <T>(playlist: T[]) => T[]
 
 /** Playlist membership paired with its library track (duplicates stay distinct). */
-export interface PlaylistQueueEntry {
-  track: Track
-  sourceIndex: number
-}
+export type PlaylistQueueEntry = PlaylistEntry
 
 export interface ShuffleContext {
   statsByTrackId: ReadonlyMap<number, TrackListenStats>

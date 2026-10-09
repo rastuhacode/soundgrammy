@@ -37,3 +37,22 @@ export function isSessionCurrent(generation: number): boolean {
 export function assertSession(generation: number): void {
   if (!isSessionCurrent(generation)) throw new Error('The account changed. Please try again.')
 }
+
+/** Serial work belongs to one account; failures never poison subsequent work. */
+export function createSessionQueue() {
+  let generation = -1
+  let tail: Promise<void> = Promise.resolve()
+  return <T>(operation: (generation: number) => Promise<T>): Promise<T> => {
+    const captured = captureSession()
+    if (captured !== generation) {
+      generation = captured
+      tail = Promise.resolve()
+    }
+    const next = tail.then(() => {
+      assertSession(captured)
+      return operation(captured)
+    })
+    tail = next.then(() => {}, () => {})
+    return next
+  }
+}

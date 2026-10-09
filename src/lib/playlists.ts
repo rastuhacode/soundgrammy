@@ -211,6 +211,16 @@ export function playlistMembershipKey(playlist: Pick<ResolvedSelectedPlaylist, '
 
 /** Preserve backend positions when a library refresh temporarily omits a membership. */
 export function playlistMembershipIndices(playlist: Pick<ResolvedSelectedPlaylist, 'trackIds' | 'tracks'>): number[] {
-  const available = new Set(playlist.tracks.map(track => track.id))
-  return playlist.trackIds.flatMap((id, index) => available.has(id) ? [index] : [])
+  return playlistEntries(playlist).map(entry => entry.sourceIndex)
+}
+
+export interface PlaylistEntry { track: Track, sourceIndex: number }
+
+/** Keep each available track paired with its original backend membership slot. */
+export function playlistEntries(playlist: Pick<ResolvedSelectedPlaylist, 'trackIds' | 'tracks'>): PlaylistEntry[] {
+  const available = new Map(playlist.tracks.map(track => [track.id, track]))
+  return playlist.trackIds.flatMap((id, sourceIndex) => {
+    const track = available.get(id)
+    return track ? [{ track, sourceIndex }] : []
+  })
 }

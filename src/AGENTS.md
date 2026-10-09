@@ -47,5 +47,9 @@ Proxy / connection settings are edited via Settings and the login-screen panel; 
 - `lib/library-hydration.ts` loads each domain independently. Statistics/cache failures must not block tracks or playlists.
 - Positional row selection belongs to an exact ordered membership snapshot and resets when that snapshot changes.
 - `lib/playlists.ts` owns built-in playlist metadata/types/resolvers; `lib/playlist-track-actions.ts` owns pure action rules.
+- Settings mutations belong to their domain stores and use account-scoped queues.
+- Library hydration and `lib/playlist-playback.ts` coordinate domain commits with playback mirrors; library/playlist stores do not import the player store.
+- Playlist UI passes `{ track, sourceIndex }` entries instead of parallel track/position arrays.
+- Playback composition provides both an audio engine and a player command port; native ports share one account-scoped IPC queue.
 - Shared playback/transport contracts live in `types/`; they must not import stores or React hooks.
 - `test-support/legacy-*` contains historical web playback fixtures only. Production queue policy and listen accounting belong to Rust; frontend fixture tests do not validate native policy.

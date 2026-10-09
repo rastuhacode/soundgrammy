@@ -2,15 +2,14 @@ import { captureSession, isSessionCurrent } from '@/stores/session-store'
 import { ownEventListeners } from '@/lib/events'
 import { errorMessage } from '@/lib/errors'
 import { create } from 'zustand'
-import { revealItemInDir } from '@tauri-apps/plugin-opener'
 import {
   api,
   onCacheTracksProgress,
   onPlaylistDownloadProgress,
 } from '@/lib/api'
 import type { PlaylistDownloadResult } from '@/types'
-import type { PlaylistId } from '@/stores/playlists-store'
-import { useCacheStore } from '@/stores/cache-store'
+import type { PlaylistId } from '@/lib/playlists'
+import { useCacheStore, withBusyTracks } from '@/stores/cache-store'
 
 export type PlaylistJobKey = string
 
@@ -72,6 +71,48 @@ function newJobId(): string {
   return crypto.randomUUID()
 }
 
+interface PlaylistJobInput { playlistId: PlaylistId, name: string, trackIds: number[] }
+
+async function runPlaylistJob(kind: PlaylistJob['kind'], { playlistId, name, trackIds }: PlaylistJobInput) {
+  if (!trackIds.length) return
+  const store = usePlaylistJobsStore
+  const key = playlistJobKey(playlistId)
+  const index = kind === 'download' ? 'downloadJobByPlaylist' : 'cacheJobByPlaylist'
+  if (store.getState()[index][key]) return
+  const generation = captureSession()
+  const jobId = newJobId()
+  const job: PlaylistJob = { jobId, playlistKey: key, playlistName: name, kind,
+    progress: { current: 0, total: trackIds.length }, trackIds }
+  store.setState(state => ({ jobsById: { ...state.jobsById, [jobId]: job },
+    [index]: { ...state[index], [key]: jobId } }))
+  try {
+    await withBusyTracks(trackIds, async () => {
+      if (kind === 'download') {
+        const result = await api.downloadPlaylist(name, trackIds, jobId)
+        if (isSessionCurrent(generation)) store.getState().enqueueResult({ playlistName: name, result })
+      }
+      else {
+        const cached = await api.cacheTracks(trackIds, jobId)
+        if (isSessionCurrent(generation)) useCacheStore.getState().markCached(cached)
+      }
+    })
+  }
+  catch (error) {
+    if (isSessionCurrent(generation)) store.getState().enqueueError(errorMessage(error))
+  }
+  finally {
+    if (isSessionCurrent(generation)) {
+      store.setState((state) => {
+        const jobsById = { ...state.jobsById }
+        const byPlaylist = { ...state[index] }
+        delete jobsById[jobId]
+        delete byPlaylist[key]
+        return { jobsById, [index]: byPlaylist }
+      })
+    }
+  }
+}
+
 export const usePlaylistJobsStore = create<PlaylistJobsState>((set, get) => ({
   reset: () => set({ jobsById: {}, downloadJobByPlaylist: {}, cacheJobByPlaylist: {}, resultQueue: [], errorQueue: [] }),
   jobsById: {},
@@ -128,100 +169,8 @@ export const usePlaylistJobsStore = create<PlaylistJobsState>((set, get) => ({
     })
   },
 
-  runDownloadPlaylist: async ({ playlistId, name, trackIds }) => {
-    if (trackIds.length === 0) return
-    const key = playlistJobKey(playlistId)
-    if (get().downloadJobByPlaylist[key]) return
-
-    const generation = captureSession()
-    const jobId = newJobId()
-    const job: PlaylistJob = {
-      jobId,
-      playlistKey: key,
-      playlistName: name,
-      kind: 'download',
-      progress: { current: 0, total: trackIds.length },
-      trackIds,
-    }
-
-    set(state => ({
-      jobsById: { ...state.jobsById, [jobId]: job },
-      downloadJobByPlaylist: { ...state.downloadJobByPlaylist, [key]: jobId },
-    }))
-    useCacheStore.getState().markBusy(trackIds)
-
-    try {
-      const result = await api.downloadPlaylist(name, trackIds, jobId)
-      if (!isSessionCurrent(generation)) return
-      get().enqueueResult({ playlistName: name, result })
-      if (result.folderPath) {
-        try {
-          await revealItemInDir(result.folderPath)
-        }
-        catch {
-          // Result dialog can still open the folder.
-        }
-      }
-    }
-    catch (error) {
-      if (isSessionCurrent(generation)) get().enqueueError(errorMessage(error))
-    }
-    finally {
-      if (isSessionCurrent(generation)) {
-        useCacheStore.getState().clearBusy(trackIds)
-        set((state) => {
-          const jobsById = { ...state.jobsById }
-          delete jobsById[jobId]
-          const downloadJobByPlaylist = { ...state.downloadJobByPlaylist }
-          delete downloadJobByPlaylist[key]
-          return { jobsById, downloadJobByPlaylist }
-        })
-      }
-    }
-  },
-
-  runCachePlaylist: async ({ playlistId, name, trackIds }) => {
-    if (trackIds.length === 0) return
-    const key = playlistJobKey(playlistId)
-    if (get().cacheJobByPlaylist[key]) return
-
-    const generation = captureSession()
-    const jobId = newJobId()
-    const job: PlaylistJob = {
-      jobId,
-      playlistKey: key,
-      playlistName: name,
-      kind: 'cache',
-      progress: { current: 0, total: trackIds.length },
-      trackIds,
-    }
-
-    set(state => ({
-      jobsById: { ...state.jobsById, [jobId]: job },
-      cacheJobByPlaylist: { ...state.cacheJobByPlaylist, [key]: jobId },
-    }))
-    useCacheStore.getState().markBusy(trackIds)
-
-    try {
-      const cached = await api.cacheTracks(trackIds, jobId)
-      if (isSessionCurrent(generation)) useCacheStore.getState().markCached(cached)
-    }
-    catch (error) {
-      if (isSessionCurrent(generation)) get().enqueueError(errorMessage(error))
-    }
-    finally {
-      if (isSessionCurrent(generation)) {
-        useCacheStore.getState().clearBusy(trackIds)
-        set((state) => {
-          const jobsById = { ...state.jobsById }
-          delete jobsById[jobId]
-          const cacheJobByPlaylist = { ...state.cacheJobByPlaylist }
-          delete cacheJobByPlaylist[key]
-          return { jobsById, cacheJobByPlaylist }
-        })
-      }
-    }
-  },
+  runDownloadPlaylist: input => runPlaylistJob('download', input),
+  runCachePlaylist: input => runPlaylistJob('cache', input),
 }))
 
 export function startPlaylistJobsListeners(): Promise<() => void> {

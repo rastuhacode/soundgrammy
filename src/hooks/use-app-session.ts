@@ -30,7 +30,7 @@ export function resetSessionState() {
   usePlaylistJobsStore.getState().reset()
   useLastFmStore.setState({ status: null })
   clearThumbnailMemoryCache()
-  usePlayerStore.getState().clearQueue()
+  usePlayerStore.getState().reset()
   useConnectivityStore.getState().reset()
 }
 

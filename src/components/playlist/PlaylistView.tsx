@@ -3,9 +3,7 @@ import { ArrowLeft, X } from 'lucide-react'
 import { useCompactDisplay } from '@/hooks/use-compact-display'
 import { usePlayerStore } from '@/stores/player-store'
 import { Input } from '@/components/ui/input'
-import { revealItemInDir } from '@tauri-apps/plugin-opener'
 import { usePlaylistsStore } from '@/stores/playlists-store'
-import { usePlaylistJobsStore } from '@/stores/playlist-jobs-store'
 import { usePlaylistView } from '@/hooks/use-playlist-view'
 import { useAndroidBackAction } from '@/hooks/use-android-back'
 import {
@@ -18,66 +16,17 @@ import {
 } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
 import { PlaylistEmptyState } from './PlaylistEmptyState'
+import { PlaylistPlaybackActions } from './PlaylistPlaybackActions'
+import { PlaylistSelectionActions } from './PlaylistSelectionActions'
 import { PlaylistToolbar } from './PlaylistToolbar'
 import { PlaylistTracksTable } from './PlaylistTracksTable'
-import { PlaylistDownloadResultDialog } from './PlaylistDownloadResultDialog'
 import { TrackInfoDialog } from './TrackInfoDialog'
 
 export function PlaylistView({ onBack }: { onBack?: () => void }) {
   const selectedPlaylistId = usePlaylistsStore(
     state => state.selectedPlaylistId,
   )
-  const resultItem = usePlaylistJobsStore(state => state.resultQueue[0] ?? null)
-  const dismissResult = usePlaylistJobsStore(state => state.dismissResult)
-  const errorMessage = usePlaylistJobsStore(state => state.errorQueue[0] ?? null)
-  const dismissError = usePlaylistJobsStore(state => state.dismissError)
-
-  const handleOpenFolder = async () => {
-    if (!resultItem?.result.folderPath) return
-    try {
-      await revealItemInDir(resultItem.result.folderPath)
-    }
-    catch {
-      // Ignore; user can browse Downloads manually.
-    }
-  }
-
-  return (
-    <>
-      <PlaylistViewContent key={selectedPlaylistId} onBack={onBack} />
-
-      <PlaylistDownloadResultDialog
-        result={resultItem?.result ?? null}
-        playlistName={resultItem?.playlistName ?? null}
-        open={resultItem !== null}
-        onOpenChange={(open) => {
-          if (!open) dismissResult()
-        }}
-        onOpenFolder={handleOpenFolder}
-      />
-
-      <Dialog
-        open={errorMessage !== null}
-        onOpenChange={(open) => {
-          if (!open) dismissError()
-        }}
-      >
-        <DialogContent className="sm:max-w-md">
-          <DialogHeader>
-            <DialogTitle>Couldn’t finish</DialogTitle>
-            <DialogDescription className="whitespace-pre-wrap">
-              {errorMessage}
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="secondary" onClick={() => dismissError()}>
-              OK
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-    </>
-  )
+  return <PlaylistViewContent key={selectedPlaylistId} onBack={onBack} />
 }
 
 function PlaylistViewContent({ onBack }: { onBack?: () => void }) {
@@ -88,42 +37,26 @@ function PlaylistViewContent({ onBack }: { onBack?: () => void }) {
   const { isCompact } = useCompactDisplay()
   const [previousCompact, setPreviousCompact] = useState(isCompact)
   const hasPlayer = usePlayerStore(state => state.currentTrack !== null)
-  const hasTracks = view.playlistTracks.length > 0
-  useAndroidBackAction(view.selectionMode, view.handleExitSelection)
+  const hasTracks = view.playlist.tracks.length > 0
+  useAndroidBackAction(view.selection.mode, view.selection.exit)
 
   // Search belongs to the current layout; resizing must not carry a modal query
   // into the desktop playlist, or leave the compact playlist filtered behind it.
   if (previousCompact !== isCompact) {
     setPreviousCompact(isCompact)
     setSearchOpen(false)
-    view.setSearch('')
+    view.search.setValue('')
   }
 
   const handleSearchOpenChange = (open: boolean) => {
     setSearchOpen(open)
-    if (!open) view.setSearch('')
+    if (!open) view.search.setValue('')
   }
 
   const trackTable = (
     <PlaylistTracksTable
       hideHeader={searchOpen}
-      tracks={view.filteredTracks}
-      sourceIndices={view.filteredSourceIndices}
-      currentPlaylist={view.selectedPlaylist}
-      customPlaylists={view.customPlaylists}
-      playingSourceIndex={view.playingSourceIndex}
-      isPlaying={view.isPlaying}
-      isTrackLiked={view.checkTrackLiked}
-      selectionMode={view.selectionMode}
-      rowSelection={view.rowSelection}
-      onRowSelectionChange={view.setRowSelection}
-      sorting={view.sorting}
-      onSortingChange={view.setSorting}
-      canReorder={view.canReorder}
-      onReorderTracks={view.handleReorderTracks}
-      onEnterSelection={view.handleEnterSelection}
-      onTrackPlay={view.handleTrackSelect}
-      trackActions={view.trackActions}
+      {...view.table}
     />
   )
 
@@ -133,35 +66,14 @@ function PlaylistViewContent({ onBack }: { onBack?: () => void }) {
         {(hasTracks || onBack) && (
           <PlaylistToolbar
             onBack={onBack}
-            hasTracks={hasTracks}
-            search={view.search}
-            onSearchChange={view.setSearch}
+            currentPlaylist={view.playlist}
+            search={view.search.value}
+            onSearchChange={view.search.setValue}
             onOpenSearch={() => handleSearchOpenChange(true)}
             searchButtonRef={searchButtonRef}
-            selectionMode={view.selectionMode}
-            selectedTrackIds={view.selectedTrackIds}
-            selectedPositions={view.selectedSourceIndices}
-            currentPlaylist={view.selectedPlaylist}
-            customPlaylists={view.customPlaylists}
-            likedTrackIds={view.likedTrackIds}
-            playlistCached={view.playlistCached}
-            playlistDownloading={view.playlistDownloading}
-            playlistDownloadProgress={view.playlistDownloadProgress}
-            playlistCaching={view.playlistCaching}
-            playlistCacheProgress={view.playlistCacheProgress}
-            onPlay={view.handlePlaylistPlay}
-            onShuffle={view.handlePlaylistShuffle}
-            onCachePlaylist={view.handleCachePlaylist}
-            onDownloadPlaylist={view.handleDownloadPlaylist}
-            onExitSelection={view.handleExitSelection}
-            onAddToLiked={view.handleBulkAddToLiked}
-            onRemoveFromLiked={view.handleBulkRemoveFromLiked}
-            onAddToPlaylist={view.handleBulkAddToPlaylist}
-            onRemoveFromPlaylist={view.handleBulkRemoveFromPlaylist}
-            onPlayNext={view.handleBulkPlayNext}
-            onAddToEnd={view.handleBulkAddToEnd}
-            onCache={view.handleBulkCache}
-            onDownload={view.handleBulkDownload}
+            actions={view.selection.mode
+              ? <PlaylistSelectionActions {...view.bulkActions} />
+              : hasTracks ? <PlaylistPlaybackActions {...view.playbackActions} /> : null}
           />
         )}
 
@@ -171,9 +83,9 @@ function PlaylistViewContent({ onBack }: { onBack?: () => void }) {
             )
           : (
               <PlaylistEmptyState
-                libraryTrackCount={view.libraryTrackCount}
-                playlistId={view.playlistId}
-                isCustom={view.isCustom}
+                libraryTrackCount={view.libraryCount}
+                playlistId={view.playlist.id}
+                isCustom={view.playlist.isCustom}
               />
             ))}
       </div>
@@ -202,17 +114,17 @@ function PlaylistViewContent({ onBack }: { onBack?: () => void }) {
               type="search"
               aria-label="Search tracks"
               placeholder="Search tracks"
-              value={view.search}
-              onChange={event => view.setSearch(event.target.value)}
+              value={view.search.value}
+              onChange={event => view.search.setValue(event.target.value)}
               className="min-w-0 flex-1 border-none bg-transparent text-base shadow-none focus-visible:ring-0 dark:bg-transparent [&::-webkit-search-cancel-button]:hidden"
             />
-            {view.search && (
+            {view.search.value && (
               <Button
                 variant="ghost"
                 size="icon"
                 aria-label="Clear track search"
                 onClick={() => {
-                  view.setSearch('')
+                  view.search.setValue('')
                   searchInputRef.current?.focus()
                 }}
               >
@@ -221,41 +133,41 @@ function PlaylistViewContent({ onBack }: { onBack?: () => void }) {
             )}
           </header>
           <p className="shrink-0 px-5 py-3 text-sm text-muted-foreground" aria-live="polite">
-            {view.filteredTracks.length}
+            {view.table.entries.length}
             {' '}
-            {view.filteredTracks.length === 1 ? 'track' : 'tracks'}
+            {view.table.entries.length === 1 ? 'track' : 'tracks'}
             {' '}
             in
             {' '}
-            {view.selectedPlaylist.name}
+            {view.playlist.name}
           </p>
-          {view.filteredTracks.length > 0
+          {view.table.entries.length > 0
             ? trackTable
             : <p className="px-5 py-6 text-sm text-muted-foreground">No tracks found.</p>}
         </DialogContent>
       </Dialog>
 
       <TrackInfoDialog
-        track={view.infoTrack}
-        open={view.infoTrack !== null}
-        onOpenChange={view.handleInfoOpenChange}
+        track={view.dialogs.infoTrack}
+        open={view.dialogs.infoTrack !== null}
+        onOpenChange={view.dialogs.onInfoOpenChange}
       />
 
       <Dialog
-        open={view.actionError !== null}
-        onOpenChange={view.handleActionErrorOpenChange}
+        open={view.dialogs.actionError !== null}
+        onOpenChange={view.dialogs.onErrorOpenChange}
       >
         <DialogContent className="sm:max-w-md">
           <DialogHeader>
             <DialogTitle>Couldn’t finish</DialogTitle>
             <DialogDescription className="whitespace-pre-wrap">
-              {view.actionError}
+              {view.dialogs.actionError}
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
             <Button
               variant="secondary"
-              onClick={() => view.handleActionErrorOpenChange(false)}
+              onClick={() => view.dialogs.onErrorOpenChange(false)}
             >
               OK
             </Button>

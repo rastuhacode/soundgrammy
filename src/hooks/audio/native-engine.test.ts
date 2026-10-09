@@ -140,6 +140,21 @@ describe('native seek feedback', () => {
 })
 
 describe('native lifetime and reattachment', () => {
+  it('detaches without waiting for an unresolved native command', async () => {
+    const h = harness()
+    await h.engine.load({ trackId: 1, attemptId: 'native:1' })
+    let finish!: (value: unknown) => void
+    h.transport.play = () => new Promise((resolve) => {
+      finish = resolve
+    })
+    const pending = h.engine.play()
+    await Promise.resolve()
+    await h.engine.destroy()
+    const snapshot = h.engine.getSnapshot()
+    finish({ ...h.backend.getSnapshot(), revision: 100, status: 'playing' })
+    await pending
+    expect(h.engine.getSnapshot()).toBe(snapshot)
+  })
   it('adopts an already playing backend and survives view destruction', async () => {
     const h = harness()
     await h.backend.load({ trackId: 1, attemptId: 'native:41' })

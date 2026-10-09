@@ -2,7 +2,7 @@ import type { Track } from '@/types'
 import { api } from '@/lib/api'
 import { errorMessage } from '@/lib/errors'
 import { exportTrackAndReveal } from '@/lib/export-track'
-import { useCacheStore } from '@/stores/cache-store'
+import { useCacheStore, withBusyTracks } from '@/stores/cache-store'
 import { captureSession, isSessionCurrent } from '@/stores/session-store'
 
 /** Track file operations share busy ownership, cleanup and session validity. */
@@ -11,15 +11,11 @@ export function useTrackFileActions(onError: (message: string) => void) {
     const generation = captureSession()
     const ids = [...new Set(trackIds)].filter(id => !useCacheStore.getState().isBusy(id))
     if (!ids.length) return
-    useCacheStore.getState().markBusy(ids)
     try {
-      await operation(ids)
+      await withBusyTracks(ids, () => operation(ids))
     }
     catch (error) {
       if (isSessionCurrent(generation)) onError(errorMessage(error))
-    }
-    finally {
-      if (isSessionCurrent(generation)) useCacheStore.getState().clearBusy(ids)
     }
   }
   const cache = (trackIds: number[]) => run(trackIds, async (ids) => {

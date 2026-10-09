@@ -34,6 +34,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import { useTouchScreen } from '@/hooks/use-touch-screen'
 import { useCompactDisplay } from '@/hooks/use-compact-display'
 import type { Track } from '@/lib/db'
+import type { PlaylistEntry } from '@/lib/playlists'
 import type { ResolvedSelectedPlaylist } from '@/stores/playlists-store'
 import { cn } from '@/lib/utils'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -68,8 +69,7 @@ const restrictToVerticalAxis: Modifier = ({ transform }) => ({
 
 export interface PlaylistTracksTableProps {
   hideHeader?: boolean
-  tracks: Track[]
-  sourceIndices: number[]
+  entries: PlaylistEntry[]
   currentPlaylist: ResolvedSelectedPlaylist
   customPlaylists: CustomPlaylistRef[]
   /** Membership index of the now-playing row; null when nothing should highlight. */
@@ -99,8 +99,7 @@ function SortIcon({ sorted }: { sorted: false | 'asc' | 'desc' }) {
 
 export function PlaylistTracksTable({
   hideHeader = false,
-  tracks,
-  sourceIndices,
+  entries,
   currentPlaylist,
   customPlaylists,
   playingSourceIndex,
@@ -117,6 +116,7 @@ export function PlaylistTracksTable({
   onTrackPlay,
   trackActions,
 }: PlaylistTracksTableProps) {
+  const tracks = useMemo(() => entries.map(entry => entry.track), [entries])
   const scrollRef = useRef<HTMLDivElement>(null)
   const touchScreen = useTouchScreen()
   const { isCompact } = useCompactDisplay()
@@ -203,7 +203,7 @@ export function PlaylistTracksTable({
       sorting,
       rowSelection,
     },
-    getRowId: (_row, index) => String(sourceIndices[index] ?? index),
+    getRowId: (_row, index) => String(entries[index]!.sourceIndex),
     enableRowSelection: selectionMode,
     onSortingChange,
     onRowSelectionChange,
