@@ -40,6 +40,20 @@ async function mountForm(initial: Partial<PlaylistFormOptions> = {}) {
 }
 
 describe('playlist dialog operation lifetime', () => {
+  it('creates a playlist with the captured selection, including repeated tracks', async () => {
+    const create = vi.spyOn(usePlaylistsStore.getState(), 'createPlaylist').mockResolvedValueOnce({
+      id: 30, name: 'Selection', trackIds: [2, 1, 2], updatedAt: '',
+    })
+    const h = await mountForm({ trackIds: [2, 1, 2] })
+    try {
+      await act(async () => h.form.setName(' Selection '))
+      await act(async () => h.form.handleCreateSubmit({ preventDefault: vi.fn() } as unknown as React.FormEvent))
+      expect(create).toHaveBeenCalledExactlyOnceWith('Selection', [2, 1, 2])
+      expect(h.options.onOpenChange).toHaveBeenCalledWith(false)
+    }
+    finally { await act(async () => h.root.unmount()) }
+  })
+
   it('discards analysis from a closed/reopened dialog while a new analysis remains busy', async () => {
     const oldAnalysis = deferred<PlaylistImportPreview>()
     const newAnalysis = deferred<PlaylistImportPreview>()

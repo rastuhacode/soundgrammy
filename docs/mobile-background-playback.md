@@ -19,13 +19,15 @@ fail playback safely. Transient loss (including duck requests) pauses output;
 matching focus gain removes the interruption gate without changing user intent.
 Permanent loss and becoming-noisy clear playback intent. Old focus-request callbacks
 are discarded. The notification shares the MediaSession token and has previous,
-pause, next, and stop actions; seek is exposed through MediaSession.
+play/pause, next, and stop actions; seek is exposed through MediaSession.
 
 Swiping the task away from Android Recents stops the foreground service and ends
 the process, so playback stops and the next launch starts with a fresh WebView.
 Moving the app to the background still permits playback, and ordinary Activity
-recreation reattaches through native snapshots. Pause/final completion/stop/logout
-release focus and stop the foreground service; service destruction releases its
+recreation reattaches through native snapshots. User pause releases focus and the
+wake lock, demotes the service, and retains a dismissible notification with Play.
+Swiping that notification or pressing Stop hides the media session until playback
+starts again. Final completion/stop/logout stop the service; destruction releases its
 receiver and wake lock.
 Unexpected service destruction sends native Stop. Temporary interruptions retain
 the service but release its CPU wake lock. Active playback/buffering holds a partial

@@ -1,5 +1,5 @@
 import { Fragment } from 'react'
-import { CheckSquare, Download, HardDriveDownload, HardDriveUpload, Heart, Info, ListEnd, ListPlus, ListStart, ListX, type LucideIcon } from 'lucide-react'
+import { CheckSquare, Download, HardDriveDownload, HardDriveUpload, Heart, Info, ListEnd, ListPlus, ListStart, ListX, Plus, type LucideIcon } from 'lucide-react'
 import type { Track } from '@/types'
 import type { ResolvedSelectedPlaylist } from '@/lib/playlists'
 import { getTrackContextActions, type CustomPlaylistRef } from '@/lib/playlist-track-actions'
@@ -11,6 +11,7 @@ import { cn } from '@/lib/utils'
 export interface TrackMenuHandlers {
   onToggleLike: (trackId: number) => void
   onAddToPlaylist: (playlistId: number, trackId: number) => void
+  onCreatePlaylist: (trackId: number) => void
   onDeleteFromPlaylist: (playlistId: number, position: number) => void
   onPlayNext: (track: Track) => void
   onAddToEnd: (track: Track) => void
@@ -87,20 +88,18 @@ export function TrackMenuContent(props: TrackMenuProps & { variant: 'context' | 
                     <ListPlus className="size-4" />
                     Add to playlist
                   </SubTrigger>
-                  <SubContent>
-                    {customPlaylists.length
-                      ? customPlaylists.map(playlist => (
-                          <Item key={playlist.id} onClick={() => props.onAddToPlaylist(playlist.id, track.id)}>
-                            <ListPlus className="size-4" />
-                            {playlist.name}
-                          </Item>
-                        ))
-                      : (
-                          <Item disabled>
-                            <ListPlus className="size-4" />
-                            No other playlists
-                          </Item>
-                        )}
+                  <SubContent className="max-w-[min(16rem,calc(100vw-2rem))]">
+                    <Item onClick={() => props.onCreatePlaylist(track.id)}>
+                      <Plus className="size-4" />
+                      Create playlist
+                    </Item>
+                    {customPlaylists.length > 0 && <Separator />}
+                    {customPlaylists.map(playlist => (
+                      <Item key={playlist.id} title={playlist.name} onClick={() => props.onAddToPlaylist(playlist.id, track.id)}>
+                        <ListPlus className="size-4" />
+                        <span className="min-w-0 truncate">{playlist.name}</span>
+                      </Item>
+                    ))}
                   </SubContent>
                 </Sub>
                 {group.items.slice(1).map(renderAction)}

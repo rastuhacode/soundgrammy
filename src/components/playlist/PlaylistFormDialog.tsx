@@ -30,6 +30,8 @@ interface PlaylistFormDialogProps {
   onOpenChange: (open: boolean) => void
   mode: PlaylistFormMode
   playlist?: CustomPlaylistSummary
+  trackIds?: number[]
+  allowImport?: boolean
 }
 
 export function PlaylistFormDialog({
@@ -37,6 +39,8 @@ export function PlaylistFormDialog({
   onOpenChange,
   mode,
   playlist,
+  trackIds,
+  allowImport = true,
 }: PlaylistFormDialogProps) {
   const formId = useId()
   const {
@@ -44,7 +48,7 @@ export function PlaylistFormDialog({
     saveError, setSaveError, isSubmitting, importPath, importPreview, importError,
     importAnalyzing, handleSelectImportFile, handleClearImportFile,
     handleCreateSubmit, handleImportCreate, handleOpenChange,
-  } = usePlaylistForm({ open, onOpenChange, mode, playlist })
+  } = usePlaylistForm({ open, onOpenChange, mode, playlist, trackIds })
 
   const newForm = (
     <form id={formId} onSubmit={handleCreateSubmit} className="flex flex-col gap-5" noValidate>
@@ -170,7 +174,9 @@ export function PlaylistFormDialog({
     ? 'Update the playlist name.'
     : createTab === 'import'
       ? 'Import playlist from file. Keep in mind that it is not cross-user operation.'
-      : 'Create a playlist from scratch.'
+      : trackIds?.length
+        ? `Create a playlist with ${trackIds.length} selected ${trackIds.length === 1 ? 'track' : 'tracks'}.`
+        : 'Create a playlist from scratch.'
 
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -180,7 +186,7 @@ export function PlaylistFormDialog({
           <DialogDescription>{dialogDescription}</DialogDescription>
         </DialogHeader>
 
-        {isEdit
+        {isEdit || !allowImport
           ? newForm
           : (
               <Tabs
@@ -212,7 +218,7 @@ export function PlaylistFormDialog({
           >
             Cancel
           </Button>
-          {isEdit || createTab === 'new'
+          {isEdit || !allowImport || createTab === 'new'
             ? (
                 <Button type="submit" form={formId} disabled={isSubmitting}>
                   {isSubmitting

@@ -17,6 +17,7 @@ import java.util.concurrent.atomic.AtomicBoolean
  */
 class PlaybackService : Service() {
     private var intentionalStop = false
+    private var foreground = false
     private lateinit var wake: PowerManager.WakeLock
     private val noisy = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -35,15 +36,21 @@ class PlaybackService : Service() {
         val notification = notification()
         if (Build.VERSION.SDK_INT >= 29) startForeground(ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
         else startForeground(ID, notification)
+        foreground = true
         wake.acquire()
     }
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         instance = this
         starting = false
         intentionalStop = false
+        if (intent?.action == DISMISS) {
+            NativeMediaSession.command(2)
+            return START_NOT_STICKY
+        }
         val notification = notification()
         if (Build.VERSION.SDK_INT >= 29) startForeground(ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
         else startForeground(ID, notification)
+        foreground = true
         val callbacks = waiting.toList()
         waiting.clear()
         callbacks.forEach { it() }
@@ -60,10 +67,21 @@ class PlaybackService : Service() {
     }
     private fun refresh() {
         if (!wanted) { finish(); return }
-        val needsWake = presentation?.optString("status") != "paused"
+        val active = presentation?.optBoolean("background_active") == true
+        val needsWake = active && presentation?.optString("status") !in listOf("paused", "ready")
         if (needsWake && !wake.isHeld) wake.acquire()
         if (!needsWake && wake.isHeld) wake.release()
-        getSystemService(NotificationManager::class.java).notify(ID, notification())
+        val notification = notification()
+        if (active && !foreground) {
+            if (Build.VERSION.SDK_INT >= 29) startForeground(ID, notification, ServiceInfo.FOREGROUND_SERVICE_TYPE_MEDIA_PLAYBACK)
+            else startForeground(ID, notification)
+            foreground = true
+        } else if (!active && foreground) {
+            // Keep paused controls dismissible without holding foreground resources.
+            stopForeground(STOP_FOREGROUND_DETACH)
+            foreground = false
+        }
+        getSystemService(NotificationManager::class.java).notify(ID, notification)
     }
     private fun finish() {
         intentionalStop = true
@@ -71,6 +89,8 @@ class PlaybackService : Service() {
         starting = false
         abandonFocus()
         stopForeground(STOP_FOREGROUND_REMOVE)
+        foreground = false
+        getSystemService(NotificationManager::class.java).cancel(ID)
         stopSelf()
     }
     override fun onDestroy() {
@@ -81,6 +101,7 @@ class PlaybackService : Service() {
         }
         unregisterReceiver(noisy)
         if (wake.isHeld) wake.release()
+        getSystemService(NotificationManager::class.java).cancel(ID)
         if (!intentionalStop) NativeMediaSession.command(2)
         super.onDestroy()
     }
@@ -91,15 +112,20 @@ class PlaybackService : Service() {
     }
     private fun notification(): Notification {
         val p = presentation
+        val canPause = p?.optJSONObject("actions")?.optBoolean("pause") == true
+        val dismiss = PendingIntent.getService(this, 7, Intent(this, PlaybackService::class.java).setAction(DISMISS),
+            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
         val launch = packageManager.getLaunchIntentForPackage(packageName)
         val builder = Notification.Builder(this, CHANNEL)
             .setSmallIcon(android.R.drawable.ic_media_play)
             .setContentTitle(p?.optString("title") ?: "SoundGrammy")
             .setContentText(p?.optString("artist") ?: "")
-            .setOnlyAlertOnce(true).setOngoing(true)
+            .setOnlyAlertOnce(true).setOngoing(p?.optBoolean("background_active") == true)
+            .setDeleteIntent(dismiss)
             .setVisibility(Notification.VISIBILITY_PUBLIC)
             .addAction(action("Previous", 4, android.R.drawable.ic_media_previous))
-            .addAction(action("Pause", 1, android.R.drawable.ic_media_pause))
+            .addAction(if (canPause) action("Pause", 1, android.R.drawable.ic_media_pause)
+                else action("Play", 0, android.R.drawable.ic_media_play))
             .addAction(action("Next", 3, android.R.drawable.ic_media_next))
             .addAction(action("Stop", 2, android.R.drawable.ic_menu_close_clear_cancel))
             .setStyle(Notification.MediaStyle().setMediaSession(NativeMediaSession.getOrCreate(this).token).setShowActionsInCompactView(0, 1, 2))
@@ -109,6 +135,7 @@ class PlaybackService : Service() {
     companion object {
         private const val CHANNEL = "playback"
         private const val ID = 31
+        private const val DISMISS = "com.soundgrammy.app.DISMISS_PLAYBACK"
         private var instance: PlaybackService? = null
         private var starting = false
         private val waiting = mutableListOf<() -> Unit>()
@@ -206,10 +233,11 @@ class PlaybackService : Service() {
             abandonFocus()
             instance?.finish()
         }
-        fun update(p: JSONObject) {
+        fun update(p: JSONObject, visible: Boolean) {
             presentation = p
-            wanted = p.getBoolean("background_active")
-            if (!wanted) abandonFocus()
+            val active = p.getBoolean("background_active")
+            wanted = visible && (active || p.optString("status") in listOf("paused", "ready"))
+            if (!active) abandonFocus()
             instance?.refresh()
         }
     }

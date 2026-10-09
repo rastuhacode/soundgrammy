@@ -215,5 +215,7 @@ jobs:
           apk="src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk"
           test -f "$apk" || { echo "Android release APK is missing: $apk"; exit 1; }
           "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify "$apk"
-          cp "$apk" "$RUNNER_TEMP/SoundGrammy-android-arm64.apk"
-          gh release upload "$RELEASE_TAG" "$RUNNER_TEMP/SoundGrammy-android-arm64.apk" --clobber
+          version="${RELEASE_TAG#v}"
+          asset="$RUNNER_TEMP/SoundGrammy_${version}_aarch64.apk"
+          cp "$apk" "$asset"
+          gh release upload "$RELEASE_TAG" "$asset" --clobber

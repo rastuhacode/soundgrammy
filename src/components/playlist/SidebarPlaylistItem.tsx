@@ -98,7 +98,11 @@ export function SidebarPlaylistItem({
         role="button"
         aria-label={`Select ${name} playlist`}
         tabIndex={0}
-        onClick={onSelect}
+        onClick={(event) => {
+          // Portaled menu items still bubble through this row in React.
+          if (!event.currentTarget.contains(event.target as Node)) return
+          onSelect()
+        }}
         onPointerDown={(event) => {
           lastTouchAt.current = event.pointerType === 'touch' ? Date.now() : null
         }}
@@ -108,6 +112,7 @@ export function SidebarPlaylistItem({
           event.stopPropagation()
         }}
         onKeyDown={(e) => {
+          if (e.target !== e.currentTarget) return
           if (e.key === 'Enter' || e.key === ' ') {
             e.preventDefault()
             onSelect()

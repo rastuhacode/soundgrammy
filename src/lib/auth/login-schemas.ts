@@ -6,7 +6,7 @@ export const phoneLoginSchema = z.object({
     .trim()
     .regex(
       /^\+[1-9]\d{6,14}$/,
-      'Enter a phone number in international format, e.g. +7 (999) 123-45-67',
+      'Enter a phone number in international format, e.g. +447700900123',
     ),
 })
 

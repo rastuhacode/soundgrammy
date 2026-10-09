@@ -17,6 +17,7 @@ export function usePlaylistView() {
   const [sorting, setSorting] = useState<SortingState>([])
   const [infoTrack, setInfoTrack] = useState<Track | null>(null)
   const [actionError, setActionError] = useState<string | null>(null)
+  const [createTrackIds, setCreateTrackIds] = useState<number[] | null>(null)
   const tracks = usePlaylistTracks(search, sorting)
   const { playlist } = tracks
   const selection = usePlaylistSelection(playlist, tracks.entries)
@@ -47,12 +48,13 @@ export function usePlaylistView() {
       canReorder: canReorderPlaylist(playlist.id) && tracks.entries.length === playlist.trackIds.length
         && !search.length && !sorting.length && !selection.mode,
       onReorderTracks: actions.reorder, onEnterSelection: selection.enter, onTrackPlay: actions.selectTrack,
-      trackActions: actions.track,
+      trackActions: { ...actions.track, onCreatePlaylist: (id: number) => setCreateTrackIds([id]) },
     },
     bulkActions: {
       selectedTrackIds: selection.trackIds, selectedPositions: selection.positions,
       currentPlaylist: playlist, customPlaylists: tracks.custom, likedTrackIds: tracks.likedIds,
       onExitSelection: selection.exit, ...actions.bulk,
+      onCreatePlaylist: (ids: number[]) => setCreateTrackIds([...ids]),
     },
     playbackActions: {
       currentPlaylist: playlist,
@@ -66,7 +68,8 @@ export function usePlaylistView() {
       },
     },
     dialogs: {
-      infoTrack, actionError,
+      infoTrack, actionError, createTrackIds,
+      onCreateOpenChange: (open: boolean) => { if (!open) setCreateTrackIds(null) },
       onInfoOpenChange: (open: boolean) => { if (!open) setInfoTrack(null) },
       onErrorOpenChange: (open: boolean) => { if (!open) setActionError(null) },
     },

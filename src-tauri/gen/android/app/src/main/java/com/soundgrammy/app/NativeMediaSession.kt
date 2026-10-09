@@ -18,6 +18,7 @@ class NativeMediaSession private constructor(context: Context) {
     private val artworkWorker = Executors.newSingleThreadExecutor()
     private val session = MediaSession(context.applicationContext, "SoundGrammy")
     private var released = false
+    private var dismissed = false
     private var revision = -1L
     private var identity: String? = null
     private var artworkPath: String? = null
@@ -31,14 +32,23 @@ class NativeMediaSession private constructor(context: Context) {
         session.setCallback(object : MediaSession.Callback() {
             override fun onPlay() = nativeCommand(0, 0.0)
             override fun onPause() = nativeCommand(1, 0.0)
-            override fun onStop() = nativeCommand(2, 0.0)
+            override fun onStop() = command(2)
             override fun onSkipToNext() = nativeCommand(3, 0.0)
             override fun onSkipToPrevious() = nativeCommand(4, 0.0)
             override fun onSeekTo(pos: Long) = nativeCommand(5, pos / 1000.0)
         }, handler)
     }
 
-    fun acquire(): Boolean = PlaybackService.acquire(application)
+    fun acquire(): Boolean {
+        val accepted = PlaybackService.acquire(application)
+        if (accepted) handler.post {
+            if (!released) {
+                dismissed = false
+                session.isActive = identity != null
+            }
+        }
+        return accepted
+    }
 
     fun update(json: String) {
         val receivedAt = SystemClock.elapsedRealtime()
@@ -54,9 +64,12 @@ class NativeMediaSession private constructor(context: Context) {
             identity = nextIdentity
             artworkPath = path
             current = p
-            PlaybackService.update(p)
+            // Only a fresh playback acquisition restores dismissed controls;
+            // already queued presentations must not resurrect a swiped card.
+            val visible = identity != null && !dismissed
+            PlaybackService.update(p, visible)
             if (artworkChanged) artwork = null
-            session.isActive = identity != null
+            session.isActive = visible
             publishMetadata()
             val actions = p.getJSONObject("actions")
             var mask = 0L
@@ -118,11 +131,20 @@ class NativeMediaSession private constructor(context: Context) {
         }
     }
 
+    private fun dismiss() {
+        dismissed = true
+        session.isActive = false
+        PlaybackService.shutdown()
+    }
+
     companion object {
         @Volatile private var instance: NativeMediaSession? = null
         @JvmStatic @Synchronized fun getOrCreate(context: Context): NativeMediaSession =
             instance ?: NativeMediaSession(context.applicationContext).also { instance = it }
-        fun command(command: Int) = nativeCommand(command, 0.0)
+        fun command(command: Int) {
+            if (command == 2) instance?.dismiss()
+            nativeCommand(command, 0.0)
+        }
         fun lifecycle(event: Int, token: Long) = nativeLifecycle(event, token)
         @JvmStatic private external fun nativeLifecycle(event: Int, token: Long)
         @JvmStatic private external fun nativeCommand(command: Int, seconds: Double)
