@@ -24,6 +24,15 @@ class NativeMediaSession private constructor(context: Context) {
     private var artworkPath: String? = null
     private var artwork: android.graphics.Bitmap? = null
     private var current: JSONObject? = null
+    private var publishedMetadata: MetadataContent? = null
+
+    private data class MetadataContent(
+        val identity: String,
+        val title: String,
+        val artist: String,
+        val duration: Long,
+        val artwork: android.graphics.Bitmap?,
+    )
 
     // The foreground service reuses this token.
     val token: MediaSession.Token get() = session.sessionToken
@@ -69,7 +78,7 @@ class NativeMediaSession private constructor(context: Context) {
             val visible = identity != null && !dismissed
             PlaybackService.update(p, visible)
             if (artworkChanged) artwork = null
-            session.isActive = visible
+            if (session.isActive != visible) session.isActive = visible
             publishMetadata()
             val actions = p.getJSONObject("actions")
             var mask = 0L
@@ -105,14 +114,27 @@ class NativeMediaSession private constructor(context: Context) {
 
     private fun publishMetadata() {
         val p = current
-        if (identity == null || p == null) { session.setMetadata(null); return }
+        val content = identity?.let { id ->
+            p?.let {
+                MetadataContent(id, it.getString("title"), it.getString("artist"),
+                    (it.getDouble("duration") * 1000).toLong(), artwork)
+            }
+        }
+        // Position ticks must not make System UI rebuild unchanged track content.
+        if (content == publishedMetadata) return
+        if (content == null) {
+            session.setMetadata(null)
+            publishedMetadata = null
+            return
+        }
         val metadata = MediaMetadata.Builder()
-            .putString(MediaMetadata.METADATA_KEY_MEDIA_ID, identity)
-            .putString(MediaMetadata.METADATA_KEY_TITLE, p.getString("title"))
-            .putString(MediaMetadata.METADATA_KEY_ARTIST, p.getString("artist"))
-            .putLong(MediaMetadata.METADATA_KEY_DURATION, (p.getDouble("duration") * 1000).toLong())
-        artwork?.let { metadata.putBitmap(MediaMetadata.METADATA_KEY_ART, it) }
+            .putString(MediaMetadata.METADATA_KEY_MEDIA_ID, content.identity)
+            .putString(MediaMetadata.METADATA_KEY_TITLE, content.title)
+            .putString(MediaMetadata.METADATA_KEY_ARTIST, content.artist)
+            .putLong(MediaMetadata.METADATA_KEY_DURATION, content.duration)
+        content.artwork?.let { metadata.putBitmap(MediaMetadata.METADATA_KEY_ART, it) }
         session.setMetadata(metadata.build())
+        publishedMetadata = content
     }
 
     fun release() {
@@ -123,6 +145,7 @@ class NativeMediaSession private constructor(context: Context) {
             current = null
             identity = null
             artwork = null
+            publishedMetadata = null
             session.isActive = false
             session.setMetadata(null)
             session.setCallback(null)

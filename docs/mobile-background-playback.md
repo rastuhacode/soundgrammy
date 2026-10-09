@@ -26,6 +26,9 @@ the process, so playback stops and the next launch starts with a fresh WebView.
 Moving the app to the background still permits playback, and ordinary Activity
 recreation reattaches through native snapshots. User pause releases focus and the
 wake lock, demotes the service, and retains a dismissible notification with Play.
+On Android, a prepared track retains its decoder and bounded PCM buffer while the
+output stream is paused. Resume reuses that stream after reacquiring focus;
+unprepared tracks, stopped playback, and invalidated outputs are rebuilt.
 Swiping that notification or pressing Stop hides the media session until playback
 starts again. Final completion/stop/logout stop the service; destruction releases its
 receiver and wake lock.

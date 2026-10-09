@@ -427,6 +427,30 @@ impl Drop for Pipeline {
         }
     }
 }
+/// Hardware presentation timestamps can arrive in bursts on high-latency routes.
+/// Feeding real PCM or draining already queued PCM both indicate live output.
+fn output_stall_timeout(callback_frames: u64, pending_frames: u64, rate: u32) -> Duration {
+    // AAudio can deliver a batch ending in a small callback, then sleep while
+    // the device plays queued PCM. The last block size alone misses that audio.
+    let block = Duration::from_secs_f64(callback_frames as f64 / rate as f64);
+    let pending = Duration::from_secs_f64(pending_frames as f64 / rate as f64);
+    (block * 2).max(pending + Duration::from_millis(150))
+}
+
+fn output_stalled(
+    last_frames: &mut (u64, u64),
+    stalled_since: &mut Instant,
+    frames: (u64, u64),
+    now: Instant,
+    timeout: Duration,
+) -> bool {
+    if frames != *last_frames {
+        *last_frames = frames;
+        *stalled_since = now;
+    }
+    now.duration_since(*stalled_since) >= timeout
+}
+
 fn pipeline(
     app: AppHandle,
     request: &Request,
@@ -577,7 +601,7 @@ fn run(
     let mut lifecycle = lifecycle::Policy::default();
     let mut ended = false;
     let mut last_emit = Instant::now();
-    let mut last_consumed = 0;
+    let mut last_output_frames = (0, 0);
     let mut stalled_since = Instant::now();
     let mut current_page = 0;
     let state = app.state::<crate::state::AppState>();
@@ -835,6 +859,7 @@ fn run(
                             restart = Some(snapshot.current_time_seconds);
                         }
                         snapshot.status = "buffering";
+                        stalled_since = Instant::now();
                     }
                 }
                 Control::Pause => {
@@ -844,9 +869,15 @@ fn run(
                     if let Some(p) = current.as_ref() {
                         p.output.clock.playing.store(false, Ordering::Release);
                     }
-                    if cfg!(any(target_os = "android", target_os = "ios"))
-                        || matches!(snapshot.status, "loading" | "buffering")
-                    {
+                    let release = cfg!(target_os = "ios")
+                        || matches!(snapshot.status, "loading" | "buffering");
+                    #[cfg(target_os = "android")]
+                    let release = release
+                        || current.as_mut().is_some_and(|p| {
+                            // Retain the decoder and PCM, but stop hardware callbacks.
+                            p.output.suspend().is_err()
+                        });
+                    if release {
                         // Keep mapping verified chunks after releasing the output pipeline.
                         if let Some(p) = current.as_mut() {
                             paused_observer = p.observer.take();
@@ -870,7 +901,12 @@ fn run(
                         snapshot.status = "buffering";
                         snapshot.seeking = true;
                         snapshot.initial_loading = false;
-                        if let Some(p) = current.as_mut() {
+                        #[cfg(target_os = "android")]
+                        if current.as_ref().is_some_and(|p| p.output.is_suspended()) {
+                            // A seek needs running callbacks to acknowledge its PCM flush.
+                            restart = Some(target);
+                        }
+                        if let Some(p) = current.as_mut().filter(|_| restart.is_none()) {
                             p.output.clock.playing.store(false, Ordering::Release);
                             p.seek_revision = p.seek.request(target);
                             p.availability.scan_seek.request(target);
@@ -879,7 +915,7 @@ fn run(
                             p.waiting_seek = true;
                             p.seek_started = Some(Instant::now());
                             p.eof = false;
-                            last_consumed = 0;
+                            last_output_frames = (0, 0);
                             stalled_since = Instant::now();
                         } else {
                             restart = Some(target);
@@ -908,6 +944,41 @@ fn run(
                     Some("Android foreground service or audio focus unavailable".into()),
                 );
             }
+            #[cfg(target_os = "android")]
+            if desired && !lifecycle.blocked() && restart.is_none() {
+                if let Some(p) = current.as_mut().filter(|p| p.output.is_suspended()) {
+                    let consumed = p.output.clock.consumed.load(Ordering::Relaxed);
+                    let queued = p
+                        .output
+                        .clock
+                        .produced
+                        .load(Ordering::Acquire)
+                        .saturating_sub(consumed);
+                    let pending =
+                        consumed.saturating_sub(p.output.clock.presented.load(Ordering::Acquire));
+                    let ready = !p.waiting_seek
+                        && (queued >= p.output.rate as u64 / 20
+                            || pending > 0
+                            || (p.eof && queued > 0));
+                    let failed = p.output.clock.failed.load(Ordering::Acquire);
+                    if ready && !failed {
+                        // AAudio's synchronous start can return after PCM is already
+                        // audible. Publish prepared playback before waiting for it.
+                        snapshot.status = "playing";
+                        snapshot.initial_loading = false;
+                        update_session(&mut snapshot, &mut session, desired);
+                        snapshot.revision += 1;
+                        *shared.lock().unwrap_or_else(|p| p.into_inner()) = snapshot.clone();
+                        media::publish(&app, &snapshot, true);
+                        let _ = app.emit("audio:state", snapshot.clone());
+                    }
+                    if failed || p.output.resume(ready).is_err() {
+                        restart = Some(snapshot.current_time_seconds);
+                    } else {
+                        stalled_since = Instant::now();
+                    }
+                }
+            }
             if let Some(origin) = restart {
                 paused_observer = None;
                 current = None;
@@ -923,7 +994,7 @@ fn run(
                 snapshot.initial_loading = origin == 0.0;
                 snapshot.error = None;
                 snapshot.buffered_ranges.clear();
-                last_consumed = 0;
+                last_output_frames = (0, 0);
                 stalled_since = Instant::now();
                 match pipeline(
                     app.clone(),
@@ -996,10 +1067,17 @@ fn run(
                 .load(Ordering::Acquire)
                 .saturating_sub(consumed);
             let presented = clock.presented.load(Ordering::Acquire);
-            if presented != last_consumed {
-                stalled_since = Instant::now();
-                last_consumed = presented;
-            }
+            let stalled = output_stalled(
+                &mut last_output_frames,
+                &mut stalled_since,
+                (consumed, presented),
+                Instant::now(),
+                output_stall_timeout(
+                    clock.callback_frames.load(Ordering::Relaxed),
+                    consumed.saturating_sub(presented),
+                    p.output.rate,
+                ),
+            );
             snapshot.buffered_ranges = p.availability.ranges(snapshot.duration_seconds);
             if !p.waiting_seek {
                 if p.eof && queued == 0 && consumed == 0 && snapshot.seeking {
@@ -1022,14 +1100,13 @@ fn run(
                 if audible && ready && snapshot.status != "playing" {
                     clock.playing.store(true, Ordering::Release);
                 }
-                if audible && presented > 0 && stalled_since.elapsed() < Duration::from_millis(150)
-                {
+                if audible && presented > 0 && !stalled {
                     if snapshot.status != "playing" {
                         dirty = true;
                     }
                     snapshot.status = "playing";
                     snapshot.initial_loading = false;
-                } else if audible && stalled_since.elapsed() >= Duration::from_millis(150) {
+                } else if audible && stalled {
                     if snapshot.status != "buffering" {
                         dirty = true;
                     }
@@ -1090,6 +1167,10 @@ fn run(
                         },
                     );
                 }
+                #[cfg(target_os = "android")]
+                if !audible && ready && p.output.suspend().is_err() {
+                    error = Some(("output-unavailable", None));
+                }
             }
         }
         dirty |= refresh_paused_buffer(&mut snapshot, paused_observer.as_ref());
@@ -1134,6 +1215,125 @@ fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn output_remains_live_while_callbacks_feed_pcm_between_presentation_updates() {
+        let start = Instant::now();
+        let mut since = start;
+        let mut frames = (0, 0);
+        // A Bluetooth route reports presentation only every 200 ms, while its
+        // callback continues consuming real PCM every 20 ms. This is not buffering.
+        for tick in 1..=100 {
+            assert!(!output_stalled(
+                &mut frames,
+                &mut since,
+                (tick * 960, (tick / 10) * 9600),
+                start + Duration::from_millis(tick * 20),
+                output_stall_timeout(960, 0, 48000),
+            ));
+        }
+    }
+
+    #[test]
+    fn output_stalls_only_after_pcm_consumption_and_presentation_both_stop() {
+        let start = Instant::now();
+        let mut since = start;
+        let mut frames = (9600, 0);
+        // A starved decoder can still have audible PCM draining on the device.
+        for tick in 1..=10 {
+            assert!(!output_stalled(
+                &mut frames,
+                &mut since,
+                (9600, tick * 960),
+                start + Duration::from_millis(tick * 20),
+                output_stall_timeout(960, 0, 48000),
+            ));
+        }
+        assert!(!output_stalled(
+            &mut frames,
+            &mut since,
+            (9600, 9600),
+            start + Duration::from_millis(349),
+            output_stall_timeout(960, 0, 48000),
+        ));
+        assert!(output_stalled(
+            &mut frames,
+            &mut since,
+            (9600, 9600),
+            start + Duration::from_millis(350),
+            output_stall_timeout(960, 0, 48000),
+        ));
+        // Refilling the output immediately restores liveness even if the next
+        // hardware presentation timestamp has not arrived yet.
+        assert!(!output_stalled(
+            &mut frames,
+            &mut since,
+            (10560, 9600),
+            start + Duration::from_millis(370),
+            output_stall_timeout(960, 0, 48000),
+        ));
+    }
+
+    #[test]
+    fn large_output_callbacks_do_not_flicker_but_still_detect_starvation() {
+        let start = Instant::now();
+        let mut since = start;
+        let mut frames = (0, 0);
+        let timeout = output_stall_timeout(8192, 0, 48000);
+        // Poll every 20 ms with healthy callbacks about 180 ms apart. The old
+        // fixed deadline reports buffering just before each callback arrives.
+        for tick in 1..=90 {
+            let blocks = tick / 9;
+            assert!(!output_stalled(
+                &mut frames,
+                &mut since,
+                (blocks * 8192, blocks.saturating_sub(2) * 8192),
+                start + Duration::from_millis(tick * 20),
+                timeout,
+            ));
+        }
+        assert!(output_stalled(
+            &mut frames,
+            &mut since,
+            (81920, 65536),
+            start + Duration::from_millis(2200),
+            timeout,
+        ));
+    }
+
+    #[test]
+    fn small_callback_at_end_of_batch_does_not_hide_device_queued_audio() {
+        let start = Instant::now();
+        let mut since = start;
+        // Captured on the affected Android Bluetooth route: a 918-frame block
+        // ended a batch with 33059 frames still waiting for device presentation.
+        let mut frames = (441558, 408499);
+        let timeout = output_stall_timeout(918, frames.0 - frames.1, 48000);
+        assert!(!output_stalled(
+            &mut frames,
+            &mut since,
+            (441558, 408499),
+            start + Duration::from_millis(161),
+            timeout,
+        ));
+        assert!(!output_stalled(
+            &mut frames,
+            &mut since,
+            (441558, 408499),
+            start + Duration::from_millis(800),
+            timeout,
+        ));
+        // Missing callbacks must still report starvation once the pending
+        // device audio and scheduling grace period have both elapsed.
+        assert!(output_stalled(
+            &mut frames,
+            &mut since,
+            (441558, 408499),
+            start + Duration::from_millis(850),
+            timeout,
+        ));
+    }
+
     #[test]
     fn detached_cache_scanner_advances_a_paused_native_buffer() {
         let availability = Arc::new(availability::Availability::default());
