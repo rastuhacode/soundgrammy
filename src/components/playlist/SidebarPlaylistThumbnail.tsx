@@ -67,7 +67,7 @@ export function SidebarPlaylistThumbnail({
       role="img"
       aria-label={`${name} cover`}
       className={cn(
-        'relative size-9 shrink-0 overflow-hidden rounded-sm shadow-sm',
+        'relative size-12 md:size-9 shrink-0 overflow-hidden rounded-sm shadow-sm',
         coverTrackIds.length === 0 && style.className,
       )}
     >

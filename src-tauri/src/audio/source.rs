@@ -100,16 +100,27 @@ pub struct Source {
     block: Vec<u8>,
     _session: Option<Session>,
 }
+pub struct OpenOptions {
+    pub active: Arc<AtomicBool>,
+    pub observer_active: Arc<AtomicBool>,
+    pub seek: Arc<super::seek::SeekControl>,
+    pub coverage: Arc<super::availability::Availability>,
+    pub diagnostic: Arc<Mutex<Option<String>>>,
+}
 impl Source {
     pub fn open(
         app: AppHandle,
         track_id: i64,
         generation: u64,
-        active: Arc<AtomicBool>,
-        seek: Arc<super::seek::SeekControl>,
-        coverage: Arc<super::availability::Availability>,
-        diagnostic: Arc<Mutex<Option<String>>>,
+        options: OpenOptions,
     ) -> io::Result<Self> {
+        let OpenOptions {
+            active,
+            observer_active,
+            seek,
+            coverage,
+            diagnostic,
+        } = options;
         let id = format!("native-{generation}");
         let session = Session {
             app: app.clone(),
@@ -161,32 +172,12 @@ impl Source {
             coverage.complete.store(true, Ordering::Release);
         }
         if let Some(stream) = &stream {
-            let observer = Self {
-                file: None,
-                stream: Some(Box::new(StreamReader {
-                    stream: stream.clone(),
-                    downloaded_only: true,
-                    coverage: coverage.clone(),
-                    diagnostic: diagnostic.clone(),
-                })),
-                active: active.clone(),
-                seek: Some(coverage.scan_seek.clone()),
-                cursor: 0,
-                total,
-                block_start: 0,
-                block: Vec::new(),
-                _session: None,
-            };
-            let token = active.clone();
-            let coverage = coverage.clone();
-            std::thread::Builder::new()
-                .name("native-audio-availability".into())
-                .spawn(move || {
-                    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                        super::availability::scan(Box::new(observer), &token, &coverage)
-                    }));
-                })
-                .map_err(|_| io::Error::other("availability observer unavailable"))?;
+            spawn_observer(
+                stream.clone(),
+                observer_active,
+                coverage.clone(),
+                diagnostic.clone(),
+            )?;
         }
         Ok(Self {
             file,
@@ -207,6 +198,46 @@ impl Source {
             _session: Some(session),
         })
     }
+}
+
+pub fn spawn_observer(
+    stream: Arc<TrackStream>,
+    active: Arc<AtomicBool>,
+    coverage: Arc<super::availability::Availability>,
+    diagnostic: Arc<Mutex<Option<String>>>,
+) -> io::Result<()> {
+    let observer = Source {
+        file: None,
+        stream: Some(Box::new(StreamReader {
+            stream: stream.clone(),
+            downloaded_only: true,
+            coverage: coverage.clone(),
+            diagnostic,
+        })),
+        active: active.clone(),
+        seek: Some(coverage.scan_seek.clone()),
+        cursor: 0,
+        total: stream.total(),
+        block_start: 0,
+        block: Vec::new(),
+        _session: None,
+    };
+    spawn_scanner(Box::new(observer), active, coverage).map(|_| ())
+}
+
+pub(super) fn spawn_scanner(
+    source: Box<dyn MediaSource>,
+    active: Arc<AtomicBool>,
+    coverage: Arc<super::availability::Availability>,
+) -> io::Result<std::thread::JoinHandle<()>> {
+    std::thread::Builder::new()
+        .name("native-audio-availability".into())
+        .spawn(move || {
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                super::availability::scan(source, &active, &coverage)
+            }));
+        })
+        .map_err(|_| io::Error::other("availability observer unavailable"))
 }
 impl Read for Source {
     fn read(&mut self, out: &mut [u8]) -> io::Result<usize> {

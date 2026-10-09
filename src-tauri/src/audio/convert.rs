@@ -1,9 +1,9 @@
 //! Stateful band-limited conversion. Delay is trimmed once, tails flushed once.
 use super::output::sanitize;
-use rubato::{FftFixedInOut, Resampler};
+use rubato::{audioadapter_buffers::direct::SequentialSliceOfVecs, Fft, FixedSync, Resampler};
 
 pub struct Converter {
-    resampler: Option<FftFixedInOut<f32>>,
+    resampler: Option<Fft<f32>>,
     pending: Vec<Vec<f32>>,
     channels: usize,
     input_rate: u32,
@@ -19,8 +19,14 @@ impl Converter {
         }
         let resampler = if input != output {
             Some(
-                FftFixedInOut::new(input as usize, output as usize, 1024, channels)
-                    .map_err(|_| "decode-failed")?,
+                Fft::new(
+                    input as usize,
+                    output as usize,
+                    1024,
+                    channels,
+                    FixedSync::Both,
+                )
+                .map_err(|_| "decode-failed")?,
             )
         } else {
             None
@@ -83,7 +89,20 @@ impl Converter {
                 source.drain(..available);
             }
             let output = match self.resampler.as_mut() {
-                Some(r) => r.process(&input, None).map_err(|_| "decode-failed")?,
+                Some(r) => {
+                    let input = SequentialSliceOfVecs::new(&input, self.channels, chunk)
+                        .map_err(|_| "decode-failed")?;
+                    let mut output = vec![vec![0.0; r.output_frames_next()]; self.channels];
+                    let mut buffer = SequentialSliceOfVecs::new_mut(
+                        &mut output,
+                        self.channels,
+                        r.output_frames_next(),
+                    )
+                    .map_err(|_| "decode-failed")?;
+                    r.process_into_buffer(&input, &mut buffer, None)
+                        .map_err(|_| "decode-failed")?;
+                    output
+                }
                 None => input,
             };
             for frame in 0..output[0].len() {
@@ -109,6 +128,45 @@ impl Converter {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn mono_output_mixes_both_stereo_channels() {
+        let mut converter = Converter::new(48_000, 48_000, 1).unwrap();
+        let mono = converter
+            .push(&[1.0, 0.0, 0.0, 1.0, 1.0, -1.0], 2, true)
+            .unwrap();
+        assert_eq!(mono, [0.5, 0.5, 0.0]);
+    }
+
+    #[test]
+    fn stereo_music_resamples_to_mono_headset_rates() {
+        for input in [44_100, 48_000] {
+            let stereo: Vec<f32> = (0..input)
+                .flat_map(|i| [(i as f32 * 0.03).sin() * 0.5, 0.0])
+                .collect();
+            let mono: Vec<f32> = stereo
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .map(|f| f[0] * 0.5)
+                .collect();
+            for rate in [8_000, 16_000, 24_000, 32_000] {
+                let mut converter = Converter::new(input, rate, 1).unwrap();
+                let mut result = Vec::new();
+                for packet in stereo.chunks(634) {
+                    result.extend(converter.push(packet, 2, false).unwrap());
+                }
+                result.extend(converter.push(&[], 2, true).unwrap());
+                let mut reference = Converter::new(input, rate, 1).unwrap();
+                let expected = reference.push(&mono, 1, true).unwrap();
+                assert_eq!(result.len(), rate as usize);
+                assert_eq!(result, expected);
+                assert!(result.iter().all(|s| s.is_finite() && s.abs() <= 1.0));
+                assert!(result.iter().any(|s| s.abs() > 0.1));
+            }
+        }
+    }
+
     #[test]
     fn resampling_is_packet_independent_and_has_exact_duration() {
         for (input, output) in [(44100, 48000), (48000, 44100)] {

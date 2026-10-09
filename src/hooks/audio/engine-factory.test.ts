@@ -19,7 +19,7 @@ describe('default playback engine', () => {
     vi.stubEnv('VITE_AUDIO_ENGINE', undefined)
     const composition = createAudioEngine()
     expect(composition.engine).toBeInstanceOf(NativeRustAudioEngine)
-    expect(Object.keys(composition)).toEqual(['engine'])
+    expect(Object.keys(composition)).toEqual(['engine', 'playerCommands'])
     expect(NativeRustAudioEngine).toHaveBeenCalledTimes(1)
   })
 

@@ -47,6 +47,6 @@ export default [
   },
   {
     // Same eslint-plugin-react + ESLint 10 crash when this file is linted with react rules.
-    ignores: ["dist/**", "src-tauri/target/**", "eslint.config.js"],
+    ignores: ["dist/**", "src-tauri/target/**", "src-tauri/gen/**", "eslint.config.js"],
   },
 ];

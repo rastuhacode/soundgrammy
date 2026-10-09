@@ -1,3 +1,4 @@
+/** Historical web listen clock. Test fixtures only; native PCM owns accounting. */
 import type { ListenEndReason } from '@/types'
 
 /** Pending abandonment reason set by player-store before changing tracks. */

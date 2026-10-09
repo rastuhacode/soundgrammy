@@ -29,7 +29,7 @@ export interface AudioPlayerBarProps {
 
 export function AudioPlayerBar(props: AudioPlayerBarProps) {
   return (
-    <div className="relative flex shrink-0 md:h-24 h-20 w-full flex-col border-t border-border bg-card/80 backdrop-blur-xl">
+    <div className="audio-player-bar relative flex shrink-0 h-20 md:h-24 w-full flex-col border-t border-border bg-card/80 backdrop-blur-xl">
       <AudioProgressBar
         currentTime={props.currentTime}
         duration={props.duration}
@@ -70,7 +70,7 @@ export function AudioPlayerBar(props: AudioPlayerBarProps) {
             onMuteToggle={props.onMuteToggle}
           />
         </div>
-        <div className="relative z-10 flex shrink-0 items-center gap-3 md:hidden">
+        <div className="relative z-10 flex shrink-0 items-center gap-1 md:hidden">
           <PreviousButton />
           <PlayPauseButton />
           <NextButton />

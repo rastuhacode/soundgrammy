@@ -49,7 +49,8 @@ export function buildQueueListItems(
 export const QUEUE_ROW_HEIGHT = 56
 export const QUEUE_HEADER_HEIGHT = 28
 
-export function estimateQueueListItemSize(item: QueueListItem | undefined): number {
+export function estimateQueueListItemSize(item: QueueListItem | undefined, compact = false): number {
+  if (compact) return item?.type === 'header' ? 48 : 64
   if (!item) return QUEUE_ROW_HEIGHT
   return item.type === 'header' ? QUEUE_HEADER_HEIGHT : QUEUE_ROW_HEIGHT
 }

@@ -18,7 +18,7 @@ import {
   getAvailableCustomPlaylists,
   getBulkActions,
   type CustomPlaylistRef,
-} from './track-actions'
+} from '@/lib/playlist-track-actions'
 
 export interface PlaylistBulkActionsProps {
   selectedTrackIds: number[]

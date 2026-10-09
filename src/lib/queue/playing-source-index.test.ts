@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { resolvePlayingSourceIndex } from './playing-source-index'
-import { buildPlaylistEntries, shufflePlaylistEntries } from '@/lib/shuffle'
+import { buildPlaylistEntries, shufflePlaylistEntries } from '@/test-support/legacy-shuffle'
 import type { Track } from '@/lib/db'
 
 function track(id: number): Track {

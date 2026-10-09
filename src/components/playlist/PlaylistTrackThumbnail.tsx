@@ -33,7 +33,7 @@ export function TrackThumbnail(props: {
   return (
     <div
       ref={ref}
-      className="relative size-12 shrink-0 overflow-hidden rounded-sm bg-muted"
+      className="relative size-14 md:size-12 shrink-0 overflow-hidden rounded-sm bg-muted"
       aria-label={
         showProgress
           ? 'Downloading'

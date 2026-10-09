@@ -1,3 +1,5 @@
+import { BUILTIN_PLAYLIST_IDS, BUILTIN_PLAYLISTS } from '@/lib/playlists'
+import { errorMessage } from '@/lib/errors'
 import { useEffect, useMemo, useState } from 'react'
 import type { DragEndEvent } from '@dnd-kit/core'
 import {
@@ -11,7 +13,6 @@ import { sortableKeyboardCoordinates } from '@dnd-kit/sortable'
 import type { CustomPlaylistSummary } from '@/lib/db'
 import {
   ALL_TRACKS_PLAYLIST_ID,
-  LIKED_PLAYLIST_ID,
   POPULAR_PLAYLIST_ID,
   RECENT_PLAYLIST_ID,
   type PlaylistId,
@@ -23,7 +24,6 @@ import {
   smartPlaylistUpdatedAt,
   useListenStatsStore,
 } from '@/stores/listen-stats-store'
-import { api } from '@/lib/api'
 import { useFilter } from '@/hooks/utils/use-filter'
 import {
   libraryUpdatedAt,
@@ -73,7 +73,8 @@ export function useSidebarPlaylists() {
   const setSelectedPlaylist = usePlaylistsStore(
     state => state.setSelectedPlaylist,
   )
-  const setData = usePlaylistsStore(state => state.setData)
+  const deletePlaylist = usePlaylistsStore(state => state.deletePlaylist)
+  const [actionError, setActionError] = useState<string | null>(null)
 
   const [dialogState, setDialogState] = useState<SidebarPlaylistDialogState | null>(null)
   const [deletingId, setDeletingId] = useState<number | null>(null)
@@ -112,56 +113,20 @@ export function useSidebarPlaylists() {
 
   const smartCount = smartPlaylistTrackCount(library, statsByTrackId)
   const smartUpdatedAt = smartPlaylistUpdatedAt(library, statsByTrackId)
-  const smartPlaylistItems: SidebarPlaylistListItem[] = statisticsEnabled
-    ? [
-        {
-          id: POPULAR_PLAYLIST_ID,
-          name: 'Popular',
-          count: smartCount,
-          updatedAt: smartUpdatedAt,
-          thumbnailVariant: POPULAR_PLAYLIST_ID,
-        },
-        {
-          id: RECENT_PLAYLIST_ID,
-          name: 'Recent',
-          count: smartCount,
-          updatedAt: smartUpdatedAt,
-          thumbnailVariant: RECENT_PLAYLIST_ID,
-        },
-      ]
-    : []
-
   const playlistItems: SidebarPlaylistListItem[] = [
-    {
-      id: ALL_TRACKS_PLAYLIST_ID,
-      name: 'All tracks',
-      count: libraryTrackCount,
-      updatedAt: libraryUpdatedAt(library),
-      thumbnailVariant: ALL_TRACKS_PLAYLIST_ID,
-    },
-    ...(playlistsData
-      ? [
-          {
-            id: LIKED_PLAYLIST_ID,
-            name: 'Liked',
-            count: playlistsData.liked.trackIds.length,
-            updatedAt: playlistsData.liked.updatedAt,
-            thumbnailVariant: LIKED_PLAYLIST_ID,
-          } satisfies SidebarPlaylistListItem,
-        ]
-      : []),
-    ...smartPlaylistItems,
-    ...(playlistsData
-      ? playlistsData.custom.map(playlist => ({
-          id: playlist.id,
-          name: playlist.name,
-          count: playlist.trackIds.length,
-          updatedAt: playlist.updatedAt,
-          thumbnailVariant: 'custom' as const,
-          trackIds: playlist.trackIds,
-          playlist,
-        }))
-      : []),
+    ...BUILTIN_PLAYLIST_IDS.flatMap((id): SidebarPlaylistListItem[] => {
+      const definition = BUILTIN_PLAYLISTS[id]
+      if (definition.smartSort && !statisticsEnabled) return []
+      if (id === 'liked' && !playlistsData) return []
+      return [{ id, name: definition.name, thumbnailVariant: id,
+        count: id === 'all' ? libraryTrackCount : id === 'liked' ? playlistsData!.liked.trackIds.length : smartCount,
+        updatedAt: id === 'all' ? libraryUpdatedAt(library) : id === 'liked' ? playlistsData!.liked.updatedAt : smartUpdatedAt,
+      }]
+    }),
+    ...(playlistsData?.custom.map(playlist => ({
+      id: playlist.id, name: playlist.name, count: playlist.trackIds.length, updatedAt: playlist.updatedAt,
+      thumbnailVariant: 'custom' as const, trackIds: playlist.trackIds, playlist,
+    })) ?? []),
   ]
 
   const visiblePlaylists = playlistItems.filter((playlist) => {
@@ -252,21 +217,21 @@ export function useSidebarPlaylists() {
     if (!playlistsData) return
     setDeletingId(id)
     try {
-      await api.deletePlaylist(id)
-      setData({
-        ...playlistsData,
-        custom: playlistsData.custom.filter(playlist => playlist.id !== id),
-      })
+      await deletePlaylist(id)
+      setActionError(null)
     }
-    catch {
-      // keep list unchanged on failure
+    catch (error) {
+      setActionError(errorMessage(error))
     }
+
     finally {
       setDeletingId(null)
     }
   }
 
   return {
+    actionError,
+    setActionError,
     selectedPlaylistId,
     setSelectedPlaylist,
     dialogState,

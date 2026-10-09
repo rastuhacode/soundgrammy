@@ -14,6 +14,7 @@ import {
   FieldSet,
 } from '@/components/ui/fieldset'
 import { api } from '@/lib/api'
+import { captureSession, isSessionCurrent } from '@/stores/session-store'
 import { useLastFmStore } from '@/stores/lastfm-store'
 import type { LastFmPendingAction, LastFmStatus } from '@/types'
 
@@ -45,12 +46,11 @@ export function LastFmSettingsForm() {
       onSubmit: lastFmSettingsSchema,
     },
     onSubmit: async ({ value }) => {
-      await run(() => api.setLastFmEnabled(value.enabled))
+      await run(() => useLastFmStore.getState().saveEnabled(value.enabled))
     },
   })
 
   const applyStatus = (next: LastFmStatus) => {
-    useLastFmStore.getState().setStatus(next)
     form.reset({ enabled: next.enabled })
   }
 
@@ -65,22 +65,25 @@ export function LastFmSettingsForm() {
   }, [form, status])
 
   async function run(action: () => Promise<LastFmStatus>) {
+    const generation = captureSession()
     setBusy(true)
     setError(null)
     try {
-      applyStatus(await action())
+      const next = await action()
+      if (isSessionCurrent(generation)) applyStatus(next)
     }
     catch {
+      if (!isSessionCurrent(generation)) return
       if (status) form.reset({ enabled: status.enabled })
       setError('The Last.fm action could not be completed.')
     }
     finally {
-      setBusy(false)
+      if (isSessionCurrent(generation)) setBusy(false)
     }
   }
 
   const disconnect = async (pendingAction?: LastFmPendingAction) => {
-    await run(() => api.disconnectLastFm(pendingAction))
+    await run(() => useLastFmStore.getState().disconnect(pendingAction))
     setConfirmDisconnect(false)
   }
 
@@ -126,7 +129,7 @@ export function LastFmSettingsForm() {
         {status && ['disconnected', 'error'].includes(status.state) && !status.username
           ? (
               <div className="flex flex-col items-start gap-2">
-                <Button type="button" size="sm" disabled={busy} onClick={() => run(api.startLastFmAuth)}>
+                <Button type="button" size="sm" disabled={busy} onClick={() => run(useLastFmStore.getState().startAuth)}>
                   Connect Last.fm
                 </Button>
               </div>
@@ -153,10 +156,10 @@ export function LastFmSettingsForm() {
                   Waiting for authorization…
                 </p>
                 <div className="flex flex-wrap gap-2">
-                  <Button type="button" size="sm" disabled={busy} onClick={() => run(api.completeLastFmAuth)}>
+                  <Button type="button" size="sm" disabled={busy} onClick={() => run(useLastFmStore.getState().completeAuth)}>
                     I&apos;ve authorized SoundGrammy
                   </Button>
-                  <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => run(api.cancelLastFmAuth)}>
+                  <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => run(useLastFmStore.getState().cancelAuth)}>
                     Cancel
                   </Button>
                 </div>
@@ -173,7 +176,7 @@ export function LastFmSettingsForm() {
                   .
                 </p>
                 <div className="flex flex-wrap gap-2">
-                  <Button type="button" size="sm" disabled={busy} onClick={() => run(api.startLastFmAuth)}>
+                  <Button type="button" size="sm" disabled={busy} onClick={() => run(useLastFmStore.getState().startAuth)}>
                     Reconnect Last.fm
                   </Button>
                   <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => setConfirmDisconnect(true)}>
@@ -193,7 +196,7 @@ export function LastFmSettingsForm() {
                   .
                 </p>
                 <div className="flex flex-wrap gap-2">
-                  <Button type="button" size="sm" disabled={busy} onClick={() => run(api.startLastFmAuth)}>Reconnect Last.fm</Button>
+                  <Button type="button" size="sm" disabled={busy} onClick={() => run(useLastFmStore.getState().startAuth)}>Reconnect Last.fm</Button>
                   <Button type="button" variant="outline" size="sm" disabled={busy} onClick={() => setConfirmDisconnect(true)}>Disconnect</Button>
                 </div>
               </div>

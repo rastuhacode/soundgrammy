@@ -1,64 +1,12 @@
+import { errorMessage } from '@/lib/errors'
+import { isSessionCurrent, createSessionQueue, assertSession } from '@/stores/session-store'
 import { create } from 'zustand'
-import type { PlaylistsBundle, Track } from '@/lib/db'
-import type { TrackListenStats } from '@/types'
-import { resolveSmartPlaylistTracks } from '@/stores/listen-stats-store'
+import { api } from '@/lib/api'
+import type { CustomPlaylistSummary, PlaylistImportResult } from '@/types'
+import { ALL_TRACKS_PLAYLIST_ID, LIKED_PLAYLIST_ID, isCommonPlaylistId, isValidPlaylistId, type PlaylistsData, type PlaylistId } from '@/lib/playlists'
 
-export const ALL_TRACKS_PLAYLIST_ID = 'all' as const
-export const LIKED_PLAYLIST_ID = 'liked' as const
-export const POPULAR_PLAYLIST_ID = 'popular' as const
-export const RECENT_PLAYLIST_ID = 'recent' as const
-
-export type CustomPlaylistId = number
-export type CommonPlaylistId
-  = | typeof ALL_TRACKS_PLAYLIST_ID
-    | typeof LIKED_PLAYLIST_ID
-    | typeof POPULAR_PLAYLIST_ID
-    | typeof RECENT_PLAYLIST_ID
-export type PlaylistId = CustomPlaylistId | CommonPlaylistId
-
+export * from '@/lib/playlists'
 const SELECTED_PLAYLIST_STORAGE_KEY = 'soundgrammy:selectedPlaylistId'
-
-export type PlaylistsData = PlaylistsBundle
-
-export type SelectedPlaylist = CustomSelectedPlaylist | CommonSelectedPlaylist
-
-interface BaseSelectedPlaylist {
-  id: PlaylistId
-  name: string
-  trackIds: number[]
-  isCustom: boolean
-}
-
-export interface CustomSelectedPlaylist extends BaseSelectedPlaylist {
-  id: CustomPlaylistId
-  isCustom: true
-}
-
-export interface CommonSelectedPlaylist extends BaseSelectedPlaylist {
-  id: CommonPlaylistId
-  isCustom: false
-}
-
-export interface ResolvedCustomSelectedPlaylist extends CustomSelectedPlaylist {
-  tracks: Track[]
-}
-
-export interface ResolvedCommonSelectedPlaylist extends CommonSelectedPlaylist {
-  tracks: Track[]
-}
-
-export type ResolvedSelectedPlaylist
-  = | ResolvedCustomSelectedPlaylist
-    | ResolvedCommonSelectedPlaylist
-
-function isCommonPlaylistId(value: string): value is CommonPlaylistId {
-  return (
-    value === ALL_TRACKS_PLAYLIST_ID
-    || value === LIKED_PLAYLIST_ID
-    || value === POPULAR_PLAYLIST_ID
-    || value === RECENT_PLAYLIST_ID
-  )
-}
 
 function readPersistedSelectedPlaylistId(): PlaylistId | number {
   if (typeof window === 'undefined') {
@@ -91,14 +39,7 @@ function normalizePlaylistId(
   data: PlaylistsData,
   playlistId: PlaylistId | number,
 ): PlaylistId {
-  if (
-    playlistId === ALL_TRACKS_PLAYLIST_ID
-    || playlistId === LIKED_PLAYLIST_ID
-    || playlistId === POPULAR_PLAYLIST_ID
-    || playlistId === RECENT_PLAYLIST_ID
-  ) {
-    return playlistId
-  }
+  if (typeof playlistId === 'string' && isCommonPlaylistId(playlistId)) return playlistId
 
   if (typeof playlistId === 'number' && playlistId === data.liked.id) {
     return LIKED_PLAYLIST_ID
@@ -107,183 +48,161 @@ function normalizePlaylistId(
   return playlistId
 }
 
-function isSmartPlaylistId(
-  playlistId: PlaylistId,
-): playlistId is typeof POPULAR_PLAYLIST_ID | typeof RECENT_PLAYLIST_ID {
-  return (
-    playlistId === POPULAR_PLAYLIST_ID || playlistId === RECENT_PLAYLIST_ID
-  )
+const enqueue = createSessionQueue()
+
+function requireData(): PlaylistsData {
+  const data = usePlaylistsStore.getState().data
+  if (!data) throw new Error('Playlists are not loaded. Please try again.')
+  return data
 }
 
-function resolvePlaylistTrackIds(
-  data: PlaylistsData | null,
-  playlistId: PlaylistId,
-  libraryTracks: Track[] = [],
-  statsByTrackId: ReadonlyMap<number, TrackListenStats> = new Map(),
-): number[] {
-  if (playlistId === ALL_TRACKS_PLAYLIST_ID) {
-    return libraryTracks.map(track => track.id)
-  }
-
-  if (isSmartPlaylistId(playlistId)) {
-    return resolveSmartPlaylistTracks(
-      libraryTracks,
-      statsByTrackId,
-      playlistId === POPULAR_PLAYLIST_ID ? 'likeness' : 'last_played',
-    ).map(track => track.id)
-  }
-
-  if (playlistId === LIKED_PLAYLIST_ID) {
-    return data?.liked.trackIds ?? []
-  }
-
-  const custom = data?.custom.find(playlist => playlist.id === playlistId)
-  return custom?.trackIds ?? []
+function playlistTrackIds(id: PlaylistId): number[] {
+  const data = requireData()
+  if (id === LIKED_PLAYLIST_ID) return data.liked.trackIds
+  const playlist = data.custom.find(item => item.id === id)
+  if (!playlist) throw new Error('Playlist not found')
+  return playlist.trackIds
 }
 
-export function resolvePlaylistTracks(
-  libraryTracks: Track[],
-  data: PlaylistsData | null,
-  playlistId: PlaylistId,
-  statsByTrackId: ReadonlyMap<number, TrackListenStats> = new Map(),
-): Track[] {
-  if (playlistId === ALL_TRACKS_PLAYLIST_ID) {
-    return libraryTracks
-  }
-
-  if (isSmartPlaylistId(playlistId)) {
-    return resolveSmartPlaylistTracks(
-      libraryTracks,
-      statsByTrackId,
-      playlistId === POPULAR_PLAYLIST_ID ? 'likeness' : 'last_played',
-    )
-  }
-
-  const trackIds = resolvePlaylistTrackIds(
-    data,
-    playlistId,
-    libraryTracks,
-    statsByTrackId,
-  )
-  if (trackIds.length === 0) {
-    return []
-  }
-
-  const trackById = new Map(libraryTracks.map(track => [track.id, track]))
-  return trackIds
-    .map(id => trackById.get(id))
-    .filter((track): track is Track => track !== undefined)
-}
-
-export function resolveSelectedPlaylist(
-  libraryTracks: Track[],
-  data: PlaylistsData | null,
-  playlistId: PlaylistId,
-  statsByTrackId: ReadonlyMap<number, TrackListenStats> = new Map(),
-): SelectedPlaylist {
-  const trackIds = resolvePlaylistTrackIds(
-    data,
-    playlistId,
-    libraryTracks,
-    statsByTrackId,
-  )
-
-  if (playlistId === ALL_TRACKS_PLAYLIST_ID) {
-    return {
-      id: ALL_TRACKS_PLAYLIST_ID,
-      name: 'All tracks',
-      trackIds,
-      isCustom: false,
-    }
-  }
-
-  if (playlistId === LIKED_PLAYLIST_ID) {
-    return {
-      id: LIKED_PLAYLIST_ID,
-      name: 'Liked',
-      trackIds,
-      isCustom: false,
-    }
-  }
-
-  if (playlistId === POPULAR_PLAYLIST_ID) {
-    return {
-      id: POPULAR_PLAYLIST_ID,
-      name: 'Popular',
-      trackIds,
-      isCustom: false,
-    }
-  }
-
-  if (playlistId === RECENT_PLAYLIST_ID) {
-    return {
-      id: RECENT_PLAYLIST_ID,
-      name: 'Recent',
-      trackIds,
-      isCustom: false,
-    }
-  }
-
-  const custom = data?.custom.find(playlist => playlist.id === playlistId)
-  return {
-    id: playlistId,
-    name: custom?.name ?? 'Playlist',
-    trackIds,
-    isCustom: true,
+function assertOrder(id: PlaylistId, expected: number[]) {
+  const current = playlistTrackIds(id)
+  if (current.length !== expected.length || current.some((trackId, index) => trackId !== expected[index])) {
+    throw new Error('The playlist changed. Select its tracks again.')
   }
 }
 
-export function resolveSelectedPlaylistTracks(
-  libraryTracks: Track[],
-  data: PlaylistsData | null,
-  playlistId: PlaylistId,
-  statsByTrackId: ReadonlyMap<number, TrackListenStats> = new Map(),
-): ResolvedSelectedPlaylist {
-  const playlist = resolveSelectedPlaylist(
-    libraryTracks,
-    data,
-    playlistId,
-    statsByTrackId,
-  )
-  const tracks = resolvePlaylistTracks(
-    libraryTracks,
-    data,
-    playlistId,
-    statsByTrackId,
-  )
-
-  if (playlist.isCustom) {
-    return { ...playlist, tracks }
-  }
-
-  return { ...playlist, tracks }
+function updateCustom(playlist: CustomPlaylistSummary) {
+  const data = requireData()
+  usePlaylistsStore.getState().setData({
+    ...data,
+    custom: data.custom.some(item => item.id === playlist.id)
+      ? data.custom.map(item => item.id === playlist.id ? playlist : item)
+      : [...data.custom, playlist],
+  })
 }
 
-function isValidPlaylistId(
-  data: PlaylistsData,
-  playlistId: PlaylistId,
-): boolean {
-  if (
-    playlistId === ALL_TRACKS_PLAYLIST_ID
-    || playlistId === LIKED_PLAYLIST_ID
-    || playlistId === POPULAR_PLAYLIST_ID
-    || playlistId === RECENT_PLAYLIST_ID
-  ) {
-    return true
-  }
-
-  return data.custom.some(playlist => playlist.id === playlistId)
-}
-
+export interface BulkLikeResult { failedTrackIds: number[] }
 interface PlaylistsState {
   data: PlaylistsData | null
+  error: string | null
   selectedPlaylistId: PlaylistId
   hydrate: (data: PlaylistsData) => void
   setSelectedPlaylist: (id: PlaylistId) => void
   setData: (data: PlaylistsData) => void
+  reset: () => void
+  refresh: (firstLoad?: boolean) => Promise<void>
+  createPlaylist: (name: string, trackIds?: number[]) => Promise<CustomPlaylistSummary>
+  updatePlaylist: (id: number, name: string) => Promise<void>
+  deletePlaylist: (id: number) => Promise<void>
+  importPlaylist: (path: string, name: string) => Promise<PlaylistImportResult>
+  toggleLike: (trackId: number) => Promise<void>
+  setLiked: (trackIds: number[], liked: boolean) => Promise<BulkLikeResult>
+  addTracks: (id: number, trackIds: number[]) => Promise<void>
+  removeTracks: (id: number, positions: number[], expectedTrackIds: number[]) => Promise<void>
+  reorderTracks: (id: PlaylistId, trackIds: number[], expectedTrackIds: number[]) => Promise<void>
 }
 
 export const usePlaylistsStore = create<PlaylistsState>((set, get) => ({
+
+  reset: () => set({ data: null, error: null, selectedPlaylistId: ALL_TRACKS_PLAYLIST_ID }),
+  refresh: (firstLoad = false) => enqueue(async (generation) => {
+    try {
+      const data = await api.listPlaylists()
+      assertSession(generation)
+      if (firstLoad) get().hydrate(data)
+      else get().setData(data)
+      set({ error: null })
+    }
+    catch (error) {
+      if (isSessionCurrent(generation)) set({ error: errorMessage(error) })
+      throw error
+    }
+  }),
+  createPlaylist: (name, trackIds = []) => enqueue(async (generation) => {
+    requireData()
+    const created = await api.createPlaylist({ name, trackIds })
+    assertSession(generation)
+    updateCustom(created)
+    return created
+  }),
+  updatePlaylist: (id, name) => enqueue(async (generation) => {
+    requireData()
+    const updated = await api.updatePlaylist({ playlistId: id, name })
+    assertSession(generation)
+    updateCustom(updated)
+  }),
+  deletePlaylist: id => enqueue(async (generation) => {
+    requireData()
+    await api.deletePlaylist(id)
+    assertSession(generation)
+    const data = requireData()
+    get().setData({ ...data, custom: data.custom.filter(item => item.id !== id) })
+  }),
+  importPlaylist: (path, name) => enqueue(async (generation) => {
+    const result = await api.importPlaylistJson(path, name)
+    assertSession(generation)
+    const data = await api.listPlaylists()
+    assertSession(generation)
+    get().setData(data)
+    return result
+  }),
+  toggleLike: trackId => enqueue(async (generation) => {
+    requireData()
+    const liked = await api.toggleLike(trackId)
+    assertSession(generation)
+    get().setData({ ...requireData(), liked })
+  }),
+  setLiked: (trackIds, desired) => enqueue(async (generation) => {
+    const failedTrackIds: number[] = []
+    for (const trackId of new Set(trackIds)) {
+      assertSession(generation)
+      if (requireData().liked.trackIds.includes(trackId) === desired) continue
+      try {
+        const liked = await api.toggleLike(trackId)
+        assertSession(generation)
+        get().setData({ ...requireData(), liked })
+      }
+      catch {
+        assertSession(generation)
+        failedTrackIds.push(trackId)
+      }
+    }
+    return { failedTrackIds }
+  }),
+  addTracks: (id, trackIds) => enqueue(async (generation) => {
+    if (trackIds.length === 0) return
+    playlistTrackIds(id)
+    const updatedAt = await api.addTracksToPlaylist(id, trackIds)
+    assertSession(generation)
+    const data = requireData()
+    get().setData({ ...data, custom: data.custom.map(item => item.id === id
+      ? { ...item, updatedAt, trackIds: [...item.trackIds, ...trackIds] }
+      : item) })
+  }),
+  removeTracks: (id, positions, expectedTrackIds) => enqueue(async (generation) => {
+    if (positions.length === 0) return
+    assertOrder(id, expectedTrackIds)
+    const updatedAt = await api.removeTracksFromPlaylist(id, positions, expectedTrackIds)
+    assertSession(generation)
+    const removed = new Set(positions)
+    const data = requireData()
+    get().setData({ ...data, custom: data.custom.map(item => item.id === id
+      ? { ...item, updatedAt, trackIds: item.trackIds.filter((_, index) => !removed.has(index)) }
+      : item) })
+  }),
+  reorderTracks: (id, trackIds, expectedTrackIds) => enqueue(async (generation) => {
+    assertOrder(id, expectedTrackIds)
+    const data = requireData()
+    const dbId = id === LIKED_PLAYLIST_ID ? data.liked.id : id
+    if (typeof dbId !== 'number') throw new Error('This playlist cannot be reordered')
+    const updatedAt = await api.reorderPlaylistTracks(dbId, trackIds)
+    assertSession(generation)
+    const latest = requireData()
+    if (id === LIKED_PLAYLIST_ID) get().setData({ ...latest, liked: { ...latest.liked, trackIds, updatedAt } })
+    else get().setData({ ...latest, custom: latest.custom.map(item => item.id === id ? { ...item, trackIds, updatedAt } : item) })
+  }),
+
+  error: null,
   data: null,
   selectedPlaylistId: ALL_TRACKS_PLAYLIST_ID,
 
@@ -327,15 +246,3 @@ export const usePlaylistsStore = create<PlaylistsState>((set, get) => ({
     })
   },
 }))
-
-export function getLikedTrackIdSet(data: PlaylistsData | null): Set<number> {
-  if (!data) return new Set()
-  return new Set(data.liked.trackIds)
-}
-
-export function isTrackLiked(
-  data: PlaylistsData | null,
-  trackId: number,
-): boolean {
-  return getLikedTrackIdSet(data).has(trackId)
-}

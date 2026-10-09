@@ -8,14 +8,15 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { openContextMenuFromPointerEvent } from './SidebarPlaylistContextMenu'
 import { TrackThumbnail } from './PlaylistTrackThumbnail'
-import { formatTrackDuration } from './track-actions'
+import { formatTrackDuration } from '@/lib/playlist-track-actions'
 
 export const TRACK_ROW_HEIGHT = 70
 /** Space between rows; baked into stride so DnD measuring matches layout. */
 export const TRACK_ROW_GAP = 8
 export const TRACK_ROW_STRIDE = TRACK_ROW_HEIGHT + TRACK_ROW_GAP
-export const TRACK_GRID_CLASS = 'grid-cols-[minmax(0,1fr)_3rem_2.25rem] md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_4.5rem_2.25rem]'
-export const TRACK_GRID_CLASS_SELECT = 'grid-cols-[2.25rem_minmax(0,1fr)_3rem_2.25rem] md:grid-cols-[2.25rem_minmax(0,1.4fr)_minmax(0,1fr)_4.5rem_2.25rem]'
+export const COMPACT_TRACK_ROW_STRIDE = 80 + TRACK_ROW_GAP
+export const TRACK_GRID_CLASS = 'grid-cols-[minmax(0,1fr)_3rem_3rem] md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_4.5rem_2.25rem]'
+export const TRACK_GRID_CLASS_SELECT = 'grid-cols-[3rem_minmax(0,1fr)_3rem_3rem] md:grid-cols-[2.25rem_minmax(0,1.4fr)_minmax(0,1fr)_4.5rem_2.25rem]'
 
 export interface PlaylistTrackRowViewProps {
   track: Track
@@ -27,8 +28,8 @@ export interface PlaylistTrackRowViewProps {
   canReorder?: boolean
   className?: string
   style?: React.CSSProperties
-  onRowClick?: () => void
-  onToggleSelected?: (selected: boolean) => void
+  onRowClick?: (extend?: boolean) => void
+  onToggleSelected?: (selected: boolean, extend?: boolean) => void
   onEnterSelection?: () => void
   onTouchDragStart?: React.TouchEventHandler<HTMLButtonElement>
   touchOptions?: React.ReactNode
@@ -73,14 +74,19 @@ export function PlaylistTrackRowView({
     <div
       role="row"
       tabIndex={onRowClick ? 0 : -1}
-      onClick={() => {
-        if (suppressClick.current) {
-          suppressClick.current = false
-          return
-        }
-        onRowClick?.()
+      onClickCapture={(event) => {
+        if (!event.currentTarget.contains(event.target as Node) || !suppressClick.current) return
+        suppressClick.current = false
+        event.preventDefault()
+        event.stopPropagation()
+      }}
+      onClick={(event) => {
+        // Portaled menu items still bubble through this row in React.
+        if (!event.currentTarget.contains(event.target as Node)) return
+        onRowClick?.(event.shiftKey)
       }}
       onPointerDown={(event) => {
+        if (!event.currentTarget.contains(event.target as Node)) return
         lastTouchAt.current = event.pointerType === 'touch' ? Date.now() : null
         suppressClick.current = false
         if (event.pointerType !== 'touch' || selectionMode || !onEnterSelection) return
@@ -124,7 +130,7 @@ export function PlaylistTrackRowView({
             : 'Play track'
       }
       className={cn(
-        'group relative grid w-full cursor-default items-center gap-2 rounded-lg px-2 transition-colors md:gap-3 md:px-2.5',
+        'group relative grid w-full select-none cursor-default items-center gap-2 rounded-lg px-2 transition-colors md:gap-3 md:px-2.5',
         selectionMode || (touchScreen && canReorder)
           ? TRACK_GRID_CLASS_SELECT
           : TRACK_GRID_CLASS,
@@ -134,7 +140,7 @@ export function PlaylistTrackRowView({
         className,
       )}
       style={{
-        height: TRACK_ROW_HEIGHT,
+        height: `var(--track-row-height, ${TRACK_ROW_HEIGHT}px)`,
         ...style,
       }}
     >
@@ -146,8 +152,8 @@ export function PlaylistTrackRowView({
         >
           <Checkbox
             checked={isSelected}
-            onCheckedChange={(checked) => {
-              onToggleSelected?.(checked)
+            onCheckedChange={(checked, details) => {
+              onToggleSelected?.(checked, 'shiftKey' in details.event && details.event.shiftKey === true)
             }}
             aria-label={`Select ${track.title ?? 'track'}`}
             className="animate-in fade-in-0 zoom-in-95 duration-150"
@@ -274,8 +280,8 @@ export interface PlaylistTrackRowProps {
   canReorder: boolean
   virtualStart: number
   className?: string
-  onRowClick: () => void
-  onToggleSelected: (selected: boolean) => void
+  onRowClick: (extend?: boolean) => void
+  onToggleSelected: (selected: boolean, extend?: boolean) => void
   onEnterSelection: () => void
   touchOptions?: React.ReactNode
 }
@@ -319,7 +325,7 @@ export function PlaylistTrackRow({
       )}
       style={{
         // Stride height (row + gap) so virtualizer and sortable strategy agree.
-        height: TRACK_ROW_STRIDE,
+        height: `var(--track-row-stride, ${TRACK_ROW_STRIDE}px)`,
         top: virtualStart,
         transform: CSS.Transform.toString(transform),
         transition,

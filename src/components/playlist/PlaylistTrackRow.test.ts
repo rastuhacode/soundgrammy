@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { act, createElement } from 'react'
+import { createPortal } from 'react-dom'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { Track } from '@/lib/db'
@@ -81,6 +82,29 @@ describe('touch track selection', () => {
     expect(onPlay).not.toHaveBeenCalled()
   })
 
+  it('does not treat the release of a long press as a checkbox tap', async () => {
+    const row = host.querySelector('[role="row"]')!
+    const onToggleSelected = vi.fn()
+    await act(async () => row.dispatchEvent(pointerEvent('pointerdown')))
+    await act(async () => vi.advanceTimersByTime(500))
+    await act(async () => root.render(createElement(PlaylistTrackRowView, {
+      track,
+      isActive: false,
+      isPlaying: false,
+      isSelected: true,
+      selectionMode: true,
+      touchScreen: true,
+      onRowClick: onPlay,
+      onToggleSelected,
+    })))
+    await act(async () => row.dispatchEvent(pointerEvent('pointerup')))
+    const checkbox = host.querySelector('[role="checkbox"]')!
+    await act(async () => checkbox.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+
+    expect(onToggleSelected).not.toHaveBeenCalled()
+    expect(onPlay).not.toHaveBeenCalled()
+  })
+
   it('keeps short taps for playback and cancels a moving touch', async () => {
     const row = host.querySelector('[role="row"]')!
     await act(async () => row.dispatchEvent(pointerEvent('pointerdown')))
@@ -100,6 +124,34 @@ describe('touch track selection', () => {
     await act(async () => button.dispatchEvent(new MouseEvent('click', { bubbles: true })))
 
     expect(onOpenOptions).toHaveBeenCalledTimes(1)
+    expect(onEnterSelection).not.toHaveBeenCalled()
+    expect(onPlay).not.toHaveBeenCalled()
+  })
+
+  it('does not play or enter selection when a portaled menu item is touched', async () => {
+    const onMenuAction = vi.fn()
+    await act(async () => root.render(createElement(PlaylistTrackRowView, {
+      track,
+      isActive: false,
+      isPlaying: false,
+      isSelected: false,
+      selectionMode: false,
+      touchScreen: true,
+      onRowClick: onPlay,
+      onEnterSelection,
+      touchOptions: createPortal(createElement('button', {
+        'aria-label': 'Portaled menu item',
+        'onClick': onMenuAction,
+      }, 'Select'), document.body),
+    })))
+
+    const item = document.querySelector('button[aria-label="Portaled menu item"]')!
+    await act(async () => item.dispatchEvent(pointerEvent('pointerdown')))
+    await act(async () => vi.advanceTimersByTime(500))
+    await act(async () => item.dispatchEvent(pointerEvent('pointerup')))
+    await act(async () => item.dispatchEvent(new MouseEvent('click', { bubbles: true })))
+
+    expect(onMenuAction).toHaveBeenCalledTimes(1)
     expect(onEnterSelection).not.toHaveBeenCalled()
     expect(onPlay).not.toHaveBeenCalled()
   })

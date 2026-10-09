@@ -1,7 +1,8 @@
 import { useEffect, useId, useState } from 'react'
 import type { QueueSaveScope } from '@/lib/queue'
 import { trackIdsForSaveScope } from '@/lib/queue'
-import { api } from '@/lib/api'
+import { errorMessage } from '@/lib/errors'
+import { validatePlaylistName } from '@/lib/playlist-form'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -13,6 +14,7 @@ import {
 } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group'
+import { useAsyncScope } from '@/hooks/use-async-scope'
 import { usePlayerStore } from '@/stores/player-store'
 import { usePlaylistsStore } from '@/stores/playlists-store'
 import { cn } from '@/lib/utils'
@@ -45,9 +47,14 @@ export function SaveQueueAsPlaylistDialog({
   onOpenChange,
 }: SaveQueueAsPlaylistDialogProps) {
   const formId = useId()
+  const { capture, invalidate } = useAsyncScope(open)
+  const handleOpenChange = (next: boolean) => {
+    if (!next) invalidate()
+    onOpenChange(next)
+  }
   const queue = usePlayerStore(state => state.queue)
   const data = usePlaylistsStore(state => state.data)
-  const setData = usePlaylistsStore(state => state.setData)
+  const createPlaylist = usePlaylistsStore(state => state.createPlaylist)
   const setSelectedPlaylist = usePlaylistsStore(
     state => state.setSelectedPlaylist,
   )
@@ -61,6 +68,7 @@ export function SaveQueueAsPlaylistDialog({
   useEffect(() => {
     if (!open) return
     /* eslint-disable react-hooks/set-state-in-effect -- Reset draft when dialog opens. */
+    setIsSubmitting(false)
     setName('')
     setScope('full')
     setNameError(null)
@@ -70,15 +78,13 @@ export function SaveQueueAsPlaylistDialog({
 
   const handleSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
-    if (!data) return
+    if (!data || !open || isSubmitting) return
+    const current = capture()
 
     const trimmed = name.trim()
-    if (trimmed.length === 0) {
-      setNameError('Playlist name is required')
-      return
-    }
-    if (trimmed.length > 100) {
-      setNameError('Playlist name must be at most 100 characters')
+    const issue = validatePlaylistName(name)
+    if (issue) {
+      setNameError(issue)
       return
     }
     setNameError(null)
@@ -92,37 +98,25 @@ export function SaveQueueAsPlaylistDialog({
 
     setIsSubmitting(true)
     try {
-      const created = await api.createPlaylist({ name: trimmed })
-      const updatedAt = await api.addTracksToPlaylist(created.id, trackIds)
-      const latest = usePlaylistsStore.getState().data
-      if (!latest) return
-      setData({
-        ...latest,
-        custom: [
-          ...latest.custom.filter(playlist => playlist.id !== created.id),
-          {
-            ...created,
-            trackIds,
-            updatedAt,
-          },
-        ],
-      })
+      const created = await createPlaylist(trimmed, trackIds)
+      if (!current()) return
       setSelectedPlaylist(created.id)
-      onOpenChange(false)
+      handleOpenChange(false)
     }
     catch (err) {
+      if (!current()) return
       setScopeError(
-        err instanceof Error ? err.message : 'Failed to save playlist',
+        errorMessage(err),
       )
     }
     finally {
-      setIsSubmitting(false)
+      if (current()) setIsSubmitting(false)
     }
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="z-[100] sm:max-w-md" overlayClassName="z-[90]">
+    <Dialog open={open} onOpenChange={handleOpenChange}>
+      <DialogContent className="z-100 sm:max-w-md" overlayClassName="z-[90]">
         <DialogHeader>
           <DialogTitle>Save queue as playlist</DialogTitle>
           <DialogDescription>
@@ -201,7 +195,7 @@ export function SaveQueueAsPlaylistDialog({
           <Button
             type="button"
             variant="outline"
-            onClick={() => onOpenChange(false)}
+            onClick={() => handleOpenChange(false)}
             disabled={isSubmitting}
           >
             Cancel

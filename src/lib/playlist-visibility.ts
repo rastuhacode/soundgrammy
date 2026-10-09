@@ -1,33 +1,25 @@
 import {
-  LIKED_PLAYLIST_ID,
-  POPULAR_PLAYLIST_ID,
-  RECENT_PLAYLIST_ID,
+  BUILTIN_PLAYLIST_IDS,
+  BUILTIN_PLAYLISTS,
+  isCommonPlaylistId,
+  type CommonPlaylistId,
   type PlaylistId,
-} from '@/stores/playlists-store'
+} from '@/lib/playlists'
 
 const HIDDEN_PLAYLISTS_KEY = 'soundgrammy:hiddenPlaylists'
 
 /** System playlists that may be hidden (not All tracks, not custom). */
-export const HIDEABLE_PLAYLIST_IDS = [
-  LIKED_PLAYLIST_ID,
-  POPULAR_PLAYLIST_ID,
-  RECENT_PLAYLIST_ID,
-] as const
-
-export type HideablePlaylistId = (typeof HIDEABLE_PLAYLIST_IDS)[number]
+export type HideablePlaylistId = Exclude<CommonPlaylistId, 'all'>
+export const HIDEABLE_PLAYLIST_IDS = BUILTIN_PLAYLIST_IDS.filter(
+  (id): id is HideablePlaylistId => BUILTIN_PLAYLISTS[id].hideable,
+)
 
 export function canHidePlaylist(id: PlaylistId): id is HideablePlaylistId {
   return (HIDEABLE_PLAYLIST_IDS as readonly PlaylistId[]).includes(id)
 }
 
 function parsePlaylistId(value: unknown): HideablePlaylistId | null {
-  if (
-    value === LIKED_PLAYLIST_ID
-    || value === POPULAR_PLAYLIST_ID
-    || value === RECENT_PLAYLIST_ID
-  ) {
-    return value
-  }
+  if (typeof value === 'string' && isCommonPlaylistId(value) && canHidePlaylist(value)) return value
   return null
 }
 
@@ -61,8 +53,6 @@ export function writeHiddenPlaylists(hidden: Set<HideablePlaylistId>) {
   localStorage.setItem(HIDDEN_PLAYLISTS_KEY, serializeHiddenPlaylists(hidden))
 }
 
-export const HIDEABLE_PLAYLIST_LABELS: Record<HideablePlaylistId, string> = {
-  [LIKED_PLAYLIST_ID]: 'Liked',
-  [POPULAR_PLAYLIST_ID]: 'Popular',
-  [RECENT_PLAYLIST_ID]: 'Recent',
-}
+export const HIDEABLE_PLAYLIST_LABELS = Object.fromEntries(
+  HIDEABLE_PLAYLIST_IDS.map(id => [id, BUILTIN_PLAYLISTS[id].name]),
+) as Record<HideablePlaylistId, string>

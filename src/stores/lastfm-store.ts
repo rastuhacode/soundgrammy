@@ -1,22 +1,50 @@
+import { assertSession, captureSession, createSessionQueue, isSessionCurrent } from '@/stores/session-store'
 import { create } from 'zustand'
 import { api, onLastFmStatusChanged } from '@/lib/api'
-import type { LastFmStatus } from '@/types'
+import type { LastFmPendingAction, LastFmStatus } from '@/types'
 
 interface LastFmState {
   status: LastFmStatus | null
   setStatus: (status: LastFmStatus) => void
   hydrate: () => Promise<void>
+  revision: number
+  saveEnabled: (enabled: boolean) => Promise<LastFmStatus>
+  startAuth: () => Promise<LastFmStatus>
+  completeAuth: () => Promise<LastFmStatus>
+  cancelAuth: () => Promise<LastFmStatus>
+  disconnect: (pendingAction?: LastFmPendingAction) => Promise<LastFmStatus>
 }
 
-export const useLastFmStore = create<LastFmState>(set => ({
+const enqueue = createSessionQueue()
+function mutate(action: () => Promise<LastFmStatus>) {
+  return enqueue(async (generation) => {
+    const status = await action()
+    assertSession(generation)
+    useLastFmStore.getState().setStatus(status)
+    return status
+  })
+}
+
+export const useLastFmStore = create<LastFmState>((set, get) => ({
   status: null,
-  setStatus: status => set({ status }),
+  revision: 0,
+  setStatus: status => set(state => ({ status, revision: state.revision + 1 })),
+  saveEnabled: enabled => mutate(() => api.setLastFmEnabled(enabled)),
+  startAuth: () => mutate(() => api.startLastFmAuth()),
+  completeAuth: () => mutate(() => api.completeLastFmAuth()),
+  cancelAuth: () => mutate(() => api.cancelLastFmAuth()),
+  disconnect: pendingAction => mutate(() => api.disconnectLastFm(pendingAction)),
   hydrate: async () => {
+    const generation = captureSession()
+    const revision = get().revision
     const status = await api.getLastFmStatus()
-    set({ status })
+    if (isSessionCurrent(generation) && get().revision === revision) get().setStatus(status)
   },
 }))
 
 export async function startLastFmStatusListener() {
-  return onLastFmStatusChanged(status => useLastFmStore.getState().setStatus(status))
+  const generation = captureSession()
+  return onLastFmStatusChanged((status) => {
+    if (isSessionCurrent(generation)) useLastFmStore.getState().setStatus(status)
+  })
 }

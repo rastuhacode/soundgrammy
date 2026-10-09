@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest'
 import type { Track } from '@/lib/db'
 import type { TrackListenStats } from '@/types'
 import { buildPlaylistEntries } from './index'
-import { fisherYates } from './default'
-import { SHUFFLE_MODE_OPTIONS, shuffleEntriesByMode } from './modes'
+import { fisherYates } from '@/test-support/legacy-shuffle-default'
+import { SHUFFLE_MODE_OPTIONS } from './modes'
+import { shuffleEntriesByMode } from '@/test-support/legacy-shuffle-modes'
 import type { ShuffleContext, ShuffleMode } from './model'
 
 const NOW = Date.parse('2026-08-10T12:00:00Z')

@@ -31,6 +31,7 @@ function AudioPlayerContent() {
   const exitFullscreen = useFullscreenStore(state => state.exitFullscreen)
   const { isCompact } = useCompactDisplay()
   const {
+    error: playbackError,
     currentTime,
     duration,
     bufferedRanges,
@@ -55,7 +56,7 @@ function AudioPlayerContent() {
 
   return (
     <>
-      {commandError && <p role="alert" className="px-4 py-2 text-sm text-destructive">{commandError}</p>}
+      {(commandError || playbackError) && <p role="alert" className="px-4 py-2 text-sm text-destructive">{commandError || playbackError?.message}</p>}
       {track && isFullscreen
         ? (
             <AudioFullscreenPlayer
