@@ -21,6 +21,7 @@ import { PlaylistSelectionActions } from './PlaylistSelectionActions'
 import { PlaylistToolbar } from './PlaylistToolbar'
 import { PlaylistTracksTable } from './PlaylistTracksTable'
 import { TrackInfoDialog } from './TrackInfoDialog'
+import { PlaylistFormDialog } from './PlaylistFormDialog'
 
 export function PlaylistView({ onBack }: { onBack?: () => void }) {
   const selectedPlaylistId = usePlaylistsStore(
@@ -92,7 +93,7 @@ function PlaylistViewContent({ onBack }: { onBack?: () => void }) {
 
       <Dialog open={isCompact && searchOpen} onOpenChange={handleSearchOpenChange} modal={false} disablePointerDismissal>
         <DialogContent
-          className="playlist-search-overlay flex flex-col gap-0 overflow-hidden p-0"
+          className="playlist-search-overlay top-0 left-0 flex max-w-none translate-x-0 translate-y-0 flex-col gap-0 overflow-hidden rounded-none p-0 sm:max-w-none"
           showCloseButton={false}
           overlayClassName="hidden"
           initialFocus={searchInputRef}
@@ -146,6 +147,14 @@ function PlaylistViewContent({ onBack }: { onBack?: () => void }) {
             : <p className="px-5 py-6 text-sm text-muted-foreground">No tracks found.</p>}
         </DialogContent>
       </Dialog>
+
+      <PlaylistFormDialog
+        open={view.dialogs.createTrackIds !== null}
+        onOpenChange={view.dialogs.onCreateOpenChange}
+        mode="create"
+        allowImport={false}
+        trackIds={view.dialogs.createTrackIds ?? undefined}
+      />
 
       <TrackInfoDialog
         track={view.dialogs.infoTrack}

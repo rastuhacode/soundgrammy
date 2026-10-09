@@ -14,10 +14,11 @@ export interface PlaylistFormOptions {
   onOpenChange: (open: boolean) => void
   mode: 'create' | 'edit'
   playlist?: CustomPlaylistSummary
+  trackIds?: number[]
 }
 
 /** Own the playlist draft, import preparation, and completion lifetime. */
-export function usePlaylistForm({ open, onOpenChange, mode, playlist }: PlaylistFormOptions) {
+export function usePlaylistForm({ open, onOpenChange, mode, playlist, trackIds }: PlaylistFormOptions) {
   const data = usePlaylistsStore(state => state.data)
   const createPlaylist = usePlaylistsStore(state => state.createPlaylist)
   const updatePlaylist = usePlaylistsStore(state => state.updatePlaylist)
@@ -121,7 +122,7 @@ export function usePlaylistForm({ open, onOpenChange, mode, playlist }: Playlist
         await updatePlaylist(playlist.id, trimmed)
       }
       else {
-        await createPlaylist(trimmed)
+        await createPlaylist(trimmed, trackIds)
       }
       if (current()) handleOpenChange(false)
     }

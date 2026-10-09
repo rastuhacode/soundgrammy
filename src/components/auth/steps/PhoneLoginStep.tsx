@@ -6,15 +6,6 @@ import { Field, FieldError, FieldSet } from '@/components/ui/fieldset'
 import { Input } from '@/components/ui/input'
 import { phoneLoginSchema } from '@/lib/auth/login-schemas'
 
-/** Pick a readable mask from digit count so +7… stays `+7 (###) ###-##-##`. */
-function phoneMaskFor(value: string): string {
-  const digits = value.replace(/\D/g, '')
-  if (digits.length <= 11) return '+# (###) ###-##-##'
-  if (digits.length <= 12) return '+## ### ### ###'
-  if (digits.length <= 13) return '+### ## ### ####'
-  return '+#### ### ## ## ##'
-}
-
 function toE164(unmaskedDigits: string): string {
   if (!unmaskedDigits) return ''
   return `+${unmaskedDigits}`
@@ -57,8 +48,8 @@ export function PhoneLoginStep({
     if (!input) return
 
     const mask = new MaskInput(input, {
-      mask: phoneMaskFor,
-      eager: true,
+      // E.164 allows up to 15 digits after the leading +.
+      mask: '+###############',
       preProcess: (value) => {
         // Keep a single leading + and digits only.
         const cleaned = value.replace(/[^\d+]/g, '')
@@ -107,7 +98,7 @@ export function PhoneLoginStep({
                   name={field.name}
                   type="tel"
                   inputMode="tel"
-                  placeholder="+7 (999) 123-45-67"
+                  placeholder="+447700900123"
                   aria-invalid={invalid || undefined}
                   autoComplete="tel"
                   disabled={busy}

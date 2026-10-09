@@ -234,13 +234,7 @@
   }
 
   [data-slot="dialog-content"].playlist-search-overlay {
-    top: 0;
-    left: 0;
-    max-width: 100%;
     max-height: 100dvh;
-    transform: none;
-    translate: none;
-    border-radius: 0;
     overflow: hidden;
   }
   .audio-player-bar {

@@ -76,7 +76,7 @@ export function CodeLoginStep({
                   onBlur={field.handleBlur}
                   disabled={busy}
                   pattern={REGEXP_ONLY_DIGITS}
-                  containerClassName="justify-center"
+                  containerClassName="w-full justify-center"
                   aria-invalid={invalid || undefined}
                   autoComplete="one-time-code"
                   inputMode="numeric"
@@ -84,7 +84,7 @@ export function CodeLoginStep({
                 >
                   <InputOTPGroup aria-invalid={invalid || undefined} className="w-full">
                     {Array.from({ length: CODE_LENGTH }, (_, index) => (
-                      <InputOTPSlot key={index} index={index} className="w-1/5" />
+                      <InputOTPSlot key={index} index={index} className="min-w-0 flex-1" />
                     ))}
                   </InputOTPGroup>
                 </InputOTP>

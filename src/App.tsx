@@ -9,7 +9,7 @@ import { AudioPlayer } from '@/components/audio/AudioPlayer'
 import { useAppSession } from '@/hooks/use-app-session'
 import { hydrateLibrary } from '@/lib/library-hydration'
 import { useLibraryStore } from '@/stores/library-store'
-import { type PlaylistId, usePlaylistsStore } from '@/stores/playlists-store'
+import { isValidPlaylistId, type PlaylistId, usePlaylistsStore } from '@/stores/playlists-store'
 import { useAndroidBackAction } from '@/hooks/use-android-back'
 import { useCompactDisplay } from '@/hooks/use-compact-display'
 import {
@@ -30,6 +30,8 @@ export default function App() {
   useEffect(() => {
     if (status !== 'ready') return
     return usePlaylistsStore.subscribe((next, previous) => {
+      // A removed playlist's fallback selection should preserve the current mobile page.
+      if (!next.data || !isValidPlaylistId(next.data, previous.selectedPlaylistId)) return
       if (next.selectedPlaylistId !== previous.selectedPlaylistId) {
         setCompactPlaylistOpen(true)
       }
