@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.4.2](https://github.com/rastuhacode/soundgrammy/compare/v3.4.1...v3.4.2) (2026-10-09)
+
+
+### Bug Fixes
+
+* remove mask from phone input to accept any numbers ([95fc3a2](https://github.com/rastuhacode/soundgrammy/commit/95fc3a2b01cfca54981764ffc857bb14d30c9caa))
+
 ## [3.4.1](https://github.com/rastuhacode/soundgrammy/compare/v3.4.0...v3.4.1) (2026-10-09)
 
 

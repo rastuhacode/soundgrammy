@@ -4719,7 +4719,7 @@ dependencies = [
 
 [[package]]
 name = "soundgrammy"
-version = "3.4.1"
+version = "3.4.2"
 dependencies = [
  "aes-gcm",
  "android-native-keyring-store",
