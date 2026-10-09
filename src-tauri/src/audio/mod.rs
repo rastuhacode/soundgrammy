@@ -458,11 +458,13 @@ fn pipeline(
                     app,
                     track,
                     generation,
-                    token.clone(),
-                    decoder_observer_active,
-                    decoder_seek.clone(),
-                    decoder_availability.clone(),
-                    decoder_diagnostic,
+                    source::OpenOptions {
+                        active: token.clone(),
+                        observer_active: decoder_observer_active,
+                        seek: decoder_seek.clone(),
+                        coverage: decoder_availability.clone(),
+                        diagnostic: decoder_diagnostic,
+                    },
                 )
                 .map_err(|_| "source-unavailable")?;
                 decode::decode_inner(

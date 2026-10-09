@@ -100,17 +100,27 @@ pub struct Source {
     block: Vec<u8>,
     _session: Option<Session>,
 }
+pub struct OpenOptions {
+    pub active: Arc<AtomicBool>,
+    pub observer_active: Arc<AtomicBool>,
+    pub seek: Arc<super::seek::SeekControl>,
+    pub coverage: Arc<super::availability::Availability>,
+    pub diagnostic: Arc<Mutex<Option<String>>>,
+}
 impl Source {
     pub fn open(
         app: AppHandle,
         track_id: i64,
         generation: u64,
-        active: Arc<AtomicBool>,
-        observer_active: Arc<AtomicBool>,
-        seek: Arc<super::seek::SeekControl>,
-        coverage: Arc<super::availability::Availability>,
-        diagnostic: Arc<Mutex<Option<String>>>,
+        options: OpenOptions,
     ) -> io::Result<Self> {
+        let OpenOptions {
+            active,
+            observer_active,
+            seek,
+            coverage,
+            diagnostic,
+        } = options;
         let id = format!("native-{generation}");
         let session = Session {
             app: app.clone(),

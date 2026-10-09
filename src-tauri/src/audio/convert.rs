@@ -144,7 +144,12 @@ mod tests {
             let stereo: Vec<f32> = (0..input)
                 .flat_map(|i| [(i as f32 * 0.03).sin() * 0.5, 0.0])
                 .collect();
-            let mono: Vec<f32> = stereo.chunks_exact(2).map(|f| f[0] * 0.5).collect();
+            let mono: Vec<f32> = stereo
+                .as_chunks::<2>()
+                .0
+                .iter()
+                .map(|f| f[0] * 0.5)
+                .collect();
             for rate in [8_000, 16_000, 24_000, 32_000] {
                 let mut converter = Converter::new(input, rate, 1).unwrap();
                 let mut result = Vec::new();
