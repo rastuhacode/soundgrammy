@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.5.0](https://github.com/rastuhacode/soundgrammy/compare/v3.4.3...v3.5.0) (2026-10-10)
+
+
+### Features
+
+* enhance audio playback handling with metadata and notification improvements ([ad55f36](https://github.com/rastuhacode/soundgrammy/commit/ad55f365a92ec50221846ebe41e86190a7dc4477))
+
 ## [3.4.3](https://github.com/rastuhacode/soundgrammy/compare/v3.4.2...v3.4.3) (2026-10-09)
 
 
