@@ -5,6 +5,9 @@ mod audio;
 #[cfg(target_os = "android")]
 mod android_keyring;
 
+#[cfg(target_os = "android")]
+mod android_downloads;
+
 mod bounce_analysis;
 mod cache;
 mod commands;
@@ -44,6 +47,9 @@ pub fn run() {
         .setup(|app| {
             let handle = app.handle();
 
+            #[cfg(target_os = "android")]
+            android_keyring::initialize_store().map_err(error::AppError::msg)?;
+
             app.manage(display_wake::DisplayWakeState::new()?);
 
             let config = config::Config::load()?;
@@ -52,6 +58,9 @@ pub fn run() {
             let cache_dir = handle.path().app_cache_dir()?;
             std::fs::create_dir_all(&data_dir)?;
             std::fs::create_dir_all(&cache_dir)?;
+
+            #[cfg(target_os = "android")]
+            session::repair_android_restored_session(&data_dir)?;
 
             let db = db::Db::open(&data_dir.join("library.db"))?;
             app.manage(AppState::new(
@@ -120,6 +129,7 @@ pub fn run() {
             commands::playlists::add_track_to_playlist,
             commands::playlists::add_tracks_to_playlist,
             commands::playlists::remove_track_from_playlist,
+            commands::playlists::remove_tracks_from_playlist,
             commands::playlists::reorder_playlist_tracks,
             commands::playlists::toggle_like,
             commands::playlists::export_playlist_json,

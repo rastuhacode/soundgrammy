@@ -2,6 +2,7 @@ import * as React from 'react'
 import { Drawer as DrawerPrimitive } from '@base-ui/react/drawer'
 
 import { cn } from '@/lib/utils'
+import { useAndroidBackOverlay } from '@/hooks/use-android-back'
 
 type DrawerContextProps = {
   hasSnapPoints: boolean
@@ -32,6 +33,7 @@ function Drawer({
   showSwipeHandle?: boolean
 }) {
   const hasSnapPoints = snapPoints != null && snapPoints.length > 0
+  const back = useAndroidBackOverlay<DrawerPrimitive.Root.Actions, DrawerPrimitive.Root.ChangeEventDetails>(props)
   const contextValue = React.useMemo(
     () => ({ hasSnapPoints, modal, showSwipeHandle, swipeDirection }),
     [hasSnapPoints, modal, showSwipeHandle, swipeDirection],
@@ -45,6 +47,7 @@ function Drawer({
         snapPoints={snapPoints}
         swipeDirection={swipeDirection}
         {...props}
+        {...back}
       />
     </DrawerContext.Provider>
   )

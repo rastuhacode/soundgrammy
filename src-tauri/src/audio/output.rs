@@ -17,6 +17,10 @@ pub struct Clock {
     pub presented: AtomicU64,
     pub produced: AtomicU64,
     pub underruns: AtomicU64,
+    /// Actual callback block size; AAudio may choose larger blocks after resume.
+    pub callback_frames: AtomicU64,
+    /// Shift queued hardware presentation times after a suspended stream resumes.
+    pub resume_delay_ns: AtomicU64,
     pub failed: AtomicBool,
     pub gain: AtomicU32,
 }
@@ -25,6 +29,8 @@ pub struct Output {
     pub rate: u32,
     pub channels: usize,
     pub clock: Arc<Clock>,
+    #[cfg(target_os = "android")]
+    suspended_at: Option<cpal::StreamInstant>,
 }
 pub fn sanitize(sample: f32) -> f32 {
     if sample.is_finite() {
@@ -85,6 +91,14 @@ impl Default for PresentationClock {
     }
 }
 impl PresentationClock {
+    fn delay(&mut self, nanos: u64) {
+        for index in 0..self.len {
+            let slot = &mut self.slots[(self.head + index) % self.slots.len()];
+            slot.start_ns += nanos as u128;
+            slot.end_ns += nanos as u128;
+        }
+    }
+
     fn advance(&mut self, now: u128, clock: &Clock) {
         while self.len > 0 {
             let front = self.slots[self.head];
@@ -144,12 +158,16 @@ fn build<T: cpal::SizedSample + cpal::FromSample<f32>>(
         .build_output_stream(
             config,
             move |data: &mut [T], info| {
+                clock
+                    .callback_frames
+                    .store((data.len() / channels) as u64, Ordering::Relaxed);
                 if reset_consumer(&mut consumer, &clock) {
                     presentation = PresentationClock::default();
                     data.fill(T::from_sample(0.0));
                     return;
                 }
                 let timestamp = info.timestamp();
+                presentation.delay(clock.resume_delay_ns.swap(0, Ordering::AcqRel));
                 presentation.advance(timestamp.callback.as_nanos(), &clock);
                 let first_frame = clock.consumed.load(Ordering::Relaxed);
                 render(data, &mut consumer, channels, &clock);
@@ -172,9 +190,103 @@ fn build<T: cpal::SizedSample + cpal::FromSample<f32>>(
             },
             None,
         )
-        .map_err(|_| "output-unavailable")
+        .map_err(|error| {
+            tracing::warn!(?config, %error, "could not build native audio output");
+            "output-unavailable"
+        })
+}
+
+fn supported_format(format: cpal::SampleFormat) -> bool {
+    matches!(
+        format,
+        cpal::SampleFormat::F32
+            | cpal::SampleFormat::F64
+            | cpal::SampleFormat::I8
+            | cpal::SampleFormat::I16
+            | cpal::SampleFormat::I32
+            | cpal::SampleFormat::I64
+            | cpal::SampleFormat::U8
+            | cpal::SampleFormat::U16
+            | cpal::SampleFormat::U32
+            | cpal::SampleFormat::U64
+    )
+}
+
+fn usable_config(config: &cpal::SupportedStreamConfig) -> bool {
+    (1..=8).contains(&config.channels())
+        && (8_000..=192_000).contains(&config.sample_rate())
+        && supported_format(config.sample_format())
+}
+
+fn fallback_configs(
+    default: Option<&cpal::SupportedStreamConfig>,
+    ranges: impl Iterator<Item = cpal::SupportedStreamConfigRange>,
+) -> Vec<cpal::SupportedStreamConfig> {
+    let preferred_rate = default.map_or(48_000, |c| c.sample_rate());
+    let preferred_channels = default.map_or(2, |c| c.channels());
+    let mut configs: Vec<_> = ranges
+        .filter_map(|range| {
+            let min = range.min_sample_rate().max(8_000);
+            let max = range.max_sample_rate().min(192_000);
+            if min > max {
+                return None;
+            }
+            let config = range.with_sample_rate(preferred_rate.clamp(min, max));
+            (usable_config(&config) && Some(&config) != default).then_some(config)
+        })
+        .collect();
+    // Preserve the active route's rate before preferring stereo/float. Picking
+    // the last equally ranked range can otherwise force a headset out of its
+    // microphone profile (or request a rate that is unavailable while recording).
+    configs.sort_by_key(|c| {
+        (
+            c.sample_rate().abs_diff(preferred_rate),
+            c.channels() != preferred_channels,
+            c.channels() != 2,
+            c.sample_format() != cpal::SampleFormat::F32,
+        )
+    });
+    configs.dedup();
+    configs
 }
 impl Output {
+    #[cfg(target_os = "android")]
+    pub fn is_suspended(&self) -> bool {
+        self.suspended_at.is_some()
+    }
+
+    #[cfg(target_os = "android")]
+    pub fn suspend(&mut self) -> Result<(), &'static str> {
+        self.clock.playing.store(false, Ordering::Release);
+        if self.suspended_at.is_none() {
+            self.stream.pause().map_err(|error| {
+                tracing::warn!(%error, "could not pause native audio output");
+                "output-unavailable"
+            })?;
+            self.suspended_at = Some(self.stream.now());
+        }
+        Ok(())
+    }
+
+    #[cfg(target_os = "android")]
+    pub fn resume(&mut self, ready: bool) -> Result<(), &'static str> {
+        if let Some(paused) = self.suspended_at {
+            let elapsed = self.stream.now().duration_since(paused);
+            self.clock.resume_delay_ns.fetch_add(
+                elapsed.as_nanos().min(u64::MAX as u128) as u64,
+                Ordering::Release,
+            );
+            self.clock.playing.store(ready, Ordering::Release);
+            self.stream.play().map_err(|error| {
+                self.clock.playing.store(false, Ordering::Release);
+                tracing::warn!(%error, "could not resume native audio output");
+                "output-unavailable"
+            })?;
+            self.suspended_at = None;
+        }
+        Ok(())
+    }
+
     pub fn open(volume: f64) -> Result<(Self, HeapProd<f32>), &'static str> {
         #[cfg(target_os = "ios")]
         super::ios::activate()?;
@@ -183,45 +295,36 @@ impl Output {
             .ok_or("output-unavailable")?;
         let default = device
             .default_output_config()
-            .map_err(|_| "output-unavailable")?;
-        let config = device
-            .supported_output_configs()
-            .map_err(|_| "output-unavailable")?
-            .filter(|c| {
-                c.channels() > 0
-                    && c.channels() <= 8
-                    && c.min_sample_rate() <= 192_000
-                    && c.max_sample_rate() >= 8_000
+            .map_err(|error| {
+                tracing::warn!(%error, "could not query default native audio format");
             })
-            .filter(|c| {
-                matches!(
-                    c.sample_format(),
-                    cpal::SampleFormat::F32
-                        | cpal::SampleFormat::F64
-                        | cpal::SampleFormat::I8
-                        | cpal::SampleFormat::I16
-                        | cpal::SampleFormat::I32
-                        | cpal::SampleFormat::I64
-                        | cpal::SampleFormat::U8
-                        | cpal::SampleFormat::U16
-                        | cpal::SampleFormat::U32
-                        | cpal::SampleFormat::U64
-                )
-            })
-            .max_by_key(|c| {
-                (
-                    c.channels() == 2,
-                    c.sample_format() == cpal::SampleFormat::F32,
-                )
-            })
-            .ok_or("output-unavailable")?;
-        let rate = default
-            .sample_rate()
-            .clamp(config.min_sample_rate(), config.max_sample_rate());
-        if !(8_000..=192_000).contains(&rate) {
-            return Err("output-unavailable");
+            .ok();
+        // Open the current device format before enumerating alternatives. A
+        // Bluetooth microphone can make this mono at a voice sample rate, and
+        // enumeration may fail even though this format is usable.
+        if let Some(config) = default.as_ref().filter(|c| usable_config(c)) {
+            if let Ok(output) = Self::open_config(&device, *config, volume) {
+                return Ok(output);
+            }
         }
-        let config = config.with_sample_rate(rate);
+        let ranges = device.supported_output_configs().map_err(|error| {
+            tracing::warn!(%error, "could not enumerate native audio formats");
+            "output-unavailable"
+        })?;
+        for config in fallback_configs(default.as_ref(), ranges) {
+            if let Ok(output) = Self::open_config(&device, config, volume) {
+                return Ok(output);
+            }
+        }
+        Err("output-unavailable")
+    }
+
+    fn open_config(
+        device: &cpal::Device,
+        config: cpal::SupportedStreamConfig,
+        volume: f64,
+    ) -> Result<(Self, HeapProd<f32>), &'static str> {
+        let rate = config.sample_rate();
         let channels = config.channels() as usize;
         // Two seconds maximum decode-ahead; startup watermark is 100ms.
         let (producer, consumer) = HeapRb::<f32>::new(rate as usize * channels * 2).split();
@@ -232,7 +335,7 @@ impl Output {
         );
         macro_rules! stream {
             ($t:ty) => {
-                build::<$t>(&device, config.config(), consumer, clock.clone())?
+                build::<$t>(device, config.config(), consumer, clock.clone())?
             };
         }
         let stream = match config.sample_format() {
@@ -248,13 +351,18 @@ impl Output {
             cpal::SampleFormat::U64 => stream!(u64),
             _ => return Err("output-unavailable"),
         };
-        stream.play().map_err(|_| "output-unavailable")?;
+        stream.play().map_err(|error| {
+            tracing::warn!(?config, %error, "could not start native audio output");
+            "output-unavailable"
+        })?;
         Ok((
             Self {
                 stream,
                 rate,
                 channels,
                 clock,
+                #[cfg(target_os = "android")]
+                suspended_at: None,
             },
             producer,
         ))
@@ -270,6 +378,83 @@ impl Drop for Output {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn range(channels: u16, min: u32, max: u32) -> cpal::SupportedStreamConfigRange {
+        cpal::SupportedStreamConfigRange::new(
+            channels,
+            min,
+            max,
+            cpal::SupportedBufferSize::Unknown,
+            cpal::SampleFormat::F32,
+        )
+    }
+
+    #[test]
+    fn headset_fallback_preserves_active_rate_before_stereo_preference() {
+        let default = cpal::SupportedStreamConfig::new(
+            1,
+            16_000,
+            cpal::SupportedBufferSize::Unknown,
+            cpal::SampleFormat::I16,
+        );
+        assert!(usable_config(&default));
+        let configs = fallback_configs(
+            Some(&default),
+            [
+                range(1, 16_000, 16_000),
+                range(2, 48_000, 48_000),
+                range(1, 48_000, 48_000),
+            ]
+            .into_iter(),
+        );
+        assert_eq!(configs[0].channels(), 1);
+        assert_eq!(configs[0].sample_rate(), 16_000);
+        assert_eq!(configs.len(), 3);
+    }
+
+    #[test]
+    fn discrete_rates_do_not_force_the_last_advertised_rate() {
+        let default = range(2, 48_000, 48_000).with_sample_rate(48_000);
+        let configs = fallback_configs(
+            Some(&default),
+            [
+                range(2, 44_100, 44_100),
+                range(2, 48_000, 48_000),
+                range(2, 96_000, 96_000),
+            ]
+            .into_iter(),
+        );
+        // The default was already attempted; retain alternatives in rate order.
+        assert_eq!(configs.len(), 2);
+        assert_eq!(configs[0].sample_rate(), 44_100);
+        assert_eq!(configs[1].sample_rate(), 96_000);
+    }
+
+    #[test]
+    fn fallback_without_default_accepts_mono_voice_rates_and_bounds_ranges() {
+        for rate in [8_000, 16_000, 24_000, 32_000] {
+            let configs = fallback_configs(None, [range(1, rate, rate)].into_iter());
+            assert_eq!(configs.len(), 1);
+            assert_eq!(configs[0].sample_rate(), rate);
+            assert_eq!(configs[0].channels(), 1);
+        }
+        let default = range(2, 384_000, 384_000).with_sample_rate(384_000);
+        let configs = fallback_configs(
+            Some(&default),
+            [
+                range(0, 48_000, 48_000),
+                range(9, 48_000, 48_000),
+                range(1, 1_000, 4_000),
+                range(2, 200_000, 384_000),
+                range(1, 4_000, 384_000),
+            ]
+            .into_iter(),
+        );
+        assert!(!usable_config(&default));
+        assert_eq!(configs.len(), 1);
+        assert_eq!(configs[0].sample_rate(), 192_000);
+    }
+
     #[test]
     fn presentation_clock_accounts_for_device_latency_and_tail() {
         let clock = Clock::default();
@@ -292,6 +477,31 @@ mod tests {
         assert_eq!(presentation.len, 0);
         presentation.advance(3000, &clock);
         assert_eq!(clock.presented.load(Ordering::Relaxed), 100);
+    }
+    #[test]
+    fn suspended_presentation_preserves_pending_audio_without_counting_paused_time() {
+        let clock = Clock::default();
+        let mut presentation = PresentationClock::default();
+        for first_frame in [0, 100] {
+            presentation.push(
+                Presentation {
+                    start_ns: 1000 + first_frame as u128 * 10,
+                    end_ns: 2000 + first_frame as u128 * 10,
+                    first_frame,
+                    frames: 100,
+                },
+                &clock,
+            );
+        }
+        presentation.advance(1500, &clock);
+        assert_eq!(clock.presented.load(Ordering::Relaxed), 50);
+        presentation.delay(10_000);
+        presentation.advance(11_500, &clock);
+        assert_eq!(clock.presented.load(Ordering::Relaxed), 50);
+        presentation.advance(12_500, &clock);
+        assert_eq!(clock.presented.load(Ordering::Relaxed), 150);
+        presentation.advance(13_000, &clock);
+        assert_eq!(clock.presented.load(Ordering::Relaxed), 200);
     }
     #[test]
     fn callback_silences_underrun_and_freezes_pause() {

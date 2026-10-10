@@ -13,6 +13,7 @@ import {
 } from '@/components/ui/fieldset'
 import { Input } from '@/components/ui/input'
 import { api } from '@/lib/api'
+import { captureSession, isSessionCurrent } from '@/stores/session-store'
 import { useCacheStore } from '@/stores/cache-store'
 import type { CacheSettings, CacheUsage } from '@/types'
 
@@ -60,23 +61,25 @@ export function AudioCacheForm() {
       onSubmit: cacheSettingsSchema,
     },
     onSubmit: async ({ value }) => {
+      const generation = captureSession()
       setBusy(true)
       setError(null)
       try {
-        const next = await api.setCacheSettings({
+        const next = await useCacheStore.getState().saveSettings({
           limitBytes: Math.round(Number.parseFloat(value.limitGb) * GIB),
           ttlSecs: Math.round(Number.parseFloat(value.ttlDays) * DAY_SECONDS),
         })
-        setSettings(next)
-        form.reset(formValues(next))
-        setUsage(await api.getCacheUsage())
-        await useCacheStore.getState().hydrate()
+        if (!isSessionCurrent(generation)) return
+        setSettings(next.settings)
+        form.reset(formValues(next.settings))
+        setUsage(next.usage)
       }
       catch (err) {
+        if (!isSessionCurrent(generation)) return
         setError(errorMessage(err))
       }
       finally {
-        setBusy(false)
+        if (isSessionCurrent(generation)) setBusy(false)
       }
     },
   })
@@ -108,19 +111,21 @@ export function AudioCacheForm() {
   }, [form])
 
   const handleClear = async () => {
+    const generation = captureSession()
     setBusy(true)
     setError(null)
     try {
-      await api.clearAudioCache()
-      useCacheStore.getState().clearAll()
-      setUsage(await api.getCacheUsage())
+      const usage = await useCacheStore.getState().clearAudio()
+      if (!isSessionCurrent(generation)) return
+      setUsage(usage)
       setConfirmClear(false)
     }
     catch (err) {
+      if (!isSessionCurrent(generation)) return
       setError(errorMessage(err))
     }
     finally {
-      setBusy(false)
+      if (isSessionCurrent(generation)) setBusy(false)
     }
   }
 

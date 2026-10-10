@@ -1,3 +1,4 @@
+import { ownEventListeners } from '@/lib/events'
 import { useEffect, useRef } from 'react'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { api } from '@/lib/api'
@@ -15,20 +16,19 @@ export function useLastFmIntegration(enabled: boolean) {
       if (!focused || completingRef.current) return
       if (useLastFmStore.getState().status?.state !== 'waiting_for_browser_approval') return
       completingRef.current = true
-      api.completeLastFmAuth()
-        .then(status => useLastFmStore.getState().setStatus(status))
+      useLastFmStore.getState().completeAuth()
         .catch(() => {})
         .finally(() => {
           completingRef.current = false
         })
     })
+    const unlisten = ownEventListeners([listener, focusListener])
     const onOnline = () => {
       api.flushLastFmQueue().catch(() => {})
     }
     window.addEventListener('online', onOnline)
     return () => {
-      listener.then(unlisten => unlisten())
-      focusListener.then(unlisten => unlisten())
+      unlisten()
       window.removeEventListener('online', onOnline)
     }
   }, [enabled])

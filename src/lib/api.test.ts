@@ -53,4 +53,13 @@ describe('api diagnostics', () => {
 
     expect(tauriInvoke).toHaveBeenCalledWith('qr_restart', undefined)
   })
+
+  it('rejects malformed library payloads with diagnostics that omit raw values', async () => {
+    tauriInvoke.mockResolvedValueOnce([{ id: 'private-invalid-value' }])
+    await expect(api.listTracks()).rejects.toThrow('list_tracks response')
+    expect(logError).toHaveBeenCalledWith(expect.objectContaining({
+      title: 'Invalid backend response', context: expect.objectContaining({ command: 'list_tracks' }),
+    }))
+    expect(JSON.stringify(logError.mock.calls)).not.toContain('private-invalid-value')
+  })
 })

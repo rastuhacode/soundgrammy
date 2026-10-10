@@ -1,6 +1,6 @@
 [package]
 name = "soundgrammy"
-version = "3.1.1"
+version = "3.4.3"
 description = "SoundGrammy — a native desktop player for your Telegram profile music"
 license = "GPL-3.0-only"
 authors = ["SoundGrammy"]
@@ -17,89 +17,89 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 release-devtools = ["tauri/devtools"]
 
 [build-dependencies]
-tauri-build = { version = "2", features = [] }
-dotenvy = "0.15"
+tauri-build = { version = "2.7.0", features = [] }
+dotenvy = "0.15.7"
 
 [dependencies]
-tauri = { version = "2", features = ["protocol-asset"] }
-tauri-plugin-opener = "2"
-tauri-plugin-dialog = "2"
+tauri = { version = "2.12.0", features = ["protocol-asset"] }
+tauri-plugin-opener = "2.7.0"
+tauri-plugin-dialog = "2.8.0"
 
 # Async runtime
-tokio = { version = "1", features = ["full"] }
-futures-util = "0.3"
-async-trait = "0.1"
+tokio = { version = "1.53.1", features = ["full"] }
+futures-util = "0.3.34"
+async-trait = "0.1.92"
 
 # Telegram MTProto
 ferogram = { version = "=0.6.5", default-features = false, features = ["parsers"] }
 
 # Storage
-rusqlite = { version = "0.40", features = ["bundled"] }
+rusqlite = { version = "0.40.2", features = ["bundled"] }
 
 # Serialization
-serde = { version = "1", features = ["derive", "rc"] }
-serde_json = "1"
-reqwest = { version = "0.13", default-features = false, features = ["form", "json", "rustls"] }
+serde = { version = "1.0.229", features = ["derive", "rc"] }
+serde_json = "1.0.151"
+reqwest = { version = "0.13.5", default-features = false, features = ["form", "json", "rustls"] }
 
 # Crypto / secure session at rest
-aes-gcm = "0.11"
-keyring = "4"
+aes-gcm = "0.11.1"
+keyring = "4.2.0"
 
 # Utilities
-thiserror = "2"
-anyhow = "1"
-base64 = "0.23"
-hex = "0.4"
-md5 = "0.8"
-url = "2"
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter"] }
-lofty = "0.25"
-dotenvy = "0.15"
-rustfft = "6.4"
+thiserror = "2.0.21"
+anyhow = "1.0.104"
+base64 = "0.23.1"
+hex = "0.4.3"
+md5 = "0.8.1"
+url = "2.5.8"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+lofty = "0.25.4"
+dotenvy = "0.15.7"
+rustfft = "6.4.1"
 ruopus = "0.1.2"
-rand = "0.10"
-chrono = { version = "0.4", default-features = false, features = ["std"] }
-symphonia = { version = "0.6", default-features = false, features = ["aac", "alac", "flac", "id3v2", "isomp4", "mkv", "ogg", "pcm", "vorbis", "wav", "mpa"] }
+rand = "0.10.3"
+chrono = { version = "0.4.45", default-features = false, features = ["std"] }
+symphonia = { version = "0.6.1", default-features = false, features = ["aac", "alac", "flac", "id3v2", "isomp4", "mkv", "ogg", "pcm", "vorbis", "wav", "mpa"] }
 
 # Shared desktop and mobile audio output, PCM buffering, and resampling.
-cpal = { version = "0.18", default-features = false }
-ringbuf = "0.5"
-rubato = "0.16.2"
+cpal = { version = "0.18.2", default-features = false }
+ringbuf = "0.5.2"
+rubato = "5.0.0"
 
 [target.'cfg(target_os = "android")'.dependencies]
 # Match Tauri/Wry's JNI handle; CPAL consumes the shared ndk-context pointers.
-jni = "0.21"
-ndk-context = "0.1"
-keyring-core = "1"
+jni = "0.21.1"
+ndk-context = "0.1.1"
+keyring-core = "1.0.0"
 android-native-keyring-store = "=1.0.0"
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 keepawake = "=0.6.1"
 
 [dev-dependencies]
-tokio = { version = "1", features = ["test-util"] }
+tokio = { version = "1.53.1", features = ["test-util"] }
 
 [target.'cfg(target_os = "macos")'.dependencies]
-objc2 = "0.6"
-objc2-foundation = "0.3"
-objc2-app-kit = "0.3"
-objc2-media-player = "0.3"
-block2 = "0.6"
+objc2 = "0.6.4"
+objc2-foundation = "0.3.2"
+objc2-app-kit = "0.3.2"
+objc2-media-player = "0.3.2"
+block2 = "0.6.2"
 
 [target.'cfg(target_os = "linux")'.dependencies]
-zbus = "5.19"
+zbus = "5.19.0"
 
 [target.'cfg(target_os = "windows")'.dependencies]
-windows = { version = "0.61", features = ["Foundation", "Media", "Storage_Streams", "Win32_System_WinRT", "Win32_Foundation"] }
+windows = { version = "0.62.2", features = ["Foundation", "Media", "Storage_Streams", "Win32_System_WinRT", "Win32_Foundation"] }
 
 [target.'cfg(target_os = "ios")'.dependencies]
-objc2 = "0.6"
-objc2-foundation = "0.3"
-objc2-ui-kit = "0.3"
-objc2-avf-audio = "0.3"
-objc2-media-player = "0.3"
-block2 = "0.6"
+objc2 = "0.6.4"
+objc2-foundation = "0.3.2"
+objc2-ui-kit = "0.3.2"
+objc2-avf-audio = "0.3.2"
+objc2-media-player = "0.3.2"
+block2 = "0.6.2"
 
 [patch.crates-io]
 # Remove once ferogram ships cancellation-safe, per-connection DC readiness.

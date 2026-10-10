@@ -3,9 +3,11 @@ import { Menu as MenuPrimitive } from '@base-ui/react/menu'
 import { CheckIcon, ChevronRightIcon } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
+import { useAndroidBackOverlay } from '@/hooks/use-android-back'
 
-function DropdownMenu({ ...props }: MenuPrimitive.Root.Props) {
-  return <MenuPrimitive.Root data-slot="dropdown-menu" {...props} />
+function DropdownMenu(props: MenuPrimitive.Root.Props) {
+  const back = useAndroidBackOverlay<MenuPrimitive.Root.Actions, MenuPrimitive.Root.ChangeEventDetails>(props)
+  return <MenuPrimitive.Root data-slot="dropdown-menu" {...props} {...back} />
 }
 
 function DropdownMenuPortal({ ...props }: MenuPrimitive.Portal.Props) {
@@ -22,16 +24,19 @@ function DropdownMenuContent({
   side = 'bottom',
   sideOffset = 4,
   className,
+  positionerClassName,
   ...props
 }: MenuPrimitive.Popup.Props
   & Pick<
     MenuPrimitive.Positioner.Props,
     'align' | 'alignOffset' | 'side' | 'sideOffset'
-  >) {
+  > & {
+    positionerClassName?: string
+  }) {
   return (
     <MenuPrimitive.Portal>
       <MenuPrimitive.Positioner
-        className="isolate z-50 outline-none"
+        className={cn('isolate z-50 outline-none', positionerClassName)}
         align={align}
         alignOffset={alignOffset}
         side={side}
@@ -94,8 +99,9 @@ function DropdownMenuItem({
   )
 }
 
-function DropdownMenuSub({ ...props }: MenuPrimitive.SubmenuRoot.Props) {
-  return <MenuPrimitive.SubmenuRoot data-slot="dropdown-menu-sub" {...props} />
+function DropdownMenuSub(props: MenuPrimitive.SubmenuRoot.Props) {
+  const back = useAndroidBackOverlay<MenuPrimitive.Root.Actions, MenuPrimitive.SubmenuRoot.ChangeEventDetails>(props)
+  return <MenuPrimitive.SubmenuRoot data-slot="dropdown-menu-sub" {...props} {...back} />
 }
 
 function DropdownMenuSubTrigger({

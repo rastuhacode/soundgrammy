@@ -8,7 +8,6 @@ import {
   SortableContext,
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
-import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -29,7 +28,7 @@ import {
 } from '@/lib/playlist-recipe-io'
 import type { PlaylistRecipeSource } from '@/types'
 import type { PlaylistId } from '@/stores/playlists-store'
-import { canExportPlaylist } from '@/components/playlist/track-actions'
+import { canExportPlaylist } from '@/lib/playlist-track-actions'
 import { SidebarDrawer } from './SidebarDrawer'
 
 const restrictToVerticalAxis: Modifier = ({ transform }) => ({
@@ -39,6 +38,8 @@ const restrictToVerticalAxis: Modifier = ({ transform }) => ({
 
 export function PlayerSidebar(props: { onLogout: () => void, onSelectPlaylist: (id: PlaylistId) => void }) {
   const {
+    actionError,
+    setActionError,
     selectedPlaylistId,
     dialogState,
     setDialogState,
@@ -58,8 +59,6 @@ export function PlayerSidebar(props: { onLogout: () => void, onSelectPlaylist: (
     handleUnhide,
     handleDelete,
   } = useSidebarPlaylists()
-
-  const [actionError, setActionError] = useState<string | null>(null)
 
   const title = 'Create playlist'
 
@@ -84,7 +83,7 @@ export function PlayerSidebar(props: { onLogout: () => void, onSelectPlaylist: (
             Library
           </h2>
         </div>
-        <div className="flex items-center gap-0.5">
+        <div className="flex items-center gap-2 md:gap-0.5">
           <SidebarPlaylistsToolbar
             search={search}
             onSearchChange={setSearch}
@@ -97,13 +96,13 @@ export function PlayerSidebar(props: { onLogout: () => void, onSelectPlaylist: (
           />
           <Button
             variant="ghost"
-            size="icon-sm"
+            size="icon"
             onClick={() => setDialogState({ mode: 'create' })}
             aria-label={title}
             title={title}
             className="text-muted-foreground hover:text-foreground"
           >
-            <Plus />
+            <Plus className="size-4" />
           </Button>
         </div>
       </div>

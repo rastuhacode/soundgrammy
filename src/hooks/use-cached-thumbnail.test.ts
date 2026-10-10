@@ -38,6 +38,18 @@ describe('loadThumbnailPath', () => {
     expect(backend).toHaveBeenCalledTimes(1)
   })
 
+  it('revalidates a remembered path after the native cache file may have been reclaimed', async () => {
+    const backend = vi
+      .spyOn(api, 'getTrackThumbnail')
+      .mockResolvedValueOnce('/cache/42.jpg')
+      .mockResolvedValueOnce('/cache/restored-42.jpg')
+
+    await expect(loadThumbnailPath(42, false)).resolves.toBe('/cache/42.jpg')
+    await expect(loadThumbnailPath(42, false, true)).resolves.toBe('/cache/restored-42.jpg')
+    await expect(loadThumbnailPath(42, false)).resolves.toBe('/cache/restored-42.jpg')
+    expect(backend).toHaveBeenCalledTimes(2)
+  })
+
   it('keeps standard and high-quality work independent', async () => {
     const backend = vi
       .spyOn(api, 'getTrackThumbnail')

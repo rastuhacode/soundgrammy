@@ -37,9 +37,7 @@ import {
   DrawerTrigger,
 } from '@/components/ui/drawer'
 import { SettingsDialog } from '@/components/settings/SettingsDialog'
-import { DeadSpace } from '@/components/DeadSpace'
 import { cn } from '@/lib/utils'
-import { Separator } from './ui/separator'
 import { TauriLink } from './tauri/TauriLink'
 import { SyncStatusDot } from './SyncStatusDot'
 
@@ -137,15 +135,15 @@ export function SidebarDrawer({ onLogout }: SidebarDrawerProps) {
               size="icon"
               aria-label="Open navigation menu"
               title="Menu"
-              className="-ml-1 text-muted-foreground hover:text-foreground"
+              className="text-muted-foreground hover:text-foreground"
             >
-              <Menu className="size-5" />
+              <Menu className="size-4" />
             </Button>
           )}
         />
 
         <DrawerContent className="rounded-none border-y-0 border-l-0 bg-sidebar text-sidebar-foreground w-80 [--drawer-inset:0px]">
-          <DrawerHeader className="md:gap-2 gap-2 p-4 text-left flex-row items-center">
+          <DrawerHeader className="android-overlay-inset md:gap-2 gap-2 p-4 text-left flex-row items-center">
             <Avatar className="size-12 after:border-0">
               {avatarSrc
                 ? <AvatarImage src={avatarSrc} alt={displayName} />
@@ -209,10 +207,6 @@ export function SidebarDrawer({ onLogout }: SidebarDrawerProps) {
               <span>Settings</span>
             </SidebarDrawerItem>
           </nav>
-
-          <Separator />
-          <DeadSpace />
-          <Separator />
 
           <DrawerFooter className="gap-3 border-t border-sidebar-border p-0 pb-4 pt-2">
             <SidebarDrawerItem onClick={confirmLogout} disabled={isLoggingOut} className="text-destructive transition-colors hover:bg-destructive/10 focus-visible:ring-destructive/30 disabled:opacity-50">

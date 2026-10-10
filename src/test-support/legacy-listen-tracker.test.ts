@@ -10,7 +10,7 @@ import {
   setPendingListenEndReason,
   takePendingListenEndReason,
   trackDurationMs,
-} from './listen-tracker'
+} from '@/test-support/legacy-listen-tracker'
 
 describe('trackDurationMs', () => {
   it('converts seconds to ms', () => {

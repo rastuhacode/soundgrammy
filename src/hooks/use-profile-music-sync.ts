@@ -1,24 +1,6 @@
-import { useCallback, useEffect, useState } from 'react'
-import {
-  api,
-  onSyncDone,
-  onSyncError,
-  onSyncProgress,
-  onSyncStart,
-  type SyncProgress,
-} from '@/lib/api'
-import { formatInvokeError } from '@/lib/playlist-recipe-io'
 import { useConnectivityStore } from '@/stores/connectivity-store'
 
 export type SyncPhase = 'connecting' | 'offline' | 'syncing' | 'live' | 'error'
-
-const OFFLINE_ERROR_PATTERN
-  = /offline|network|connect|timed? out|timeout|unreachable|transport|socket/i
-
-function isOfflineError(message: string): boolean {
-  return (typeof navigator !== 'undefined' && !navigator.onLine)
-    || OFFLINE_ERROR_PATTERN.test(message)
-}
 
 function formatLastSync(value: string | null | undefined): string | null {
   if (!value) return null
@@ -34,99 +16,12 @@ function formatLastSync(value: string | null | undefined): string | null {
 
 export function useProfileMusicSync() {
   const connectivity = useConnectivityStore(state => state.phase)
-  const [lastSyncAt, setLastSyncAt] = useState<string | null | undefined>(
-    undefined,
-  )
-  const [syncing, setSyncing] = useState(false)
-  const [manualSyncing, setManualSyncing] = useState(false)
-  const [syncError, setSyncError] = useState<string | null>(null)
-  const [progress, setProgress] = useState<SyncProgress | null>(null)
-
-  useEffect(() => {
-    let cancelled = false
-    api
-      .syncStatus()
-      .then((value) => {
-        if (!cancelled) setLastSyncAt(value)
-      })
-      .catch(() => {
-        if (!cancelled) setLastSyncAt(null)
-      })
-
-    const startPromise = onSyncStart(() => {
-      setSyncError(null)
-      setProgress(null)
-      setSyncing(true)
-    })
-    const progressPromise = onSyncProgress(setProgress)
-    const donePromise = onSyncDone(() => {
-      setSyncing(false)
-      setSyncError(null)
-      setProgress(null)
-      useConnectivityStore.getState().setOnline()
-      api
-        .syncStatus()
-        .then(value => setLastSyncAt(value))
-        .catch(() => {})
-    })
-    const errorPromise = onSyncError((error) => {
-      setSyncing(false)
-      setSyncError(error.message)
-      setProgress(null)
-      if (isOfflineError(error.message)) {
-        useConnectivityStore.getState().setOffline()
-      }
-    })
-
-    return () => {
-      cancelled = true
-      startPromise.then(unlisten => unlisten())
-      progressPromise.then(unlisten => unlisten())
-      donePromise.then(unlisten => unlisten())
-      errorPromise.then(unlisten => unlisten())
-    }
-  }, [])
-
-  const requestSync = useCallback(async () => {
-    if (syncing || manualSyncing) return
-
-    setSyncError(null)
-    setProgress(null)
-    if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      useConnectivityStore.getState().setOffline()
-      setSyncError('No network connection. Reconnect and try again.')
-      return
-    }
-
-    setManualSyncing(true)
-    try {
-      if (useConnectivityStore.getState().phase === 'offline') {
-        useConnectivityStore.getState().setConnecting()
-        const auth = await api.refreshAuth()
-        if (!auth.authorized) {
-          throw new Error('Your Telegram session is no longer authorized.')
-        }
-        useConnectivityStore.getState().setOnline()
-      }
-
-      const result = await api.syncSavedMusic()
-      setLastSyncAt(result.lastSyncAt)
-      setSyncError(null)
-      useConnectivityStore.getState().setOnline()
-    }
-    catch (error) {
-      const message = formatInvokeError(error)
-      setSyncError(message)
-      if (isOfflineError(message)) {
-        useConnectivityStore.getState().setOffline()
-      }
-    }
-    finally {
-      setManualSyncing(false)
-    }
-  }, [manualSyncing, syncing])
-
-  const isSyncing = syncing || manualSyncing
+  const lastSyncAt = useConnectivityStore(state => state.lastSyncAt)
+  const isSyncing = useConnectivityStore(state => state.syncing)
+  const syncError = useConnectivityStore(state => state.syncError)
+  const progress = useConnectivityStore(state => state.progress)
+  const sync = useConnectivityStore(state => state.requestSync)
+  const requestSync = () => sync().catch(() => {})
 
   const phase: SyncPhase
     = connectivity === 'offline'

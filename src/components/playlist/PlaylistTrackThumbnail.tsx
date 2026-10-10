@@ -21,7 +21,7 @@ export function TrackThumbnail(props: {
 }) {
   const { ref, entry } = useIntersection<HTMLDivElement>({ rootMargin: '400px' })
   const inView = entry?.isIntersecting ?? false
-  const { url, loaded, failed } = useCachedThumbnail(props.trackId, { enabled: inView })
+  const { url, loaded, failed, onError } = useCachedThumbnail(props.trackId, { enabled: inView })
   const isCached = useCacheStore(state => state.cachedIds.has(props.trackId))
   const progress = useCacheStore(state => state.progressById.get(props.trackId))
   // Only real per-track download progress drives the ring. `busyIds` alone
@@ -33,7 +33,7 @@ export function TrackThumbnail(props: {
   return (
     <div
       ref={ref}
-      className="relative size-12 shrink-0 overflow-hidden rounded-sm bg-muted"
+      className="relative size-14 md:size-12 shrink-0 overflow-hidden rounded-sm bg-muted"
       aria-label={
         showProgress
           ? 'Downloading'
@@ -47,6 +47,7 @@ export function TrackThumbnail(props: {
             <img
               src={url}
               alt="Thumbnail"
+              onError={onError}
               decoding="async"
               className={cn(
                 'absolute inset-0 size-full object-cover transition-opacity duration-200',

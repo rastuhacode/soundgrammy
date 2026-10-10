@@ -1,8 +1,11 @@
+import { z } from 'zod'
+import { trackSchema, playlistsBundleSchema, likedPlaylistSchema, customPlaylistSchema, trackListenStatsSchema, cacheSettingsSchema, cacheUsageSchema } from '@/types'
 import type { PlayerCommand } from '@/types/playback'
-import type { AudioTrackRequest } from '@/hooks/audio/engine'
+import type { AudioTrackRequest } from '@/types/audio'
 import { invoke as tauriInvoke, convertFileSrc } from '@tauri-apps/api/core'
 import { listen, type UnlistenFn } from '@tauri-apps/api/event'
 import { appLogger } from '@/lib/app-logger'
+import { contractIssues } from '@/lib/errors'
 import type {
   AuthOutcome,
   AuthStatus,
@@ -10,11 +13,7 @@ import type {
   BounceProfileResponse,
   PhoneSendCodeOutcome,
   CacheChanged,
-  CacheSettings,
   CacheTracksProgress,
-  CacheUsage,
-  CustomPlaylistSummary,
-  LikedPlaylist,
   ListenEndReason,
   ListenEndResult,
   LastFmPendingAction,
@@ -24,12 +23,10 @@ import type {
   PlaylistImportPreview,
   PlaylistImportResult,
   PlaylistRecipeSource,
-  PlaylistsBundle,
   ProxySettings,
   ProxySettingsView,
   QrOutcome,
   SyncResult,
-  Track,
   TrackListenStats,
   TrackMetadata,
 } from '@/types'
@@ -57,6 +54,18 @@ async function invoke<T>(command: string, args?: Record<string, unknown>): Promi
     })
     throw error
   }
+}
+
+/** Parse data at IPC ingress; diagnostics contain field paths, never raw payloads. */
+async function invokeParsed<S extends z.ZodType>(schema: S, command: string, args?: Record<string, unknown>): Promise<z.infer<S>> {
+  const response = await invoke<unknown>(command, args)
+  const parsed = schema.safeParse(response)
+  if (parsed.success) return parsed.data
+  appLogger.error({
+    source: 'backend', title: 'Invalid backend response',
+    context: { command, issues: contractIssues(parsed.error.issues) },
+  })
+  throw new Error(`The ${command} response did not match its expected format.`)
 }
 
 // ---- auth ----------------------------------------------------------------
@@ -87,7 +96,7 @@ export const api = {
 
   // ---- library ----------------------------------------------------------
   syncSavedMusic: () => invoke<SyncResult>('sync_saved_music'),
-  listTracks: () => invoke<Track[]>('list_tracks'),
+  listTracks: () => invokeParsed(z.array(trackSchema), 'list_tracks'),
   getProfile: () => invoke<Profile | null>('get_profile'),
   syncStatus: () => invoke<string | null>('sync_status'),
   setFullscreenDisplayAwake: (enabled: boolean) =>
@@ -109,16 +118,16 @@ export const api = {
     invoke<void>('remove_track_from_cache', { trackId }),
   clearAudioCache: () => invoke<void>('clear_audio_cache'),
   getCacheStatus: () => invoke<number[]>('get_cache_status'),
-  getCacheSettings: () => invoke<CacheSettings>('get_cache_settings'),
+  getCacheSettings: () => invokeParsed(cacheSettingsSchema, 'get_cache_settings'),
   setCacheSettings: (input: {
     limitBytes?: number | null
     ttlSecs?: number | null
   }) =>
-    invoke<CacheSettings>('set_cache_settings', {
+    invokeParsed(cacheSettingsSchema, 'set_cache_settings', {
       limitBytes: input.limitBytes ?? null,
       ttlSecs: input.ttlSecs ?? null,
     }),
-  getCacheUsage: () => invoke<CacheUsage>('get_cache_usage'),
+  getCacheUsage: () => invokeParsed(cacheUsageSchema, 'get_cache_usage'),
   getProxySettings: () => invoke<ProxySettingsView>('get_proxy_settings'),
   setProxySettings: (input: {
     enabled: boolean
@@ -153,16 +162,17 @@ export const api = {
     invoke<BounceProfileResponse>('get_track_bounce_profile', { trackId }),
 
   // ---- playlists --------------------------------------------------------
-  listPlaylists: () => invoke<PlaylistsBundle>('list_playlists'),
-  createPlaylist: (input: { name: string }) =>
-    invoke<CustomPlaylistSummary>('create_playlist', {
+  listPlaylists: () => invokeParsed(playlistsBundleSchema, 'list_playlists'),
+  createPlaylist: (input: { name: string, trackIds?: number[] }) =>
+    invokeParsed(customPlaylistSchema, 'create_playlist', {
       name: input.name,
+      trackIds: input.trackIds ?? [],
     }),
   updatePlaylist: (input: {
     playlistId: number
     name?: string | null
   }) =>
-    invoke<CustomPlaylistSummary>('update_playlist', {
+    invokeParsed(customPlaylistSchema, 'update_playlist', {
       playlistId: input.playlistId,
       name: input.name ?? null,
     }),
@@ -172,11 +182,13 @@ export const api = {
     invoke<string>('add_track_to_playlist', { playlistId, trackId }),
   addTracksToPlaylist: (playlistId: number, trackIds: number[]) =>
     invoke<string>('add_tracks_to_playlist', { playlistId, trackIds }),
+  removeTracksFromPlaylist: (playlistId: number, positions: number[], expectedTrackIds: number[]) =>
+    invoke<string>('remove_tracks_from_playlist', { playlistId, positions, expectedTrackIds }),
   removeTrackFromPlaylist: (playlistId: number, position: number) =>
     invoke<string>('remove_track_from_playlist', { playlistId, position }),
   reorderPlaylistTracks: (playlistId: number, trackIds: number[]) =>
     invoke<string>('reorder_playlist_tracks', { playlistId, trackIds }),
-  toggleLike: (trackId: number) => invoke<LikedPlaylist>('toggle_like', { trackId }),
+  toggleLike: (trackId: number) => invokeParsed(likedPlaylistSchema, 'toggle_like', { trackId }),
   exportPlaylistJson: (source: PlaylistRecipeSource, path: string) =>
     invoke<void>('export_playlist_json', { source, path }),
   analyzePlaylistJson: (path: string) =>
@@ -207,8 +219,8 @@ export const api = {
   setListenStatisticsEnabled: (enabled: boolean) =>
     invoke<void>('set_listen_statistics_enabled', { enabled }),
   getTrackListenStats: (trackId: number) =>
-    invoke<TrackListenStats | null>('get_track_listen_stats', { trackId }),
-  listListenStats: () => invoke<TrackListenStats[]>('list_listen_stats'),
+    invokeParsed(trackListenStatsSchema.nullable(), 'get_track_listen_stats', { trackId }),
+  listListenStats: () => invokeParsed(z.array(trackListenStatsSchema), 'list_listen_stats'),
   rebuildListenStats: () => invoke<void>('rebuild_listen_stats'),
   clearListenStatistics: () => invoke<void>('clear_listen_statistics'),
 

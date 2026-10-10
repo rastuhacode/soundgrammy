@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { formatTime } from '@/lib/format-time'
+import { isAndroid } from '@/lib/platform'
 import { cn } from '@/lib/utils'
 import {
   Tooltip,
@@ -86,6 +87,7 @@ export function AudioProgressBar({
   const [hoverTime, setHoverTime] = useState(0)
   const [pointerAnchor, setPointerAnchor] = useState<PointerAnchor | null>(null)
   const [showLoadingIndicator, setShowLoadingIndicator] = useState(false)
+  const hoverPreviewEnabled = !isAndroid(navigator.userAgent)
 
   const isLoading = showInitialLoading || isSeeking
 
@@ -97,7 +99,7 @@ export function AudioProgressBar({
     return () => window.clearTimeout(timeout)
   }, [isLoading])
 
-  const tooltipOpen = pointerAnchor !== null && isHovering && !isDragging && duration > 0
+  const tooltipOpen = hoverPreviewEnabled && pointerAnchor !== null && isHovering && !isDragging && duration > 0
   const virtualAnchor = useMemo(
     () => (pointerAnchor ? createVirtualAnchor(pointerAnchor) : undefined),
     [pointerAnchor],
@@ -129,7 +131,7 @@ export function AudioProgressBar({
   const handlePointerSeekEnd = (e: React.PointerEvent<HTMLInputElement>) => {
     setIsDragging(false)
     const rect = containerRef.current?.getBoundingClientRect()
-    if (rect && duration > 0 && isInsideHoverZone(e.clientX, e.clientY, rect)) {
+    if (hoverPreviewEnabled && e.pointerType !== 'touch' && rect && duration > 0 && isInsideHoverZone(e.clientX, e.clientY, rect)) {
       const next = updateHoverFromPointer(e, rect, duration)
       setHoverTime(next.hoverTime)
       setPointerAnchor(next.pointerAnchor)
@@ -139,6 +141,11 @@ export function AudioProgressBar({
   }
 
   const handlePointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!hoverPreviewEnabled) return
+    if (e.pointerType === 'touch') {
+      hideTooltip()
+      return
+    }
     const rect = e.currentTarget.getBoundingClientRect()
     if (rect.width <= 0 || duration <= 0 || isDragging) return
     const next = updateHoverFromPointer(e, rect, duration)
@@ -153,6 +160,10 @@ export function AudioProgressBar({
     const handleDocumentPointerMove = (e: PointerEvent) => {
       const rect = containerRef.current?.getBoundingClientRect()
       if (!rect) return
+      if (e.pointerType === 'touch') {
+        hideTooltip()
+        return
+      }
 
       if (!isInsideHoverZone(e.clientX, e.clientY, rect)) {
         hideTooltip()
@@ -177,7 +188,7 @@ export function AudioProgressBar({
         onOpenChange={() => {
           // Open/close is controlled via pointer zone tracking above.
         }}
-        disabled={duration <= 0}
+        disabled={!hoverPreviewEnabled || duration <= 0}
       >
         <TooltipTrigger
           render={(triggerProps) => {
@@ -190,6 +201,7 @@ export function AudioProgressBar({
             return (
               <div
                 {...rest}
+                data-slot="audio-progress"
                 ref={(node) => {
                   containerRef.current = node
                   if (typeof ref === 'function') ref(node)

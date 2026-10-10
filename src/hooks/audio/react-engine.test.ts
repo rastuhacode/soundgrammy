@@ -8,6 +8,7 @@ import { useListenStatsStore } from '@/stores/listen-stats-store'
 import { useLastFmStore } from '@/stores/lastfm-store'
 import { useRepeatStore } from '@/stores/repeat-store'
 import type { Track } from '@/types'
+import type { PlayerCommandPort } from '@/types/playback'
 import { AudioEngineProvider } from './engine-factory'
 import { useAudioEngine } from './use-audio-engine'
 import { createFakeAudioEngine } from './fake-engine'
@@ -26,6 +27,8 @@ vi.mock('@/lib/api', () => ({
   onNativeAudioState: vi.fn(async () => () => {}),
   onNativeAudioEvent: vi.fn(async () => () => {}),
 }))
+const playerCommands: PlayerCommandPort = { command: async () => undefined, snapshot: async () => undefined }
+
 const track = (id: number): Track => ({ id, duration: 120, title: 'Track', performer: null,
   tg_user_id: 1, file_id: '', file_unique_id: '', source: 'saved_music',
   mime_type: 'audio/mpeg', file_size: 100, created_at: '' })
@@ -60,10 +63,26 @@ afterEach(async () => {
 })
 
 describe('React engine composition', () => {
+  it('uses full native gain on Android despite the old stored desktop default', async () => {
+    vi.spyOn(window.navigator, 'userAgent', 'get').mockReturnValue('Mozilla/5.0 (Linux; Android 16)')
+    localStorage.setItem('soundgrammy-volume', '25')
+    const fake = createFakeAudioEngine()
+    await act(async () => {
+      root.render(createElement(AudioEngineProvider, { factory: () => ({ engine: fake.engine, playerCommands }) }, createElement(Probe)))
+    })
+    expect(model.volume).toBe(100)
+    expect(fake.engine.getSnapshot().volumePercent).toBe(100)
+    await act(async () => {
+      model.handleVolumeChange(40)
+    })
+    expect(localStorage.getItem('soundgrammy-volume-android')).toBe('40')
+    expect(localStorage.getItem('soundgrammy-volume')).toBe('25')
+  })
+
   it('drives the complete facade with a fake and no audio element, including persisted mute restore', async () => {
     localStorage.setItem('soundgrammy-volume', '37')
     const fake = createFakeAudioEngine()
-    const factory = () => ({ engine: fake.engine })
+    const factory = () => ({ engine: fake.engine, playerCommands })
     await act(async () => {
       root.render(createElement(AudioEngineProvider, { factory }, createElement(Probe)))
     })
@@ -94,7 +113,7 @@ describe('React engine composition', () => {
     const factory = () => {
       const fake = createFakeAudioEngine()
       instances.push(fake)
-      return { engine: fake.engine }
+      return { engine: fake.engine, playerCommands }
     }
     await act(async () => {
       root.render(createElement(StrictMode, null,
@@ -123,7 +142,7 @@ describe('React engine composition', () => {
     useLastFmStore.setState({ status: { state: 'connected', username: 'test', enabled: true,
       pendingCount: 0, retainedQueues: [], lastScrobbleAtMs: null, lastError: null, lastMetadataWarning: null } })
     const fake = createFakeAudioEngine()
-    const factory = () => ({ engine: fake.engine })
+    const factory = () => ({ engine: fake.engine, playerCommands })
     await act(async () => {
       root.render(createElement(AudioEngineProvider, { factory }, createElement(Probe)))
     })
@@ -155,8 +174,8 @@ describe('React engine composition', () => {
     vi.spyOn(first.engine, 'destroy').mockImplementation(() => new Promise<void>((resolve) => {
       finishDestroy = resolve
     }))
-    const factory = () => ({ engine: first.engine })
-    const replacement = vi.fn(() => ({ engine: createFakeAudioEngine().engine }))
+    const factory = () => ({ engine: first.engine, playerCommands })
+    const replacement = vi.fn(() => ({ engine: createFakeAudioEngine().engine, playerCommands }))
     await act(async () => {
       root.render(createElement(AudioEngineProvider, { factory }, createElement(Probe)))
     })

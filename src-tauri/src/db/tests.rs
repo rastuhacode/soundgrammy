@@ -329,3 +329,58 @@ fn schema_backfills_only_structured_telegram_audio_titles() -> AppResult<()> {
     assert_eq!(source(3)?, "filename");
     Ok(())
 }
+
+#[test]
+fn create_with_tracks_rolls_back_and_preserves_duplicate_memberships() -> AppResult<()> {
+    let db = test_db()?;
+    db.conn.lock().unwrap().execute(
+        "INSERT INTO tracks (id, tg_user_id, file_id, file_unique_id, source) VALUES (7, 42, 'f', 'u', 'mtproto')", [],
+    )?;
+    assert!(db
+        .create_playlist_with_tracks(42, "Failed", &[7, 999])
+        .is_err());
+    assert!(db.playlists_bundle(42)?.custom.is_empty());
+    let created = db.create_playlist_with_tracks(42, "Saved queue", &[7, 7])?;
+    assert_eq!(created.track_ids, vec![7, 7]);
+    assert!(db
+        .create_playlist_with_tracks(43, "Wrong account", &[7])
+        .is_err());
+    Ok(())
+}
+
+#[test]
+fn bulk_removal_rejects_stale_positions_and_rolls_back_invalid_sets() -> AppResult<()> {
+    let db = test_db()?;
+    db.conn.lock().unwrap().execute(
+        "INSERT INTO tracks (id, tg_user_id, file_id, file_unique_id, source) VALUES (7, 42, 'f', 'u', 'mtproto')", [],
+    )?;
+    let created = db.create_playlist_with_tracks(42, "Queue", &[7, 7, 7])?;
+    assert!(db
+        .remove_playlist_tracks(created.id, &[0], &[7, 7], 42)
+        .is_err());
+    assert!(db
+        .remove_playlist_tracks(created.id, &[0, 99], &[7, 7, 7], 42)
+        .is_err());
+    assert_eq!(db.playlists_bundle(42)?.custom[0].track_ids, vec![7, 7, 7]);
+    db.remove_playlist_tracks(created.id, &[0, 2], &[7, 7, 7], 42)?;
+    assert_eq!(db.playlists_bundle(42)?.custom[0].track_ids, vec![7]);
+    Ok(())
+}
+
+#[test]
+fn bulk_removal_uses_the_same_membership_order_as_the_bundle() -> AppResult<()> {
+    let db = test_db()?;
+    db.conn.lock().unwrap().execute_batch(
+        "INSERT INTO tracks (id, tg_user_id, file_id, file_unique_id, source) VALUES
+         (7, 42, 'f7', 'u7', 'mtproto'), (8, 42, 'f8', 'u8', 'mtproto');",
+    )?;
+    let created = db.create_playlist_with_tracks(42, "Tied positions", &[7, 8])?;
+    db.conn.lock().unwrap().execute(
+        "UPDATE playlist_tracks SET position = 0, added_at = CASE track_id WHEN 7 THEN '2026-02-01' ELSE '2026-01-01' END WHERE playlist_id = ?1",
+        [created.id],
+    )?;
+    assert_eq!(db.playlists_bundle(42)?.custom[0].track_ids, vec![8, 7]);
+    db.remove_playlist_tracks(created.id, &[0], &[8, 7], 42)?;
+    assert_eq!(db.playlists_bundle(42)?.custom[0].track_ids, vec![7]);
+    Ok(())
+}

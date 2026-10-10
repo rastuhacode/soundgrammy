@@ -11,7 +11,7 @@ import {
   FieldLabel,
   FieldSet,
 } from '@/components/ui/fieldset'
-import { api } from '@/lib/api'
+import { captureSession, isSessionCurrent } from '@/stores/session-store'
 import { useListenStatsStore } from '@/stores/listen-stats-store'
 
 const listeningStatisticsSchema = z.object({
@@ -21,7 +21,7 @@ const listeningStatisticsSchema = z.object({
 export function ListeningStatisticsForm() {
   const id = useId()
   const statisticsEnabled = useListenStatsStore(state => state.enabled)
-  const setStatisticsEnabled = useListenStatsStore(state => state.setEnabled)
+  const refreshEnabled = useListenStatsStore(state => state.refreshEnabled)
   const [loaded, setLoaded] = useState(false)
   const [busy, setBusy] = useState(false)
   const [confirmClear, setConfirmClear] = useState(false)
@@ -35,28 +35,28 @@ export function ListeningStatisticsForm() {
       onSubmit: listeningStatisticsSchema,
     },
     onSubmit: async ({ value }) => {
+      const generation = captureSession()
       setBusy(true)
       setError(null)
       try {
-        await api.setListenStatisticsEnabled(value.enabled)
-        setStatisticsEnabled(value.enabled)
+        await useListenStatsStore.getState().saveEnabled(value.enabled)
       }
       catch (err) {
+        if (!isSessionCurrent(generation)) return
         form.reset({ enabled: useListenStatsStore.getState().enabled })
         setError(errorMessage(err))
       }
       finally {
-        setBusy(false)
+        if (isSessionCurrent(generation)) setBusy(false)
       }
     },
   })
 
   useEffect(() => {
     let cancelled = false
-    api.getListenStatisticsEnabled()
+    refreshEnabled()
       .then((enabled) => {
         if (cancelled) return
-        setStatisticsEnabled(enabled)
         form.reset({ enabled })
         setError(null)
       })
@@ -69,21 +69,23 @@ export function ListeningStatisticsForm() {
     return () => {
       cancelled = true
     }
-  }, [form, setStatisticsEnabled])
+  }, [form, refreshEnabled])
 
   const handleClear = async () => {
+    const generation = captureSession()
     setBusy(true)
     setError(null)
     try {
-      await api.clearListenStatistics()
-      useListenStatsStore.getState().clear()
+      await useListenStatsStore.getState().clearHistory()
+      if (!isSessionCurrent(generation)) return
       setConfirmClear(false)
     }
     catch (err) {
+      if (!isSessionCurrent(generation)) return
       setError(errorMessage(err))
     }
     finally {
-      setBusy(false)
+      if (isSessionCurrent(generation)) setBusy(false)
     }
   }
 

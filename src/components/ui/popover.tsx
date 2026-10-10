@@ -2,13 +2,15 @@ import * as React from 'react'
 import { Popover as PopoverPrimitive } from '@base-ui/react/popover'
 
 import { cn } from '@/lib/utils'
+import { useAndroidBackOverlay } from '@/hooks/use-android-back'
 
 export type PopoverClasses = {
   positioner?: string
 }
 
-function Popover({ ...props }: PopoverPrimitive.Root.Props) {
-  return <PopoverPrimitive.Root data-slot="popover" {...props} />
+function Popover(props: PopoverPrimitive.Root.Props) {
+  const back = useAndroidBackOverlay<PopoverPrimitive.Root.Actions, PopoverPrimitive.Root.ChangeEventDetails>(props)
+  return <PopoverPrimitive.Root data-slot="popover" {...props} {...back} />
 }
 
 function PopoverTrigger({ ...props }: PopoverPrimitive.Trigger.Props) {

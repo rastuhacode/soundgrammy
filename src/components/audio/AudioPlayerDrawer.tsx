@@ -20,13 +20,13 @@ interface AudioPlayerDrawerProps extends Omit<AudioPlayerBarProps, 'onOpenDrawer
 }
 
 export function AudioPlayerDrawer(props: AudioPlayerDrawerProps) {
-  const { url, failed } = useCachedThumbnail(props.track.id, { quality: 'high' })
+  const { url, failed, onError } = useCachedThumbnail(props.track.id, { quality: 'high' })
   const queueSource = usePlayerStore(state => state.queue.source?.name)
 
   return (
     <Drawer open={props.open} onOpenChange={props.onOpenChange}>
       <DrawerContent
-        className="overflow-hidden rounded-none border-none p-0"
+        className="audio-player-drawer overflow-hidden rounded-none border-none p-0"
         style={{
           '--drawer-inset': '0px',
           '--drawer-height': '100dvh',
@@ -34,7 +34,7 @@ export function AudioPlayerDrawer(props: AudioPlayerDrawerProps) {
         } as React.CSSProperties}
       >
         <div className="flex min-h-0 grow flex-col">
-          <header className="flex shrink-0 items-center justify-between gap-3 px-5 pt-3">
+          <header className="android-overlay-inset flex shrink-0 items-center justify-between gap-3 px-5 pt-3">
             <Button
               onClick={() => props.onOpenChange(false)}
               variant="ghost"
@@ -72,13 +72,14 @@ export function AudioPlayerDrawer(props: AudioPlayerDrawerProps) {
                     <img
                       src={url}
                       alt={`${props.track.title ?? 'Unknown title'} artwork`}
+                      onError={onError}
                       className="size-full object-cover"
                     />
                   )}
             </div>
           </div>
 
-          <div className="shrink-0 px-6 pb-[max(1.25rem,env(safe-area-inset-bottom))]">
+          <div className="audio-player-drawer-footer mx-auto w-full shrink-0 px-[clamp(1rem,4vw,2rem)] pb-[max(1.25rem,env(safe-area-inset-bottom))]">
             <div className="flex min-w-0 items-center justify-between gap-3">
               <div className="min-w-0">
                 <h2 className="truncate text-xl font-semibold text-foreground">
@@ -107,7 +108,7 @@ export function AudioPlayerDrawer(props: AudioPlayerDrawerProps) {
               <span>{formatTime(props.duration)}</span>
             </div>
 
-            <div className="flex justify-center">
+            <div className="mt-3 flex justify-center">
               <AudioMainOperations />
             </div>
           </div>

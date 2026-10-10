@@ -1,3 +1,4 @@
+import type { TrackMenuHandlers } from './TrackMenuContent'
 import {
   closestCenter,
   DndContext,
@@ -16,7 +17,6 @@ import {
 } from '@dnd-kit/sortable'
 import {
   columnSizingFeature,
-  createSortedRowModel,
   flexRender,
   rowSelectionFeature,
   rowSortingFeature,
@@ -29,30 +29,34 @@ import {
 } from '@tanstack/react-table'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef } from 'react'
+import { useTouchScreen } from '@/hooks/use-touch-screen'
+import { useCompactDisplay } from '@/hooks/use-compact-display'
 import type { Track } from '@/lib/db'
+import type { PlaylistEntry } from '@/lib/playlists'
 import type { ResolvedSelectedPlaylist } from '@/stores/playlists-store'
 import { cn } from '@/lib/utils'
 import { Checkbox } from '@/components/ui/checkbox'
+import { ScrollArea } from '@/components/ui/scroll-area'
 import { PlaylistTrackContextMenu } from './PlaylistTrackContextMenu'
+import { PlaylistTrackDropdownMenu } from './PlaylistTrackDropdownMenu'
 import {
   TRACK_GRID_CLASS,
   TRACK_GRID_CLASS_SELECT,
   TRACK_ROW_STRIDE,
+  COMPACT_TRACK_ROW_STRIDE,
   PlaylistTrackRow,
 } from './PlaylistTrackRow'
 import {
-  compareTracks,
   getTrackSortableIds,
   reorderByIndex,
   type CustomPlaylistRef,
-} from './track-actions'
+} from '@/lib/playlist-track-actions'
 
 const playlistTableFeatures = tableFeatures({
   columnSizingFeature,
   rowSelectionFeature,
   rowSortingFeature,
-  sortedRowModel: createSortedRowModel(),
 })
 
 const restrictToVerticalAxis: Modifier = ({ transform }) => ({
@@ -61,8 +65,8 @@ const restrictToVerticalAxis: Modifier = ({ transform }) => ({
 })
 
 export interface PlaylistTracksTableProps {
-  tracks: Track[]
-  sourceIndices: number[]
+  hideHeader?: boolean
+  entries: PlaylistEntry[]
   currentPlaylist: ResolvedSelectedPlaylist
   customPlaylists: CustomPlaylistRef[]
   /** Membership index of the now-playing row; null when nothing should highlight. */
@@ -72,6 +76,7 @@ export interface PlaylistTracksTableProps {
   selectionMode: boolean
   rowSelection: RowSelectionState
   onRowSelectionChange: OnChangeFn<RowSelectionState>
+  onTrackSelect: (sourceIndex: number, selected: boolean, extend: boolean) => void
   sorting: SortingState
   onSortingChange: OnChangeFn<SortingState>
   canReorder: boolean
@@ -81,15 +86,7 @@ export interface PlaylistTracksTableProps {
   ) => void
   onEnterSelection: (sourceIndex: number) => void
   onTrackPlay: (track: Track, startIndex: number) => void
-  onToggleLike: (trackId: number) => void
-  onAddToPlaylist: (playlistId: number, trackId: number) => void
-  onDeleteFromPlaylist: (playlistId: number, position: number) => void
-  onPlayNext: (track: Track) => void
-  onAddToEnd: (track: Track) => void
-  onCache: (track: Track) => void
-  onDownload: (track: Track) => void
-  onRemoveFromCache: (track: Track) => void
-  onShowInfo: (track: Track) => void
+  trackActions: TrackMenuHandlers
 }
 
 function SortIcon({ sorted }: { sorted: false | 'asc' | 'desc' }) {
@@ -99,8 +96,8 @@ function SortIcon({ sorted }: { sorted: false | 'asc' | 'desc' }) {
 }
 
 export function PlaylistTracksTable({
-  tracks,
-  sourceIndices,
+  hideHeader = false,
+  entries,
   currentPlaylist,
   customPlaylists,
   playingSourceIndex,
@@ -109,37 +106,20 @@ export function PlaylistTracksTable({
   selectionMode,
   rowSelection,
   onRowSelectionChange,
+  onTrackSelect,
   sorting,
   onSortingChange,
   canReorder,
   onReorderTracks,
   onEnterSelection,
   onTrackPlay,
-  onToggleLike,
-  onAddToPlaylist,
-  onDeleteFromPlaylist,
-  onPlayNext,
-  onAddToEnd,
-  onCache,
-  onDownload,
-  onRemoveFromCache,
-  onShowInfo,
+  trackActions,
 }: PlaylistTracksTableProps) {
+  const tracks = useMemo(() => entries.map(entry => entry.track), [entries])
   const scrollRef = useRef<HTMLDivElement>(null)
-  const [scrollbarWidth, setScrollbarWidth] = useState(0)
-
-  useEffect(() => {
-    const scrollElement = scrollRef.current
-    if (!scrollElement) return
-
-    const updateScrollbarWidth = () => {
-      setScrollbarWidth(scrollElement.offsetWidth - scrollElement.clientWidth)
-    }
-    const observer = new ResizeObserver(updateScrollbarWidth)
-    observer.observe(scrollElement)
-    updateScrollbarWidth()
-    return () => observer.disconnect()
-  }, [])
+  const touchScreen = useTouchScreen()
+  const { isCompact } = useCompactDisplay()
+  const rowStride = isCompact ? COMPACT_TRACK_ROW_STRIDE : TRACK_ROW_STRIDE
 
   const columns = useMemo<ColumnDef<typeof playlistTableFeatures, Track>[]>(() => {
     const defs: ColumnDef<typeof playlistTableFeatures, Track>[] = []
@@ -162,37 +142,31 @@ export function PlaylistTracksTable({
         size: 36,
       })
     }
+    else if (touchScreen && canReorder) {
+      defs.push({
+        id: 'drag',
+        header: () => <span className="sr-only">Reorder tracks</span>,
+        cell: () => null,
+        enableSorting: false,
+        size: 36,
+      })
+    }
 
     defs.push(
       {
         accessorKey: 'title',
         header: 'Title',
         cell: () => null,
-        sortFn: (rowA, rowB) =>
-          compareTracks(rowA.original, rowB.original, {
-            id: 'title',
-            desc: false,
-          }),
       },
       {
         accessorKey: 'performer',
         header: 'Artist',
         cell: () => null,
-        sortFn: (rowA, rowB) =>
-          compareTracks(rowA.original, rowB.original, {
-            id: 'performer',
-            desc: false,
-          }),
       },
       {
         accessorKey: 'duration',
         header: 'Time',
         cell: () => null,
-        sortFn: (rowA, rowB) =>
-          compareTracks(rowA.original, rowB.original, {
-            id: 'duration',
-            desc: false,
-          }),
       },
       {
         id: 'actions',
@@ -203,7 +177,7 @@ export function PlaylistTracksTable({
     )
 
     return defs
-  }, [selectionMode])
+  }, [selectionMode, touchScreen, canReorder])
 
   const table = useTable({
     features: playlistTableFeatures,
@@ -213,7 +187,8 @@ export function PlaylistTracksTable({
       sorting,
       rowSelection,
     },
-    getRowId: (_row, index) => String(sourceIndices[index] ?? index),
+    getRowId: (_row, index) => String(entries[index]!.sourceIndex),
+    manualSorting: true,
     enableRowSelection: selectionMode,
     onSortingChange,
     onRowSelectionChange,
@@ -244,11 +219,15 @@ export function PlaylistTracksTable({
     count: rows.length,
     getScrollElement: () => scrollRef.current,
     // Stride includes former gap so item height matches sortable strategy shifts.
-    estimateSize: () => TRACK_ROW_STRIDE,
+    estimateSize: () => rowStride,
     overscan: 8,
   })
 
-  const headerGridClass = selectionMode
+  useEffect(() => {
+    virtualizer.measure()
+  }, [rowStride, virtualizer])
+
+  const headerGridClass = selectionMode || (touchScreen && canReorder)
     ? TRACK_GRID_CLASS_SELECT
     : TRACK_GRID_CLASS
 
@@ -278,77 +257,83 @@ export function PlaylistTracksTable({
     <div
       role="table"
       aria-label={`${currentPlaylist.name} tracks`}
-      className="flex min-h-0 min-w-0 grow flex-col px-2 md:px-4"
+      className="flex min-h-0 min-w-0 grow flex-col px-2 md:px-4 pb-2 md:pb-4"
     >
-      <div
-        role="rowgroup"
-        className="mb-2 shrink-0 rounded-md bg-sidebar px-1"
-        style={{ marginRight: scrollbarWidth }}
-      >
+      {!hideHeader && (
         <div
-          role="row"
-          className={cn('grid h-9 items-center gap-2 px-2 text-[11px] font-medium tracking-wide text-muted-foreground uppercase md:gap-3 md:px-2.5', headerGridClass)}
+          role="rowgroup"
+          className="mb-2 shrink-0 rounded-md bg-sidebar px-1"
         >
-          {table.getHeaderGroups().map(headerGroup =>
-            headerGroup.headers.map((header) => {
-              const canSort = header.column.getCanSort()
-              const sorted = header.column.getIsSorted()
+          <div
+            role="row"
+            className={cn('grid h-12 md:h-9 items-center gap-2 px-2 text-[11px] font-medium tracking-wide text-muted-foreground uppercase md:gap-3 md:px-2.5', headerGridClass)}
+          >
+            {table.getHeaderGroups().map(headerGroup =>
+              headerGroup.headers.map((header) => {
+                const canSort = header.column.getCanSort()
+                const sorted = header.column.getIsSorted()
 
-              if (header.id === 'select') {
+                if (header.id === 'select' || header.id === 'drag') {
+                  return (
+                    <div
+                      key={header.id}
+                      role="columnheader"
+                      className="flex size-full items-center justify-center"
+                    >
+                      {flexRender(
+                        header.column.columnDef.header,
+                        header.getContext(),
+                      )}
+                    </div>
+                  )
+                }
+
                 return (
                   <div
                     key={header.id}
                     role="columnheader"
-                    className="flex size-full items-center justify-center"
-                  >
-                    {flexRender(
-                      header.column.columnDef.header,
-                      header.getContext(),
+                    className={cn(
+                      header.id === 'duration' && 'justify-self-end',
+                      header.id === 'performer' && 'hidden md:block',
                     )}
-                  </div>
-                )
-              }
-
-              return (
-                <div
-                  key={header.id}
-                  role="columnheader"
-                  className={cn(
-                    header.id === 'duration' && 'justify-self-end',
-                    header.id === 'performer' && 'hidden md:block',
-                  )}
-                >
-                  {canSort
-                    ? (
-                        <button
-                          type="button"
-                          className={cn(
-                            'inline-flex items-center gap-1 text-xs transition-colors hover:text-foreground',
-                            sorted && 'text-foreground',
-                          )}
-                          onClick={header.column.getToggleSortingHandler()}
-                        >
-                          {flexRender(
+                  >
+                    {canSort
+                      ? (
+                          <button
+                            type="button"
+                            className={cn(
+                              'inline-flex items-center gap-1 text-xs transition-colors hover:text-foreground',
+                              sorted && 'text-foreground',
+                            )}
+                            onClick={header.column.getToggleSortingHandler()}
+                          >
+                            {flexRender(
+                              header.column.columnDef.header,
+                              header.getContext(),
+                            )}
+                            <SortIcon sorted={sorted} />
+                          </button>
+                        )
+                      : (
+                          flexRender(
                             header.column.columnDef.header,
                             header.getContext(),
-                          )}
-                          <SortIcon sorted={sorted} />
-                        </button>
-                      )
-                    : (
-                        flexRender(
-                          header.column.columnDef.header,
-                          header.getContext(),
-                        )
-                      )}
-                </div>
-              )
-            }),
-          )}
+                          )
+                        )}
+                  </div>
+                )
+              }),
+            )}
+          </div>
         </div>
-      </div>
+      )}
 
-      <div ref={scrollRef} className="min-h-0 grow overflow-x-hidden overflow-y-auto pb-4">
+      <ScrollArea
+        className="min-h-0 grow"
+        viewportRef={scrollRef}
+
+        viewportStyle={{ overflowX: 'hidden' }}
+      >
         <DndContext
           sensors={sensors}
           collisionDetection={closestCenter}
@@ -373,26 +358,21 @@ export function PlaylistTracksTable({
                 const isSelected = row.getIsSelected()
                 const sortableId = rowSortableIds[row.index]
                 if (!sortableId) return null
+                const menuProps = {
+                  track,
+                  sourceIndex,
+                  isLiked: isTrackLiked(track.id),
+                  currentPlaylist,
+                  customPlaylists,
+                  onSelect: onEnterSelection,
+                  ...trackActions,
+                }
 
                 return (
                   <PlaylistTrackContextMenu
-                    disabled={selectionMode}
+                    disabled={selectionMode || touchScreen}
                     key={sortableId}
-                    track={track}
-                    sourceIndex={sourceIndex}
-                    isLiked={isTrackLiked(track.id)}
-                    currentPlaylist={currentPlaylist}
-                    customPlaylists={customPlaylists}
-                    onSelect={onEnterSelection}
-                    onToggleLike={onToggleLike}
-                    onAddToPlaylist={onAddToPlaylist}
-                    onDeleteFromPlaylist={onDeleteFromPlaylist}
-                    onPlayNext={onPlayNext}
-                    onAddToEnd={onAddToEnd}
-                    onCache={onCache}
-                    onDownload={onDownload}
-                    onRemoveFromCache={onRemoveFromCache}
-                    onShowInfo={onShowInfo}
+                    {...menuProps}
                   >
                     <PlaylistTrackRow
                       virtualStart={virtualRow.start}
@@ -402,16 +382,21 @@ export function PlaylistTracksTable({
                       isPlaying={isPlaying}
                       isSelected={isSelected}
                       selectionMode={selectionMode}
+                      touchScreen={touchScreen}
                       canReorder={canReorder}
-                      onRowClick={() => {
+                      onEnterSelection={() => onEnterSelection(sourceIndex)}
+                      touchOptions={touchScreen
+                        ? <PlaylistTrackDropdownMenu {...menuProps} />
+                        : undefined}
+                      onRowClick={(extend = false) => {
                         if (selectionMode) {
-                          row.toggleSelected(!isSelected)
+                          onTrackSelect(sourceIndex, !isSelected, extend)
                           return
                         }
                         onTrackPlay(track, sourceIndex)
                       }}
-                      onToggleSelected={(selected) => {
-                        row.toggleSelected(selected)
+                      onToggleSelected={(selected, extend = false) => {
+                        onTrackSelect(sourceIndex, selected, extend)
                       }}
                     />
                   </PlaylistTrackContextMenu>
@@ -420,7 +405,7 @@ export function PlaylistTracksTable({
             </div>
           </SortableContext>
         </DndContext>
-      </div>
+      </ScrollArea>
     </div>
   )
 }

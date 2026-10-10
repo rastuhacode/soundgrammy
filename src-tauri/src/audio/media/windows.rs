@@ -157,7 +157,7 @@ fn artwork_stream(bytes: &[u8]) -> windows::core::Result<RandomAccessStreamRefer
     let stream = InMemoryRandomAccessStream::new()?;
     let writer = DataWriter::CreateDataWriter(&stream.GetOutputStreamAt(0)?)?;
     writer.WriteBytes(bytes)?;
-    writer.StoreAsync()?.get()?;
+    writer.StoreAsync()?.join()?;
     writer.DetachStream()?;
     stream.Seek(0)?;
     RandomAccessStreamReference::CreateFromStream(&stream)

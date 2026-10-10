@@ -1,4 +1,4 @@
-import { Download, Ellipsis, HardDriveDownload, Heart, ListEnd, ListPlus, ListStart, ListX } from 'lucide-react'
+import { Download, Ellipsis, HardDriveDownload, Heart, ListEnd, ListPlus, ListStart, ListX, Plus } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -7,6 +7,7 @@ import {
   DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuPortal,
+  DropdownMenuSeparator,
   DropdownMenuSub,
   DropdownMenuSubContent,
   DropdownMenuSubTrigger,
@@ -18,7 +19,7 @@ import {
   getAvailableCustomPlaylists,
   getBulkActions,
   type CustomPlaylistRef,
-} from './track-actions'
+} from '@/lib/playlist-track-actions'
 
 export interface PlaylistBulkActionsProps {
   selectedTrackIds: number[]
@@ -29,6 +30,7 @@ export interface PlaylistBulkActionsProps {
   onAddToLiked: (trackIds: number[]) => void
   onRemoveFromLiked: (trackIds: number[]) => void
   onAddToPlaylist: (playlistId: number, trackIds: number[]) => void
+  onCreatePlaylist: (trackIds: number[]) => void
   onRemoveFromPlaylist: (playlistId: number, positions: number[]) => void
   onPlayNext: (trackIds: number[]) => void
   onAddToEnd: (trackIds: number[]) => void
@@ -45,6 +47,7 @@ export function PlaylistBulkActions({
   onAddToLiked,
   onRemoveFromLiked,
   onAddToPlaylist,
+  onCreatePlaylist,
   onRemoveFromPlaylist,
   onPlayNext,
   onAddToEnd,
@@ -114,26 +117,23 @@ export function PlaylistBulkActions({
                 Add to playlist
               </DropdownMenuSubTrigger>
               <DropdownMenuPortal>
-                <DropdownMenuSubContent sideOffset={8}>
-                  {availablePlaylists.length === 0
-                    ? (
-                        <DropdownMenuItem disabled>
-                          <ListPlus className="size-4" />
-                          No other playlists
-                        </DropdownMenuItem>
-                      )
-                    : (
-                        availablePlaylists.map(playlist => (
-                          <DropdownMenuItem
-                            key={playlist.id}
-                            onClick={() =>
-                              onAddToPlaylist(playlist.id, selectedTrackIds)}
-                          >
-                            <ListPlus className="size-4" />
-                            {playlist.name}
-                          </DropdownMenuItem>
-                        ))
-                      )}
+                <DropdownMenuSubContent sideOffset={8} className="max-w-[min(16rem,calc(100vw-2rem))]">
+                  <DropdownMenuItem onClick={() => onCreatePlaylist(selectedTrackIds)}>
+                    <Plus className="size-4" />
+                    Create playlist
+                  </DropdownMenuItem>
+                  {availablePlaylists.length > 0 && <DropdownMenuSeparator />}
+                  {availablePlaylists.map(playlist => (
+                    <DropdownMenuItem
+                      key={playlist.id}
+                      title={playlist.name}
+                      onClick={() =>
+                        onAddToPlaylist(playlist.id, selectedTrackIds)}
+                    >
+                      <ListPlus className="size-4" />
+                      <span className="min-w-0 truncate">{playlist.name}</span>
+                    </DropdownMenuItem>
+                  ))}
                 </DropdownMenuSubContent>
               </DropdownMenuPortal>
             </DropdownMenuSub>

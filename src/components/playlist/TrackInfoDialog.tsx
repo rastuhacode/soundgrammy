@@ -157,6 +157,7 @@ export function TrackInfoDialog({
                         <img
                           src={thumbnail.url}
                           alt=""
+                          onError={thumbnail.onError}
                           className="size-full object-cover"
                         />
                       )

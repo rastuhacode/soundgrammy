@@ -12,25 +12,21 @@ concurrency:
   group: ci-${{ github.event.pull_request.number }}
   cancel-in-progress: true
 
+env:
+  # Builds require credentials to be present, but CI never connects to Telegram.
+  TELEGRAM_API_ID: "1"
+  TELEGRAM_API_HASH: ci-placeholder
+
 jobs:
   checks:
     name: Test, lint, typecheck, and Rust quality
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
-    runs-on: ${{ matrix.os }}
-    env:
-      # Builds require credentials to be present, but CI never connects to Telegram.
-      TELEGRAM_API_ID: "1"
-      TELEGRAM_API_HASH: ci-placeholder
+    runs-on: ubuntu-latest
 
     steps:
       - name: Checkout
         uses: actions/checkout@v7
 
       - name: Install Tauri system dependencies
-        if: runner.os == 'Linux'
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -61,8 +57,8 @@ jobs:
       - name: Install frontend dependencies
         run: bun install --frozen-lockfile
 
-      - name: Lint
-        run: bun run lint
+      - name: Lint frontend
+        run: bun run lint:frontend
 
       - name: Typecheck
         run: bun run typecheck
@@ -73,18 +69,61 @@ jobs:
       - name: Lint Rust backend
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings
 
-      - name: Check Rust backend
-        run: cargo check --manifest-path src-tauri/Cargo.toml --locked
+      - name: Test frontend
+        run: bun run test:frontend
 
-      - name: Test
-        run: bun run test
+      - name: Test Rust backend
+        run: cargo test --manifest-path src-tauri/Cargo.toml --locked
+
+  desktop:
+    name: Build desktop (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Install Tauri system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libasound2-dev \
+            build-essential \
+            curl \
+            wget \
+            file \
+            libxdo-dev \
+            libssl-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "./src-tauri -> target"
+
+      - name: Install frontend dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Build desktop app
+        # Compile and link the app without release packaging or signing overhead.
+        run: bun run tauri build --debug --no-bundle --ci -- --locked
 
   android:
     name: Build Android arm64 APK
     runs-on: ubuntu-latest
-    env:
-      TELEGRAM_API_ID: "1"
-      TELEGRAM_API_HASH: ci-placeholder
 
     steps:
       - name: Checkout

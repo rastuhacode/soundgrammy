@@ -1,230 +1,46 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
-import { useMediaQuery } from '@mantine/hooks'
+import { Button } from '@/components/ui/button'
+import { useCallback, useEffect, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { MtprotoLogin } from '@/components/auth/MtprotoLogin'
 import { PlayerSidebar } from '@/components/PlayerSidebar'
+import { PlaylistJobResults } from '@/components/playlist/PlaylistJobResults'
 import { PlaylistView } from '@/components/playlist/PlaylistView'
 import { AudioPlayer } from '@/components/audio/AudioPlayer'
-import { api, onAuthRevoked, onSyncDone } from '@/lib/api'
-import { authUserToSession, type AuthUser } from '@/types'
+import { useAppSession } from '@/hooks/use-app-session'
+import { hydrateLibrary } from '@/lib/library-hydration'
 import { useLibraryStore } from '@/stores/library-store'
-import { usePlayerStore } from '@/stores/player-store'
-import {
-  ALL_TRACKS_PLAYLIST_ID,
-  type PlaylistId,
-  usePlaylistsStore,
-} from '@/stores/playlists-store'
-import { useListenStatsStore } from '@/stores/listen-stats-store'
-import { useSessionStore } from '@/stores/session-store'
-import { useFullscreenStore } from '@/stores/fullscreen-store'
-import {
-  startCacheStatusListener,
-  startDownloadProgressListener,
-  useCacheStore,
-} from '@/stores/cache-store'
-import { startPlaylistJobsListeners } from '@/stores/playlist-jobs-store'
-import { useConnectivityStore } from '@/stores/connectivity-store'
-import { useTelegramReconnect } from '@/hooks/use-telegram-reconnect'
-import { useLastFmIntegration } from '@/hooks/use-lastfm-integration'
+import { isValidPlaylistId, type PlaylistId, usePlaylistsStore } from '@/stores/playlists-store'
+import { useAndroidBackAction } from '@/hooks/use-android-back'
+import { useCompactDisplay } from '@/hooks/use-compact-display'
 import {
   SplitterGroup,
   SplitterPanel,
   SplitterResizeHandle,
 } from '@/components/ui/splitter'
 
-type AppStatus = 'loading' | 'login' | 'ready'
-
-/** Refreshes the library + playlists from the backend into the stores. */
-async function loadLibrary(firstLoad: boolean) {
-  const [library, playlists, listenStatsEnabled, listenStats] = await Promise.all([
-    api.listTracks(),
-    api.listPlaylists(),
-    api.getListenStatisticsEnabled(),
-    api.listListenStats(),
-  ])
-
-  useLibraryStore.getState().setLibrary(library)
-  usePlayerStore.getState().refreshQueueTracks(library)
-  useListenStatsStore.getState().hydrate(listenStatsEnabled, listenStats)
-  await useCacheStore.getState().hydrate()
-
-  if (firstLoad) {
-    usePlaylistsStore.getState().hydrate(playlists)
-  }
-  else {
-    usePlaylistsStore.getState().setData(playlists)
-  }
-}
-
 export default function App() {
-  const [status, setStatus] = useState<AppStatus>('loading')
-  const isCompact = useMediaQuery('(max-width: 47.999rem)', undefined, {
-    getInitialValueInEffect: false,
-  })
+  const { status, session, handleAuthenticated, resetToLogin } = useAppSession()
+  const libraryError = useLibraryStore(state => state.error)
+  const playlistsError = usePlaylistsStore(state => state.error)
+  const { isCompact } = useCompactDisplay()
   const [compactPlaylistOpen, setCompactPlaylistOpen] = useState(false)
-  const session = useSessionStore(state => state.session)
-  const setSession = useSessionStore(state => state.setSession)
-  const clearSession = useSessionStore(state => state.clearSession)
-  const syncStartedRef = useRef(false)
-
+  useAndroidBackAction(status === 'ready' && isCompact && compactPlaylistOpen, () => {
+    setCompactPlaylistOpen(false)
+  })
   useEffect(() => {
     if (status !== 'ready') return
     return usePlaylistsStore.subscribe((next, previous) => {
+      // A removed playlist's fallback selection should preserve the current mobile page.
+      if (!next.data || !isValidPlaylistId(next.data, previous.selectedPlaylistId)) return
       if (next.selectedPlaylistId !== previous.selectedPlaylistId) {
         setCompactPlaylistOpen(true)
       }
     })
   }, [status])
 
-  const resetToLogin = useCallback(() => {
-    useFullscreenStore.getState().exitFullscreen()
-    clearSession()
-    useLibraryStore.getState().setLibrary([])
-    useCacheStore.getState().clearAll()
-    usePlayerStore.getState().clearQueue()
-    usePlaylistsStore.setState({
-      data: null,
-      selectedPlaylistId: ALL_TRACKS_PLAYLIST_ID,
-    })
-    useConnectivityStore.getState().reset()
-    syncStartedRef.current = false
-    setCompactPlaylistOpen(false)
-    setStatus('login')
-  }, [clearSession])
-
-  const runSync = useCallback(async () => {
-    if (syncStartedRef.current) return
-    syncStartedRef.current = true
-    try {
-      const result = await api.syncSavedMusic()
-      useConnectivityStore.getState().setOnline()
-      if (result.changed) {
-        await loadLibrary(false)
-      }
-    }
-    catch {
-      // sync failures leave the cached library intact; allow reconnect to retry
-      useConnectivityStore.getState().setOffline()
-      syncStartedRef.current = false
-    }
-  }, [])
-
-  const onReconnectUser = useCallback(
-    (user: AuthUser) => {
-      setSession(authUserToSession(user))
-    },
-    [setSession],
-  )
-
-  const onReconnectConnected = useCallback(async () => {
-    syncStartedRef.current = false
-    await runSync()
-  }, [runSync])
-
-  useTelegramReconnect({
-    enabled: status === 'ready',
-    onUser: onReconnectUser,
-    onConnected: onReconnectConnected,
-  })
-  useLastFmIntegration(status === 'ready')
-
-  const bootstrap = useCallback(async () => {
-    try {
-      const authStatus = await api.authStatus()
-      if (!authStatus.authorized || !authStatus.user) {
-        setStatus('login')
-        return
-      }
-      setSession(authUserToSession(authStatus.user))
-      try {
-        await loadLibrary(true)
-      }
-      catch {
-        // Local auth is enough to enter the app; empty library is fine offline.
-      }
-      useConnectivityStore.getState().setConnecting()
-      setStatus('ready')
-      // Reconnect loop (useTelegramReconnect) takes over refresh + sync.
-    }
-    catch {
-      // Local auth_status should not fail often; treat as logged out.
-      setStatus('login')
-    }
-  }, [setSession])
-
-  useEffect(() => {
-    // Bootstrap synchronizes React state with persisted backend auth/library state.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    bootstrap()
-  }, [bootstrap])
-
-  // Server-proven session death (after reconnect) → login without needing remote logout.
-  useEffect(() => {
-    const promise = onAuthRevoked(() => {
-      resetToLogin()
-    })
-    return () => {
-      promise.then(unlisten => unlisten())
-    }
-  }, [resetToLogin])
-
-  // Reload the library whenever the backend reports a completed sync.
-  useEffect(() => {
-    if (status !== 'ready') return
-    const promise = onSyncDone(() => {
-      loadLibrary(false)
-    })
-    return () => {
-      promise.then(unlisten => unlisten())
-    }
-  }, [status])
-
-  // Keep thumbnail cache borders in sync with backend cache:changed events.
-  useEffect(() => {
-    if (status !== 'ready') return
-    const promise = startCacheStatusListener()
-    return () => {
-      promise.then(unlisten => unlisten())
-    }
-  }, [status])
-
-  // Drive thumbnail download progress from download:progress events.
-  useEffect(() => {
-    if (status !== 'ready') return
-    const promise = startDownloadProgressListener()
-    return () => {
-      promise.then(unlisten => unlisten())
-    }
-  }, [status])
-
-  // Playlist download/cache job progress (survives playlist view remounts).
-  useEffect(() => {
-    if (status !== 'ready') return
-    const promise = startPlaylistJobsListeners()
-    return () => {
-      promise.then(unlisten => unlisten())
-    }
-  }, [status])
-
-  const handleAuthenticated = useCallback(
-    async (user: AuthUser) => {
-      setSession(authUserToSession(user))
-      syncStartedRef.current = false
-      useConnectivityStore.getState().setOnline()
-      try {
-        await loadLibrary(true)
-      }
-      catch {
-        // ignore; sync will populate
-      }
-      setStatus('ready')
-      runSync()
-    },
-    [setSession, runSync],
-  )
-
-  const handleLogout = useCallback(async () => {
+  const handleLogout = useCallback(() => {
     resetToLogin()
+    setCompactPlaylistOpen(false)
   }, [resetToLogin])
 
   const handleSelectPlaylist = useCallback((id: PlaylistId) => {
@@ -287,6 +103,13 @@ export default function App() {
                 : null}
             </div>
           )}
+      {(libraryError || playlistsError) && (
+        <div role="alert" className="flex items-center gap-3 px-4 py-2 text-sm text-destructive">
+          <span>{libraryError || playlistsError}</span>
+          <Button variant="ghost" size="sm" onClick={() => void hydrateLibrary()}>Retry loading library</Button>
+        </div>
+      )}
+      <PlaylistJobResults />
       <AudioPlayer />
     </div>
   )

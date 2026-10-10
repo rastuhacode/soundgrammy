@@ -3,7 +3,7 @@ import type { Track } from '@/lib/db'
 import {
   buildPlaylistEntries,
   shufflePlaylistEntries,
-} from '@/lib/shuffle'
+} from '@/test-support/legacy-shuffle'
 
 function track(id: number, title: string): Track {
   return {

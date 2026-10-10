@@ -94,7 +94,7 @@ impl Db {
     fn playlist_track_ids(conn: &Connection, playlist_id: i64) -> AppResult<Vec<i64>> {
         let mut stmt = conn.prepare(
             "SELECT track_id FROM playlist_tracks WHERE playlist_id = ?1 \
-             ORDER BY position ASC, added_at ASC",
+             ORDER BY position ASC, added_at ASC, id ASC",
         )?;
         let ids = stmt
             .query_map(params![playlist_id], |row| row.get::<_, i64>(0))?
@@ -139,22 +139,96 @@ impl Db {
     }
 
     pub fn create_playlist(&self, tg_user_id: i64, name: &str) -> AppResult<CustomPlaylistSummary> {
+        self.create_playlist_with_tracks(tg_user_id, name, &[])
+    }
+
+    /// Create the playlist and all memberships together, including duplicate tracks.
+    pub fn create_playlist_with_tracks(
+        &self,
+        tg_user_id: i64,
+        name: &str,
+        track_ids: &[i64],
+    ) -> AppResult<CustomPlaylistSummary> {
         let trimmed = name.trim();
-        if trimmed.is_empty() {
-            return Err(crate::error::AppError::msg("Playlist name is required"));
+        if trimmed.is_empty() || trimmed.chars().count() > 100 {
+            return Err(crate::error::AppError::msg(
+                "Playlist name must contain 1 to 100 characters",
+            ));
         }
-        let conn = self.conn.lock().unwrap();
-        conn.execute(
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+        tx.execute(
             "INSERT INTO playlists (tg_user_id, name, kind) VALUES (?1, ?2, 'custom')",
             params![tg_user_id, trimmed],
         )?;
-        let id = conn.last_insert_rowid();
-        Ok(CustomPlaylistSummary {
+        let id = tx.last_insert_rowid();
+        for (position, track_id) in track_ids.iter().enumerate() {
+            let owned: bool = tx.query_row(
+                "SELECT EXISTS(SELECT 1 FROM tracks WHERE id = ?1 AND tg_user_id = ?2)",
+                params![track_id, tg_user_id],
+                |row| row.get(0),
+            )?;
+            if !owned {
+                return Err(crate::error::AppError::msg("Track not found"));
+            }
+            tx.execute(
+                "INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (?1, ?2, ?3)",
+                params![id, track_id, position as i64],
+            )?;
+        }
+        let result = CustomPlaylistSummary {
             id,
             name: trimmed.to_string(),
-            track_ids: Vec::new(),
-            updated_at: Self::playlist_updated_at(&conn, id)?,
-        })
+            track_ids: track_ids.to_vec(),
+            updated_at: Self::playlist_updated_at(&tx, id)?,
+        };
+        tx.commit()?;
+        Ok(result)
+    }
+
+    /// Remove an explicit viewed set atomically; stale positions never target other rows.
+    pub fn remove_playlist_tracks(
+        &self,
+        playlist_id: i64,
+        positions: &[i64],
+        expected_track_ids: &[i64],
+        tg_user_id: i64,
+    ) -> AppResult<String> {
+        let mut conn = self.conn.lock().unwrap();
+        let tx = conn.transaction()?;
+        let kind: Option<String> = tx
+            .query_row(
+                "SELECT kind FROM playlists WHERE id = ?1 AND tg_user_id = ?2",
+                params![playlist_id, tg_user_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        if kind.as_deref() != Some("custom") {
+            return Err(crate::error::AppError::msg("Custom playlist not found"));
+        }
+        let current = Self::playlist_track_ids(&tx, playlist_id)?;
+        if current != expected_track_ids {
+            return Err(crate::error::AppError::msg(
+                "The playlist changed. Select its tracks again.",
+            ));
+        }
+        let mut entries = tx.prepare(
+            "SELECT id FROM playlist_tracks WHERE playlist_id = ?1 ORDER BY position ASC, added_at ASC, id ASC",
+        )?;
+        let entry_ids = entries
+            .query_map([playlist_id], |row| row.get::<_, i64>(0))?
+            .collect::<Result<Vec<_>, _>>()?;
+        drop(entries);
+        for position in positions {
+            let index = usize::try_from(*position).ok();
+            let entry_id = index
+                .and_then(|index| entry_ids.get(index))
+                .ok_or_else(|| crate::error::AppError::msg("Invalid playlist position"))?;
+            tx.execute("DELETE FROM playlist_tracks WHERE id = ?1", [entry_id])?;
+        }
+        let updated_at = Self::touch_playlist_updated_at(&tx, playlist_id)?;
+        tx.commit()?;
+        Ok(updated_at)
     }
 
     pub fn update_playlist(

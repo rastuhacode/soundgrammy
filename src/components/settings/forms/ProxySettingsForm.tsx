@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useId, useState } from 'react'
+import { useEffect, useId } from 'react'
 import { useForm } from '@tanstack/react-form'
 import { z } from 'zod'
-import { errorMessage, fieldErrors } from './settings-form'
+import { fieldErrors } from './settings-form'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import {
@@ -15,9 +15,10 @@ import {
 } from '@/components/ui/fieldset'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
-import { api } from '@/lib/api'
+import { useProxySettings, type ProxySettingsController } from '@/hooks/use-proxy-settings'
+import { useAsyncScope } from '@/hooks/use-async-scope'
 import { buildProxyLink } from '@/lib/proxy-link'
-import type { ProxySettings, ProxySettingsView } from '@/types'
+import type { ProxySettings } from '@/types'
 import { TauriLink } from '@/components/tauri/TauriLink'
 
 const proxySettingsSchema = z.object({
@@ -52,21 +53,20 @@ type ProxyFormValues = z.infer<typeof proxySettingsSchema>
 export interface ProxySettingsFormProps {
   /** Compact layout used on the login screen. */
   compact?: boolean
-  /** Called after a successful apply (reconnect). */
-  onApplied?: (view: ProxySettingsView) => void
+  /** Share the login shell controller so its indicator follows every status refresh. */
+  controller?: ProxySettingsController
 }
 
 export function ProxySettingsForm({
   compact = false,
-  onApplied,
+  controller,
 }: ProxySettingsFormProps) {
   const id = useId()
-  const [active, setActive] = useState(false)
-  const [applyError, setApplyError] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
-  const [busyLabel, setBusyLabel] = useState<string | null>(null)
-  const [loaded, setLoaded] = useState(false)
+  const ownedController = useProxySettings(!controller)
+  const { view, loaded, busy, busyLabel, error, apply, parseLink } = controller ?? ownedController
+  const active = view?.active ?? false
+  const applyError = view?.applyError ?? null
+  const { capture } = useAsyncScope()
 
   const form = useForm({
     defaultValues: {
@@ -84,7 +84,8 @@ export function ProxySettingsForm({
     },
   })
 
-  const applyView = useCallback((view: ProxySettingsView) => {
+  useEffect(() => {
+    if (!view) return
     form.reset({
       enabled: view.enabled,
       server: view.server,
@@ -92,85 +93,29 @@ export function ProxySettingsForm({
       secret: view.secret,
       pasteLink: view.link ?? '',
     })
-    setActive(view.active)
-    setApplyError(view.applyError)
-    setError(null)
-  }, [form])
-
-  useEffect(() => {
-    let cancelled = false
-    api.getProxySettings()
-      .then((view) => {
-        if (!cancelled) applyView(view)
-      })
-      .catch((err) => {
-        if (!cancelled) setError(errorMessage(err))
-      })
-      .finally(() => {
-        if (!cancelled) setLoaded(true)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [applyView])
+  }, [form, view])
 
   async function applyProxy(values: ProxyFormValues) {
     const payload: ProxySettings = {
       enabled: values.enabled,
       server: values.server.trim(),
-      port: Number.parseInt(values.port, 10),
+      port: Number(values.port),
       secret: values.secret.trim(),
     }
-
-    setBusy(true)
-    setBusyLabel(
-      payload.enabled
-        ? 'Connecting via MTProto proxy (up to ~20s)…'
-        : 'Reconnecting directly (up to ~20s)…',
-    )
-    setError(null)
-    try {
-      const view = await api.setProxySettings(payload)
-      applyView(view)
-      onApplied?.(view)
-    }
-    catch (err) {
-      setError(errorMessage(err))
-      try {
-        applyView(await api.getProxySettings())
-      }
-      catch {
-        // Ignore a secondary status refresh failure.
-      }
-    }
-    finally {
-      setBusy(false)
-      setBusyLabel(null)
-    }
+    await apply(payload)
   }
 
   const handleParsePaste = async () => {
     const raw = form.state.values.pasteLink.trim()
-    if (!raw) return
-    setBusy(true)
-    setError(null)
-    try {
-      const parsed = await api.parseProxyLink(raw)
-      form.setFieldValue('enabled', true)
-      form.setFieldValue('server', parsed.server)
-      form.setFieldValue('port', String(parsed.port))
-      form.setFieldValue('secret', parsed.secret)
-      form.setFieldValue(
-        'pasteLink',
-        buildProxyLink(parsed.server, parsed.port, parsed.secret) || raw,
-      )
-    }
-    catch (err) {
-      setError(errorMessage(err))
-    }
-    finally {
-      setBusy(false)
-    }
+    if (!raw || busy) return
+    const current = capture()
+    const parsed = await parseLink(raw)
+    if (!current() || !parsed) return
+    form.setFieldValue('enabled', true)
+    form.setFieldValue('server', parsed.server)
+    form.setFieldValue('port', String(parsed.port))
+    form.setFieldValue('secret', parsed.secret)
+    form.setFieldValue('pasteLink', buildProxyLink(parsed.server, parsed.port, parsed.secret) || raw)
   }
 
   const syncPasteFromFields = (values: {

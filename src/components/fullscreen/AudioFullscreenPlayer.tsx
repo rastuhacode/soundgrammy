@@ -38,7 +38,7 @@ interface AudioFullscreenPlayerProps {
 }
 
 export function AudioFullscreenPlayer(props: AudioFullscreenPlayerProps) {
-  const { url, failed } = useCachedThumbnail(props.track.id, { quality: 'high' })
+  const { url, failed, onError } = useCachedThumbnail(props.track.id, { quality: 'high' })
   const palette = useImagePalette(url)
   const exitFullscreen = useFullscreenStore(state => state.exitFullscreen)
   const syncFullscreen = useFullscreenStore(state => state.syncFullscreen)
@@ -167,6 +167,7 @@ export function AudioFullscreenPlayer(props: AudioFullscreenPlayerProps) {
                   <img
                     src={url}
                     alt={`${props.track.title ?? 'Unknown title'} artwork`}
+                    onError={onError}
                     className="size-full object-cover"
                   />
                 )}

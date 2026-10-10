@@ -2,8 +2,9 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/lib/api'
 import type { Track } from '@/types'
 import type { PlaybackSession } from '@/types/playback'
-import { takePendingListenEndReason } from '@/lib/listen-tracker'
-import { acceptPlayerResponse, applyPlaybackSession, sendPlayerCommand, usePlayerStore } from './player-store'
+import { acceptPlayerResponse, applyPlaybackSession, installPlayerCommands, sendPlayerCommand, usePlayerStore } from './player-store'
+import { useSessionStore } from './session-store'
+import { deferred } from '@/test-support/fixtures'
 import { useRepeatStore } from './repeat-store'
 import { useShuffleStore } from './shuffle-store'
 
@@ -16,6 +17,7 @@ function session(revision = 1, cursor = 0, attempt = 1): PlaybackSession {
 }
 beforeEach(() => {
   vi.clearAllMocks()
+  useSessionStore.getState().clearSession()
   vi.mocked(api.nativePlayerCommand).mockResolvedValue(undefined)
   vi.mocked(api.nativeAudioSnapshot).mockResolvedValue(undefined)
   usePlayerStore.setState({ nativeRevision: -1, commandError: null, currentTrack: null, isPlaying: false, listenAttemptEpoch: 0,
@@ -23,26 +25,57 @@ beforeEach(() => {
 })
 
 describe('native player mirror', () => {
+  it('clears all presentation state immediately when its account lifetime ends', () => {
+    applyPlaybackSession(session(5, 2))
+    usePlayerStore.setState({ commandError: 'Old failure' })
+    useSessionStore.getState().clearSession()
+    usePlayerStore.getState().reset()
+    expect(usePlayerStore.getState()).toMatchObject({ currentTrack: null, isPlaying: false,
+      nativeRevision: -1, commandError: null, queue: { tracks: [], cursor: -1 } })
+    expect(api.nativePlayerCommand).not.toHaveBeenCalled()
+  })
+  it('does not block new-account commands behind an old request or accept its response', async () => {
+    const old = deferred<unknown>()
+    vi.mocked(api.nativePlayerCommand).mockReturnValueOnce(old.promise).mockResolvedValueOnce({ player: session(2) })
+    const first = sendPlayerCommand({ type: 'next' }).catch(() => {})
+    await vi.waitFor(() => expect(api.nativePlayerCommand).toHaveBeenCalledTimes(1))
+    useSessionStore.getState().clearSession()
+    await sendPlayerCommand({ type: 'playTrack', track: track(2) })
+    old.resolve({ player: session(100, 2) })
+    await first
+    expect(usePlayerStore.getState().nativeRevision).toBe(2)
+  })
+  it('sends player actions to the injected command port without native IPC', async () => {
+    const command = vi.fn(async () => ({ player: session(1) }))
+    const restore = installPlayerCommands({ command, snapshot: async () => undefined })
+    try {
+      usePlayerStore.getState().playNext()
+      await sendPlayerCommand({ type: 'toggle' })
+      expect(command.mock.calls).toEqual([[{ type: 'next' }], [{ type: 'toggle' }]])
+      expect(api.nativePlayerCommand).not.toHaveBeenCalled()
+      expect(usePlayerStore.getState().currentTrack?.id).toBe(1)
+    }
+    finally { restore() }
+  })
   it('never changes queue or playing state before the native acknowledgement', async () => {
     let finish!: (value: unknown) => void
     vi.mocked(api.nativePlayerCommand).mockReturnValueOnce(new Promise((resolve) => {
       finish = resolve
     }))
     const pending = sendPlayerCommand({ type: 'playTrack', track: track(1) })
-    await Promise.resolve()
+    await vi.waitFor(() => expect(finish).toBeTypeOf('function'))
     expect(usePlayerStore.getState().currentTrack).toBeNull()
     finish({ player: session() })
     await pending
     expect(usePlayerStore.getState().currentTrack?.id).toBe(1)
     expect(usePlayerStore.getState().isPlaying).toBe(true)
   })
-  it('adopts native duplicate attempts, playback modes and completion reason', () => {
+  it('adopts native duplicate attempts, playback modes', () => {
     applyPlaybackSession(session())
     const next = { ...session(2, 1, 2), endReason: 'completed', preferences: { repeat: 'all' as const, shuffle: 'on' as const, mode: 'smart' as const } }
     applyPlaybackSession(next)
     expect(usePlayerStore.getState().queue.cursor).toBe(1)
     expect(usePlayerStore.getState().listenAttemptEpoch).toBe(2)
-    expect(takePendingListenEndReason('skipped')).toBe('completed')
     expect(useRepeatStore.getState().repeat).toBe('all')
     expect(useShuffleStore.getState().mode).toBe('smart')
   })
@@ -67,7 +100,7 @@ describe('native player mirror', () => {
     applyPlaybackSession(session(12))
     vi.mocked(api.nativePlayerCommand).mockRejectedValueOnce(new Error('Queue changed'))
     vi.mocked(api.nativeAudioSnapshot).mockResolvedValueOnce({ player: session(13, 1, 2) })
-    await sendPlayerCommand({ type: 'remove', indices: [0], queueRevision: usePlayerStore.getState().nativeRevision })
+    await expect(sendPlayerCommand({ type: 'remove', indices: [0], queueRevision: usePlayerStore.getState().nativeRevision })).rejects.toThrow('Queue changed')
     expect(api.nativePlayerCommand).toHaveBeenCalledExactlyOnceWith({ type: 'remove', indices: [0], queueRevision: 12 })
     expect(usePlayerStore.getState().queue.cursor).toBe(1)
     expect(usePlayerStore.getState().commandError).toBe('Queue changed')

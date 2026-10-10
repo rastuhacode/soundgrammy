@@ -1,45 +1,13 @@
-import { attachPlayer } from '@/stores/player-store'
-import { playbackSessionSchema } from '@/types/playback'
-import { z } from 'zod'
-import { api, onNativeAudioEvent, onNativeAudioState } from '@/lib/api'
+import { nativeAudioTransport } from '@/lib/native-playback'
+import type { AudioTransportPort } from '@/types/audio'
+import { nativeAudioSnapshotSchema, audioEndedEventSchema } from '@/types/audio'
 import { appLogger } from '@/lib/app-logger'
+import { contractIssues } from '@/lib/errors'
 import { useCacheStore } from '@/stores/cache-store'
 import type { AudioEngine, AudioEngineEvent, AudioEngineSnapshot, AudioTrackRequest } from './engine'
 
-const number = z.number().nonnegative()
-const snapshotSchema = z.object({
-  lastControl: z.string().nullable().optional(),
-  player: playbackSessionSchema.optional(),
-  revision: number.int(), kind: z.literal('native-rust'),
-  status: z.enum(['idle', 'loading', 'ready', 'playing', 'buffering', 'paused', 'ended', 'error']),
-  trackId: z.number().int().nullable(), attemptId: z.string().nullable(),
-  currentTimeSeconds: number, durationSeconds: number,
-  bufferedRanges: z.array(z.object({ start: number, end: number })),
-  volumePercent: number.max(100), initialLoading: z.boolean(), seeking: z.boolean().optional(),
-  error: z.object({
-    code: z.enum(['source-unavailable', 'unsupported-format', 'decode-failed', 'output-unavailable', 'interrupted', 'unknown']),
-    message: z.string(), recoverable: z.boolean(), diagnostic: z.string().optional(),
-  }).nullable(),
-})
-const endedSchema = z.object({ type: z.literal('ended'), revision: number.int(), trackId: z.number().int(), attemptId: z.string() })
-export interface NativeTransport {
-  state(listener: (value: unknown) => void): Promise<() => void>
-  event(listener: (value: unknown) => void): Promise<() => void>
-  snapshot(): Promise<unknown>
-  load(request: AudioTrackRequest): Promise<unknown>
-  unload(): Promise<unknown>
-  play(): Promise<unknown>
-  pause(): Promise<unknown>
-  seek(seconds: number, attemptId?: string): Promise<unknown>
-  volume(percent: number): Promise<unknown>
-}
-const defaultTransport: NativeTransport = {
-  state: onNativeAudioState, event: onNativeAudioEvent,
-  snapshot: attachPlayer, load: api.nativeAudioLoad,
-  unload: api.nativeAudioUnload,
-  play: () => api.nativePlayerCommand({ type: 'playing', playing: true }),
-  pause: () => api.nativePlayerCommand({ type: 'playing', playing: false }), seek: api.nativeAudioSeek, volume: api.nativeAudioSetVolume,
-}
+export type NativeTransport = AudioTransportPort
+
 export class NativeRustAudioEngine implements AudioEngine {
   readonly kind = 'native-rust'
   private snapshot: AudioEngineSnapshot = Object.freeze({
@@ -61,7 +29,7 @@ export class NativeRustAudioEngine implements AudioEngine {
   private scrubbing = false
   private pendingSeek: number | null = null
   private previewTarget: number | null = null
-  constructor(private transport: NativeTransport = defaultTransport) {
+  constructor(private transport: NativeTransport = nativeAudioTransport) {
     // Subscribe first; the fetched revision can never overwrite a newer event.
     this.queue = this.initialize()
     void this.queue.catch(() => {})
@@ -71,15 +39,30 @@ export class NativeRustAudioEngine implements AudioEngine {
 
   private async initialize() {
     try {
-      this.unlisten.push(await this.transport.state(value => this.accept(value)))
-      this.unlisten.push(await this.transport.event((value) => {
-        const parsed = endedSchema.safeParse(value)
-        if (!parsed.success || this.destroyed || this.ended || this.snapshot.status === 'error') return
+      const stateListener = await this.transport.state(value => this.accept(value))
+      if (this.destroyed) {
+        stateListener()
+        return
+      }
+      this.unlisten.push(stateListener)
+      const eventListener = await this.transport.event((value) => {
+        if (this.destroyed) return
+        const parsed = audioEndedEventSchema.safeParse(value)
+        if (!parsed.success) {
+          appLogger.error({ source: 'audio', title: 'Invalid native audio event', context: { issues: contractIssues(parsed.error.issues) } })
+          return
+        }
+        if (this.ended || this.snapshot.status === 'error') return
         const event = parsed.data
         if (event.trackId !== this.identity?.trackId || event.attemptId !== this.identity?.attemptId || (event.revision < this.remoteRevision && this.snapshot.status !== 'ended')) return
         this.ended = true
         this.emit({ ...event, revision: this.snapshot.revision })
-      }))
+      })
+      if (this.destroyed) {
+        eventListener()
+        return
+      }
+      this.unlisten.push(eventListener)
       this.accept(await this.transport.snapshot())
       if (!this.destroyed && typeof window !== 'undefined') {
         const resume = () => {
@@ -96,6 +79,12 @@ export class NativeRustAudioEngine implements AudioEngine {
     }
     catch (error) {
       this.unlisten.splice(0).forEach(fn => fn())
+      if (!this.destroyed) {
+        this.snapshot = Object.freeze({ ...this.snapshot, revision: this.snapshot.revision + 1,
+          status: 'error', error: { code: 'interrupted' as const, message: 'Could not attach to native playback. Restart SoundGrammy to reconnect.', recoverable: true },
+        })
+        this.emit({ type: 'state', snapshot: this.snapshot })
+      }
       throw error
     }
   }
@@ -110,8 +99,12 @@ export class NativeRustAudioEngine implements AudioEngine {
   }
 
   private accept(value: unknown) {
-    const parsed = snapshotSchema.safeParse(value)
-    if (!parsed.success || this.destroyed) return
+    if (this.destroyed) return
+    const parsed = nativeAudioSnapshotSchema.safeParse(value)
+    if (!parsed.success) {
+      appLogger.error({ source: 'audio', title: 'Invalid native audio snapshot', context: { issues: contractIssues(parsed.error.issues) } })
+      return
+    }
     const next = parsed.data
     const previous = this.snapshot
     // Queue and transport have independent revisions: a position tick may overtake
@@ -169,7 +162,8 @@ export class NativeRustAudioEngine implements AudioEngine {
     const epoch = this.epoch
     const run = this.queue.then(async () => {
       if (this.destroyed || epoch !== this.epoch || (attemptId !== undefined && attemptId !== this.identity?.attemptId)) return
-      this.accept(await operation())
+      const response = await operation()
+      if (response !== null) this.accept(response)
     })
     this.queue = run.catch((error: unknown) => {
       if (this.destroyed || epoch !== this.epoch || (attemptId !== undefined && attemptId !== this.identity?.attemptId)) return
@@ -274,7 +268,8 @@ export class NativeRustAudioEngine implements AudioEngine {
     this.listeners.clear()
     this.resumeCleanup?.()
     // A view only owns subscriptions. Detaching must never stop native playback.
-    await this.queue.catch(() => {})
+    // Pending registrations release themselves when they resolve. A slow command
+    // must not hold subscriptions or prevent a replacement view from attaching.
     this.unlisten.splice(0).forEach(fn => fn())
   }
 }

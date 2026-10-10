@@ -4,9 +4,11 @@ import { XIcon } from 'lucide-react'
 
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
+import { useAndroidBackOverlay } from '@/hooks/use-android-back'
 
-function Dialog({ ...props }: DialogPrimitive.Root.Props) {
-  return <DialogPrimitive.Root data-slot="dialog" {...props} />
+function Dialog(props: DialogPrimitive.Root.Props) {
+  const back = useAndroidBackOverlay<DialogPrimitive.Root.Actions, DialogPrimitive.Root.ChangeEventDetails>(props)
+  return <DialogPrimitive.Root data-slot="dialog" {...props} {...back} />
 }
 
 function DialogTrigger({ ...props }: DialogPrimitive.Trigger.Props) {
@@ -41,13 +43,15 @@ function DialogContent({
   className,
   children,
   showCloseButton = true,
+  overlayClassName,
   ...props
 }: DialogPrimitive.Popup.Props & {
   showCloseButton?: boolean
+  overlayClassName?: string
 }) {
   return (
     <DialogPortal>
-      <DialogOverlay />
+      <DialogOverlay className={overlayClassName} />
       <DialogPrimitive.Popup
         data-slot="dialog-content"
         className={cn(

@@ -128,6 +128,194 @@
   }
 }
 
+/* The Android WebView can report a zero CSS safe-area inset in edge-to-edge mode. */
+[data-platform="android"] .android-overlay-inset {
+  padding-top: max(3rem, calc(env(safe-area-inset-top, 0px) + 0.75rem));
+}
+
+/* Match the compact layout breakpoint, including narrow desktop windows. */
+@media (width < 48rem) {
+  :root {
+    --player-bottom-inset: env(safe-area-inset-bottom, 0px);
+    --track-row-height: 80px;
+    --track-row-stride: 88px;
+    --queue-row-height: 64px;
+    --queue-header-height: 48px;
+  }
+
+  /* Android's 48dp target guidance, expressed in WebView CSS pixels. */
+  button:not([data-slot="checkbox"]):not([data-slot="radio-group-item"]),
+  [role="button"],
+  [role="menuitem"],
+  [role="menuitemcheckbox"],
+  [role="menuitemradio"],
+  [role="tab"] {
+    min-width: 3rem;
+    min-height: 3rem;
+  }
+
+  button > svg {
+    width: 1.5rem;
+    height: 1.5rem;
+  }
+
+  input:not([type="checkbox"]):not([type="radio"]):not([type="hidden"]),
+  select,
+  textarea,
+  [data-slot="input-group"] {
+    min-height: 3rem;
+  }
+
+  [data-slot="input-group"] {
+    height: auto;
+  }
+
+  a[href] {
+    display: inline-flex;
+    min-width: 3rem;
+    min-height: 3rem;
+    align-items: center;
+  }
+
+  label[for],
+  label:has([data-slot="checkbox"], [data-slot="radio-group-item"]) {
+    min-height: 3rem;
+  }
+
+  /* Keep small choice indicators, with a non-overlapping 48px hit area. */
+  [data-slot="checkbox"],
+  [data-slot="radio-group-item"] {
+    width: 1.5rem;
+    height: 1.5rem;
+    margin: 0.75rem;
+  }
+
+  [data-slot="checkbox"]::after,
+  [data-slot="radio-group-item"]::after {
+    inset: -0.75rem;
+  }
+
+  [data-slot="tabs-list"] {
+    height: auto;
+    min-height: 3.375rem;
+    max-width: 100%;
+    flex-wrap: wrap;
+  }
+
+  [data-slot="input-otp-slot"] {
+    width: 3rem;
+    height: 3rem;
+  }
+
+  [data-slot="slider-control"] {
+    min-width: 3rem;
+    min-height: 3rem;
+  }
+
+  [data-slot="slider-thumb"]::after {
+    inset: -1.125rem;
+  }
+
+  [data-slot="dialog-content"],
+  [data-slot="alert-dialog-content"] {
+    max-height: calc(100dvh - 2rem);
+    overflow-y: auto;
+  }
+
+  [data-slot="dialog-header"] {
+    padding-right: 3rem;
+  }
+
+  .compact-playlist-actions {
+    flex: 0 0 auto;
+    min-width: 0;
+    flex-wrap: nowrap;
+    gap: 0.25rem;
+  }
+
+  [data-slot="dialog-content"].playlist-search-overlay {
+    max-height: 100dvh;
+    overflow: hidden;
+  }
+  .audio-player-bar {
+    height: 6rem;
+  }
+
+  [data-slot="audio-progress"] {
+    height: 3rem;
+  }
+
+  .audio-player-bar [data-slot="audio-progress"] {
+    top: -1.5rem;
+  }
+
+  [data-slot="audio-progress"] > div:first-child {
+    top: 1.5rem;
+  }
+
+  [data-slot="audio-progress"] > div:nth-child(2) {
+    top: 1.625rem;
+  }
+
+  /* Reserve gesture-navigation space even when Android reports a zero inset. */
+  [data-platform="android"] {
+    --player-bottom-inset: max(1.5rem, env(safe-area-inset-bottom, 0px));
+  }
+
+  .audio-player-drawer-footer {
+    padding-bottom: calc(1.5rem + var(--player-bottom-inset));
+  }
+
+  .player-control {
+    width: 3rem;
+    height: 3rem;
+    flex-shrink: 0;
+    border-radius: 9999px;
+  }
+
+  .player-control > svg {
+    width: 1.5rem;
+    height: 1.5rem;
+  }
+
+  .audio-player-drawer .player-control {
+    width: clamp(3rem, 8vw, 4rem);
+    height: clamp(3rem, 8vw, 4rem);
+  }
+
+  .audio-player-drawer .player-control-primary {
+    width: clamp(4rem, 10vw, 5rem);
+    height: clamp(4rem, 10vw, 5rem);
+  }
+
+  .audio-player-bar .player-control-primary {
+    width: 3.5rem;
+    height: 3.5rem;
+  }
+
+  .audio-player-drawer .player-control-primary > svg {
+    width: 2rem;
+    height: 2rem;
+  }
+
+  .audio-main-operations,
+  .audio-main-operations > div {
+    gap: 0.5rem;
+  }
+
+  .audio-player-drawer .audio-main-operations,
+  .audio-player-drawer .audio-main-operations > div {
+    gap: clamp(0.5rem, 2vw, 1rem);
+  }
+}
+
+@media (width < 22.5rem) {
+  .audio-player-bar .player-control-primary {
+    width: 3rem;
+    height: 3rem;
+  }
+}
+
 @media (hover: none) {
   .touch-visible-option {
     opacity: 1;

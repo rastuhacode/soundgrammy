@@ -1,11 +1,4 @@
-export function errorMessage(error: unknown): string {
-  if (error && typeof error === 'object' && 'message' in error) {
-    const message = (error as { message?: unknown }).message
-    if (typeof message === 'string' && message.length > 0) return message
-  }
-  if (error instanceof Error && error.message) return error.message
-  return 'Something went wrong'
-}
+export { errorMessage } from '@/lib/errors'
 
 export function fieldErrors(errors: unknown[]): Array<{ message?: string }> {
   return errors.map((error) => {
