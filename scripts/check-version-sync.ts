@@ -45,14 +45,19 @@ if (mismatches.length > 0) {
   process.exit(1)
 }
 
-console.log(`Application versions are synchronized at ${expected}.`)
-
 const tauriDevConfigPath = 'src-tauri/tauri.dev.conf.json'
 const tauriDevConfig = readJson(tauriDevConfigPath)
 const expectedDevVersion = `${expected}-develop`
 
 if (tauriDevConfig.version !== expectedDevVersion) {
+  if (!process.argv.includes('--fix')) {
+    console.error(`Expected ${tauriDevConfigPath} to be ${expectedDevVersion}, got ${String(tauriDevConfig.version)}.`)
+    console.error('Run bun run check:versions --fix to synchronize the development version.')
+    process.exit(1)
+  }
   tauriDevConfig.version = expectedDevVersion
   writeFileSync(tauriDevConfigPath, `${JSON.stringify(tauriDevConfig, null, 2)}\n`)
   console.log(`Updated ${tauriDevConfigPath} to ${expectedDevVersion}.`)
 }
+
+console.log(`Application versions are synchronized at ${expected} (development: ${expectedDevVersion}).`)
