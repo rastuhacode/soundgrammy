@@ -1,15 +1,39 @@
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 
 use crate::error::AppResult;
 
 pub(super) fn apply(conn: &Connection) -> AppResult<()> {
+    let version: i64 = conn.pragma_query_value(None, "user_version", |row| row.get(0))?;
+    if version > 2 {
+        return Err(crate::error::AppError::msg(
+            "Database was created by a newer SoundGrammy version",
+        ));
+    }
+    if version == 2 {
+        return Ok(());
+    }
+    let foreign_keys: bool = conn.pragma_query_value(None, "foreign_keys", |row| row.get(0))?;
+    conn.pragma_update(None, "foreign_keys", false)?;
+    let result = (|| {
+        if version == 0 {
+            migrate(conn)?;
+        }
+        migrate_listen_identity(conn)
+    })();
+    conn.pragma_update(None, "foreign_keys", foreign_keys)?;
+    result
+}
+
+fn migrate(conn: &Connection) -> AppResult<()> {
+    let tx = conn.unchecked_transaction()?;
+    let conn = &tx;
     conn.execute_batch(
         r#"
         CREATE TABLE IF NOT EXISTS tracks (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
           tg_user_id INTEGER NOT NULL,
           file_id TEXT NOT NULL,
-          file_unique_id TEXT NOT NULL UNIQUE,
+          file_unique_id TEXT NOT NULL,
           title TEXT,
           title_source TEXT NOT NULL DEFAULT 'filename'
             CHECK (title_source IN ('telegram_audio', 'filename', 'user_override')),
@@ -20,7 +44,8 @@ pub(super) fn apply(conn: &Connection) -> AppResult<()> {
           file_size INTEGER,
           mtproto_document TEXT,
           track_position INTEGER,
-          created_at TEXT NOT NULL DEFAULT (datetime('now'))
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          UNIQUE (tg_user_id, file_unique_id)
         );
 
         CREATE INDEX IF NOT EXISTS idx_tracks_tg_user_id ON tracks (tg_user_id);
@@ -167,6 +192,103 @@ pub(super) fn apply(conn: &Connection) -> AppResult<()> {
     )?;
     ensure_title_source(conn)?;
     ensure_library_sync_mode(conn)?;
+    migrate_track_identity(conn)?;
+    // Repair relationships previously accepted by permissive append/like paths.
+    // Keep tracks/history intact; a foreign-account track is not a valid membership.
+    conn.execute_batch(
+        "DELETE FROM playlist_tracks WHERE EXISTS(
+        SELECT 1 FROM playlists p JOIN tracks t ON t.id=playlist_tracks.track_id
+        WHERE p.id=playlist_tracks.playlist_id AND p.tg_user_id != t.tg_user_id);",
+    )?;
+    // Legacy application state was intended to hold exactly one active profile.
+    conn.execute_batch("DELETE FROM profile WHERE (SELECT COUNT(*) FROM profile)>1;
+        CREATE TRIGGER IF NOT EXISTS profile_single_insert BEFORE INSERT ON profile
+        WHEN EXISTS(SELECT 1 FROM profile WHERE tg_user_id != NEW.tg_user_id)
+        BEGIN SELECT RAISE(ABORT, 'Only one active profile is allowed'); END;
+        CREATE TRIGGER IF NOT EXISTS playlist_track_owner_insert BEFORE INSERT ON playlist_tracks
+        WHEN NOT EXISTS(SELECT 1 FROM tracks t JOIN playlists p ON p.tg_user_id=t.tg_user_id
+            WHERE t.id=NEW.track_id AND p.id=NEW.playlist_id)
+        BEGIN SELECT RAISE(ABORT, 'Track belongs to another account'); END;
+        CREATE TRIGGER IF NOT EXISTS playlist_track_owner_update BEFORE UPDATE OF track_id,playlist_id ON playlist_tracks
+        WHEN NOT EXISTS(SELECT 1 FROM tracks t JOIN playlists p ON p.tg_user_id=t.tg_user_id
+            WHERE t.id=NEW.track_id AND p.id=NEW.playlist_id)
+        BEGIN SELECT RAISE(ABORT, 'Track belongs to another account'); END;")?;
+    let violations: i64 =
+        conn.query_row("SELECT COUNT(*) FROM pragma_foreign_key_check", [], |row| {
+            row.get(0)
+        })?;
+    if violations != 0 {
+        return Err(crate::error::AppError::msg(
+            "Database migration found invalid foreign keys",
+        ));
+    }
+    conn.pragma_update(None, "user_version", 1)?;
+    tx.commit()?;
+    Ok(())
+}
+
+fn migrate_listen_identity(conn: &Connection) -> AppResult<()> {
+    let tx = conn.unchecked_transaction()?;
+    tx.execute_batch("CREATE TABLE IF NOT EXISTS listen_track_identity (
+        track_id INTEGER PRIMARY KEY, tg_user_id INTEGER, file_unique_id TEXT,
+        UNIQUE(tg_user_id,file_unique_id));
+        INSERT OR IGNORE INTO listen_track_identity SELECT id,tg_user_id,file_unique_id FROM tracks;
+        INSERT OR IGNORE INTO listen_track_identity(track_id) SELECT DISTINCT track_id FROM listen_events;
+        CREATE INDEX IF NOT EXISTS idx_listen_identity_user ON listen_track_identity(tg_user_id);")?;
+    let highest: i64 = tx.query_row(
+        "SELECT COALESCE(MAX(track_id),0) FROM listen_track_identity",
+        [],
+        |r| r.get(0),
+    )?;
+    if tx.execute(
+        "UPDATE sqlite_sequence SET seq=MAX(seq,?1) WHERE name='tracks'",
+        [highest],
+    )? == 0
+    {
+        tx.execute(
+            "INSERT INTO sqlite_sequence(name,seq) VALUES('tracks',?1)",
+            [highest],
+        )?;
+    }
+    tx.pragma_update(None, "user_version", 2)?;
+    tx.commit()?;
+    Ok(())
+}
+
+fn migrate_track_identity(conn: &Connection) -> AppResult<()> {
+    let global_unique: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM pragma_index_list('tracks') i
+         WHERE i.\"unique\"=1 AND (SELECT group_concat(name) FROM pragma_index_info(i.name))='file_unique_id')",
+        [], |row| row.get(0))?;
+    if !global_unique {
+        return Ok(());
+    }
+    let previous_sequence: i64 = conn
+        .query_row(
+            "SELECT seq FROM sqlite_sequence WHERE name='tracks'",
+            [],
+            |r| r.get(0),
+        )
+        .optional()?
+        .unwrap_or(0);
+    conn.execute_batch("CREATE TABLE tracks_next (
+        id INTEGER PRIMARY KEY AUTOINCREMENT, tg_user_id INTEGER NOT NULL,
+        file_id TEXT NOT NULL, file_unique_id TEXT NOT NULL, title TEXT,
+        title_source TEXT NOT NULL DEFAULT 'filename' CHECK(title_source IN ('telegram_audio','filename','user_override')),
+        performer TEXT, duration INTEGER, source TEXT NOT NULL DEFAULT 'mtproto', mime_type TEXT,
+        file_size INTEGER, mtproto_document TEXT, track_position INTEGER,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')), UNIQUE(tg_user_id,file_unique_id));
+        INSERT INTO tracks_next SELECT id,tg_user_id,file_id,file_unique_id,title,
+          CASE WHEN title_source IN ('telegram_audio','filename','user_override') THEN title_source ELSE 'filename' END,
+          performer,duration,source,mime_type,file_size,mtproto_document,track_position,created_at FROM tracks;
+        DROP TABLE tracks;
+        ALTER TABLE tracks_next RENAME TO tracks;
+        CREATE INDEX idx_tracks_tg_user_id ON tracks(tg_user_id);
+        CREATE INDEX idx_tracks_user_position ON tracks(tg_user_id,track_position,created_at DESC,id DESC);")?;
+    conn.execute(
+        "UPDATE sqlite_sequence SET seq=MAX(seq,?1) WHERE name='tracks'",
+        [previous_sequence],
+    )?;
     Ok(())
 }
 

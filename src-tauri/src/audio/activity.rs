@@ -1,16 +1,25 @@
 //! Playback accounting follows PCM consumption, never WebView timers or seek position.
 use super::{Pipeline, Request};
-use crate::{db::SETTING_LISTEN_STATS_ENABLED, listen_stats::EndReason, state::AppState};
+use crate::{listen_stats::EndReason, state::AppState};
 use std::{
     sync::atomic::Ordering,
     time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tauri::{AppHandle, Emitter, Manager};
 
-enum LastFmEvent {
-    Start(String, i64),
+enum AccountingEvent {
+    Start(crate::lastfm::models::PlaybackStart),
     Qualify(String, i64),
     End(String),
+    LocalStart(i64, u64),
+    LocalEnd(i64, i64, Option<i64>, EndReason, u64),
+    Preferences(String),
+    ListenSettings {
+        enabled: Option<bool>,
+        clear: bool,
+        session_epoch: u64,
+        reply: tokio::sync::oneshot::Sender<Result<super::Snapshot, String>>,
+    },
 }
 
 #[derive(Default)]
@@ -49,7 +58,7 @@ struct Attempt {
 }
 pub struct Activity {
     current: Option<Attempt>,
-    lastfm: tokio::sync::mpsc::UnboundedSender<(u64, LastFmEvent)>,
+    lastfm: tokio::sync::mpsc::UnboundedSender<(u64, AccountingEvent)>,
     last_check: Instant,
     nonce: u128,
     sequence: u64,
@@ -64,30 +73,111 @@ impl Activity {
             while let Some((epoch, event)) = rx.recv().await {
                 let state = app.state::<AppState>();
                 if epoch != state.audio.lastfm_epoch.load(Ordering::Acquire)
-                    && !matches!(&event, LastFmEvent::End(_))
+                    && matches!(
+                        &event,
+                        AccountingEvent::Start(_) | AccountingEvent::Qualify(_, _)
+                    )
                 {
                     continue;
                 }
                 let result = match event {
-                    LastFmEvent::Start(id, track) => {
-                        state
-                            .lastfm
-                            .attempt_started(&state.db, &app, id, track)
-                            .await
+                    AccountingEvent::Start(start) => {
+                        state.lastfm.register_started(&state.db, &app, start).await
                     }
-                    LastFmEvent::Qualify(id, ms) => {
+                    AccountingEvent::Qualify(id, ms) => {
                         state
                             .lastfm
                             .attempt_qualified(&state.db, &app, &id, ms)
                             .await
                     }
-                    LastFmEvent::End(id) => {
+                    AccountingEvent::LocalStart(track, epoch) => {
+                        let app = app.clone();
+                        state
+                            .db
+                            .blocking(move |db| {
+                                if epoch
+                                    != app
+                                        .state::<AppState>()
+                                        .audio
+                                        .accounting_epoch
+                                        .load(Ordering::Acquire)
+                                {
+                                    return Ok(());
+                                }
+                                db.record_attempt_start(track)
+                            })
+                            .await
+                    }
+                    AccountingEvent::LocalEnd(track, ms, duration, reason, epoch) => {
+                        let app = app.clone();
+                        state
+                            .db
+                            .blocking(move |db| {
+                                if epoch
+                                    != app
+                                        .state::<AppState>()
+                                        .audio
+                                        .accounting_epoch
+                                        .load(Ordering::Acquire)
+                                {
+                                    return Ok(());
+                                }
+                                let result = db.record_attempt_end(track, ms, duration, reason)?;
+                                let _ = app.emit("listen:stats", result.stats);
+                                Ok(())
+                            })
+                            .await
+                    }
+                    AccountingEvent::ListenSettings {
+                        enabled,
+                        clear,
+                        session_epoch,
+                        reply,
+                    } => {
+                        let app = app.clone();
+                        let result = state
+                            .db
+                            .blocking(move |db| {
+                                let state = app.state::<AppState>();
+                                if state.audio.epochs.session.load(Ordering::Acquire)
+                                    != session_epoch
+                                {
+                                    return Err(crate::error::AppError::NotAuthorized);
+                                }
+                                if clear {
+                                    db.clear_listen_stats_for_user(db.active_uid()?)?;
+                                }
+                                if let Some(enabled) = enabled {
+                                    db.set_setting(
+                                        crate::db::SETTING_LISTEN_STATS_ENABLED,
+                                        if enabled { "true" } else { "false" },
+                                    )?;
+                                    state
+                                        .audio
+                                        .local_listens_enabled
+                                        .store(enabled, Ordering::Release);
+                                }
+                                state.audio.accounting_epoch.fetch_add(1, Ordering::AcqRel);
+                                Ok(state.audio.snapshot())
+                            })
+                            .await
+                            .map_err(|error| error.to_string());
+                        let _ = reply.send(result);
+                        Ok(())
+                    }
+                    AccountingEvent::Preferences(raw) => {
+                        state
+                            .db
+                            .blocking(move |db| db.set_setting("playback_preferences", &raw))
+                            .await
+                    }
+                    AccountingEvent::End(id) => {
                         state.lastfm.attempt_ended(&id).await;
                         Ok(())
                     }
                 };
                 if let Err(error) = result {
-                    tracing::warn!(%error, "native Last.fm accounting failed");
+                    tracing::warn!(%error, "native playback accounting failed");
                 }
             }
         });
@@ -100,6 +190,28 @@ impl Activity {
                 .duration_since(UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_nanos(),
+        }
+    }
+    pub fn update_listen_settings(
+        &self,
+        enabled: Option<bool>,
+        clear: bool,
+        session_epoch: u64,
+        reply: tokio::sync::oneshot::Sender<Result<super::Snapshot, String>>,
+    ) {
+        let _ = self.lastfm.send((
+            0,
+            AccountingEvent::ListenSettings {
+                enabled,
+                clear,
+                session_epoch,
+                reply,
+            },
+        ));
+    }
+    pub fn save_preferences(&self, preferences: &super::session::Preferences) {
+        if let Ok(raw) = serde_json::to_string(preferences) {
+            let _ = self.lastfm.send((0, AccountingEvent::Preferences(raw)));
         }
     }
     pub fn start(&mut self, app: &AppHandle, request: &Request) {
@@ -136,7 +248,7 @@ impl Activity {
             if a.lastfm_started {
                 let _ = self
                     .lastfm
-                    .send((a.lastfm_epoch, LastFmEvent::End(a.id.clone())));
+                    .send((a.lastfm_epoch, AccountingEvent::End(a.id.clone())));
             }
             a.lastfm_epoch = lastfm_epoch;
             a.lastfm_started = false;
@@ -147,46 +259,21 @@ impl Activity {
             a.local_baseline = None;
             a.settings_epoch = epoch;
         }
-        let enabled = state
-            .db
-            .get_setting(SETTING_LISTEN_STATS_ENABLED)
-            .ok()
-            .flatten()
-            .as_deref()
-            != Some("false");
+        let enabled = state.audio.local_listens_enabled.load(Ordering::Acquire);
         if !enabled {
             a.local_baseline = None;
         } else if a.local_baseline.is_none() {
-            match state.db.record_attempt_start(a.track) {
-                Ok(()) => a.local_baseline = Some(a.clock.ms()),
-                Err(error) => tracing::warn!(%error, "native listen start failed"),
-            }
+            let _ = self
+                .lastfm
+                .send((0, AccountingEvent::LocalStart(a.track, a.settings_epoch)));
+            a.local_baseline = Some(a.clock.ms());
         }
-        let enabled = state
-            .db
-            .get_setting(crate::db::SETTING_LASTFM_ENABLED)
-            .ok()
-            .flatten()
-            .as_deref()
-            == Some("true")
-            && state
-                .db
-                .get_setting(crate::db::SETTING_LASTFM_ACCOUNT_KEY)
-                .ok()
-                .flatten()
-                .is_some()
-            && state
-                .db
-                .get_setting(crate::db::SETTING_LASTFM_NEEDS_REAUTH)
-                .ok()
-                .flatten()
-                .as_deref()
-                != Some("true");
+        let enabled = state.audio.lastfm_enabled.load(Ordering::Acquire);
         if !enabled {
             if a.lastfm_started {
                 let _ = self
                     .lastfm
-                    .send((a.lastfm_epoch, LastFmEvent::End(a.id.clone())));
+                    .send((a.lastfm_epoch, AccountingEvent::End(a.id.clone())));
             }
             a.lastfm_started = false;
             a.lastfm_baseline = None;
@@ -230,9 +317,18 @@ impl Activity {
         if let Some(a) = self.current.as_mut() {
             if a.lastfm_baseline.is_some() && !a.lastfm_started && a.clock.ms() > 0 {
                 a.lastfm_started = true;
-                let _ = self
-                    .lastfm
-                    .send((a.lastfm_epoch, LastFmEvent::Start(a.id.clone(), a.track)));
+                let _ = self.lastfm.send((
+                    a.lastfm_epoch,
+                    AccountingEvent::Start(crate::lastfm::models::PlaybackStart {
+                        attempt_id: a.id.clone(),
+                        track_id: a.track,
+                        started_at_utc: SystemTime::now()
+                            .duration_since(UNIX_EPOCH)
+                            .unwrap_or_default()
+                            .as_secs() as i64,
+                        duration_seconds: a.lastfm_duration.map(|d| d / 1000),
+                    }),
+                ));
             }
         }
         self.qualify();
@@ -247,17 +343,17 @@ impl Activity {
         let Some(baseline) = a.lastfm_baseline else {
             return;
         };
-        let threshold = match a.lastfm_duration {
-            Some(d) if d <= 30_000 => return,
-            Some(d) => (d / 2).min(240_000),
-            None => 240_000,
+        let Some(threshold) =
+            crate::lastfm::service::qualification_threshold_ms(a.lastfm_duration.map(|d| d / 1000))
+        else {
+            return;
         };
         let ms = a.clock.ms().saturating_sub(baseline);
         if !a.qualified && ms >= threshold {
             a.qualified = true;
             let _ = self
                 .lastfm
-                .send((a.lastfm_epoch, LastFmEvent::Qualify(a.id.clone(), ms)));
+                .send((a.lastfm_epoch, AccountingEvent::Qualify(a.id.clone(), ms)));
         }
     }
     pub fn finish(&mut self, app: &AppHandle, reason: EndReason) {
@@ -265,21 +361,21 @@ impl Activity {
         self.qualify();
         let Some(a) = self.current.take() else { return };
         if let Some(baseline) = a.local_baseline {
-            let state = app.state::<AppState>();
-            match state.db.record_attempt_end(
-                a.track,
-                a.clock.ms().saturating_sub(baseline),
-                a.duration,
-                reason,
-            ) {
-                Ok(result) => {
-                    let _ = app.emit("listen:stats", result.stats);
-                }
-                Err(error) => tracing::warn!(%error, "native listen end failed"),
-            }
+            let _ = self.lastfm.send((
+                0,
+                AccountingEvent::LocalEnd(
+                    a.track,
+                    a.clock.ms().saturating_sub(baseline),
+                    a.duration,
+                    reason,
+                    a.settings_epoch,
+                ),
+            ));
         }
         if a.lastfm_started {
-            let _ = self.lastfm.send((a.lastfm_epoch, LastFmEvent::End(a.id)));
+            let _ = self
+                .lastfm
+                .send((a.lastfm_epoch, AccountingEvent::End(a.id)));
         }
     }
 }
@@ -325,7 +421,7 @@ mod tests {
         activity.qualify();
         activity.qualify();
         assert!(
-            matches!(rx.try_recv().unwrap(), (0, LastFmEvent::Qualify(id, 60_000)) if id == "attempt-1")
+            matches!(rx.try_recv().unwrap(), (0, AccountingEvent::Qualify(id, 60_000)) if id == "attempt-1")
         );
         assert!(rx.try_recv().is_err());
         let a = activity.current.as_mut().unwrap();

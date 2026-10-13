@@ -101,4 +101,16 @@ describe('api diagnostics', () => {
     expect(logError).toHaveBeenCalledWith(expect.objectContaining({ title: 'Invalid backend event' }))
     expect(JSON.stringify(logError.mock.calls)).not.toContain('private-invalid-event-value')
   })
+  it('sends native playback membership IDs without stale frontend metadata', async () => {
+    tauriInvoke.mockResolvedValueOnce({})
+    await api.nativePlayerCommand({ type: 'setQueue', play: true, queue: {
+      tracks: [track(1)], cursor: 0, source: null, sourceIndices: [0],
+      baseEntries: [{ track: track(1), sourceIndex: 0 }],
+    } })
+    expect(tauriInvoke).toHaveBeenCalledWith('native_player_command', { command: {
+      type: 'setQueue', play: true, queue: { tracks: [{ id: 1 }], cursor: 0, source: null,
+        sourceIndices: [0], baseEntries: [{ track: { id: 1 }, sourceIndex: 0 }],
+      },
+    } })
+  })
 })

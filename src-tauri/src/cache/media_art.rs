@@ -53,8 +53,7 @@ pub async fn ensure_thumbnail(
         return Ok(Some(dest));
     }
 
-    let audio = audio_path(state, &track)?;
-    if audio.exists() {
+    if let Some(audio) = super::cached_audio_lease(state, &track).await? {
         if let Some(bytes) = tokio::task::spawn_blocking(move || extract_embedded_cover(&audio))
             .await
             .map_err(|error| AppError::msg(error.to_string()))?
@@ -89,8 +88,7 @@ async fn ensure_high_quality_thumbnail(
         return Ok(Some(embed_dest));
     }
 
-    let audio = audio_path(state, track)?;
-    if audio.exists() {
+    if let Some(audio) = super::cached_audio_lease(state, track).await? {
         if let Some(bytes) = tokio::task::spawn_blocking(move || extract_embedded_cover(&audio))
             .await
             .map_err(|error| AppError::msg(error.to_string()))?
@@ -199,6 +197,7 @@ pub async fn schedule_embedded_artwork(
             }
             Err(error) => tracing::debug!(track_id, %error, "Embedded artwork probe deferred"),
         }
+        let _ = super::evict_for_room(&state, &app, 0).await;
     });
     Ok(())
 }

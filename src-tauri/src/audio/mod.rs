@@ -48,13 +48,49 @@ pub struct Range {
     start: f64,
     end: f64,
 }
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Status {
+    Idle,
+    Loading,
+    Ready,
+    Playing,
+    Paused,
+    Buffering,
+    Ended,
+    Error,
+}
+impl Status {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Idle => "idle",
+            Self::Loading => "loading",
+            Self::Ready => "ready",
+            Self::Playing => "playing",
+            Self::Paused => "paused",
+            Self::Buffering => "buffering",
+            Self::Ended => "ended",
+            Self::Error => "error",
+        }
+    }
+}
+impl PartialEq<&str> for Status {
+    fn eq(&self, other: &&str) -> bool {
+        self.as_str() == *other
+    }
+}
+impl From<Status> for String {
+    fn from(status: Status) -> Self {
+        status.as_str().into()
+    }
+}
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Snapshot {
     last_control: Option<String>,
     pub revision: u64,
     kind: &'static str,
-    status: &'static str,
+    status: Status,
     track_id: Option<i64>,
     attempt_id: Option<String>,
     current_time_seconds: f64,
@@ -73,7 +109,7 @@ impl Default for Snapshot {
             last_control: None,
             revision: 0,
             kind: "native-rust",
-            status: "idle",
+            status: Status::Idle,
             track_id: None,
             attempt_id: None,
             current_time_seconds: 0.0,
@@ -100,6 +136,7 @@ struct Ended {
 pub struct Capabilities {
     pub available: bool,
     pub streaming: bool,
+    pub codecs: Vec<&'static str>,
 }
 pub enum Control {
     Player(Box<session::Command>),
@@ -133,6 +170,7 @@ struct Envelope {
     page_epoch: u64,
     session_epoch: u64,
     control: Control,
+    shuffle: Option<shuffle::Context>,
     reply: tokio::sync::oneshot::Sender<Result<Snapshot, String>>,
 }
 impl Envelope {
@@ -159,6 +197,8 @@ struct CommandEpochs {
 pub struct NativeAudioService {
     pub accounting_epoch: AtomicU64,
     pub lastfm_epoch: AtomicU64,
+    pub local_listens_enabled: AtomicBool,
+    pub lastfm_enabled: AtomicBool,
     worker: Mutex<Option<(SyncSender<Envelope>, JoinHandle<()>)>>,
     snapshot: Arc<Mutex<Snapshot>>,
     stopping: Arc<AtomicBool>,
@@ -184,6 +224,108 @@ impl NativeAudioService {
             let _ = self.command(app, Control::CacheReady(track_id)).await;
         }
     }
+    pub async fn reconcile_library(&self, app: AppHandle, uid: i64) -> crate::error::AppResult<()> {
+        if self.snapshot().player.is_none() {
+            return Ok(());
+        }
+        let state = app.state::<crate::state::AppState>();
+        let tracks = state
+            .db
+            .blocking(move |db| {
+                if db.active_uid()? != uid {
+                    return Err(crate::error::AppError::NotAuthorized);
+                }
+                db.tracks_by_user(uid)
+            })
+            .await?;
+        self.command(app.clone(), session::Command::Refresh { tracks }.into())
+            .await
+            .map_err(crate::error::AppError::msg)?;
+        Ok(())
+    }
+    pub async fn reconcile_playlist_metadata(
+        &self,
+        app: AppHandle,
+        uid: i64,
+        id: i64,
+        name: Option<String>,
+    ) -> crate::error::AppResult<()> {
+        if app.state::<crate::state::AppState>().db.active_uid()? != uid {
+            return Err(crate::error::AppError::NotAuthorized);
+        }
+        if self
+            .snapshot()
+            .player
+            .as_ref()
+            .and_then(|p| p.queue.source.as_ref())
+            .is_none_or(|s| s.playlist_id != serde_json::json!(id))
+        {
+            return Ok(());
+        }
+        self.command(
+            app,
+            session::Command::SourceMetadata {
+                playlist_id: serde_json::json!(id),
+                name,
+            }
+            .into(),
+        )
+        .await
+        .map_err(crate::error::AppError::msg)?;
+        Ok(())
+    }
+    pub async fn reconcile_playlist(
+        &self,
+        app: AppHandle,
+        uid: i64,
+        playlist_id: i64,
+        move_indices: Option<[i64; 2]>,
+        membership_map: Option<Vec<Option<usize>>>,
+    ) -> crate::error::AppResult<()> {
+        let snapshot = self.snapshot();
+        let Some(source) = snapshot
+            .player
+            .as_ref()
+            .and_then(|p| p.queue.source.as_ref())
+        else {
+            return Ok(());
+        };
+        let state = app.state::<crate::state::AppState>();
+        let (kind, tracks) = state
+            .db
+            .blocking(move |db| {
+                if db.active_uid()? != uid {
+                    return Err(crate::error::AppError::NotAuthorized);
+                }
+                Ok((
+                    db.custom_playlist_name_and_kind(playlist_id, uid)?.1,
+                    db.playlist_tracks_ordered(playlist_id, uid)?,
+                ))
+            })
+            .await?;
+        let identity = if kind == "liked" {
+            serde_json::json!("liked")
+        } else {
+            serde_json::json!(playlist_id)
+        };
+        if source.playlist_id != identity {
+            return Ok(());
+        }
+        self.command(
+            app.clone(),
+            session::Command::Realign {
+                playlist_id: identity,
+                tracks,
+                move_indices,
+                membership_map,
+            }
+            .into(),
+        )
+        .await
+        .map_err(crate::error::AppError::msg)?;
+        Ok(())
+    }
+
     pub fn clear_session(&self) {
         self.epochs.session.fetch_add(1, Ordering::AcqRel);
         self.epochs.page.fetch_add(1, Ordering::AcqRel);
@@ -215,7 +357,40 @@ impl NativeAudioService {
             .map(|(_, p)| vec![p.clone()])
             .unwrap_or_default()
     }
-    pub async fn command(&self, app: AppHandle, control: Control) -> Result<Snapshot, String> {
+    pub async fn command(&self, app: AppHandle, mut control: Control) -> Result<Snapshot, String> {
+        let page_epoch = self.epochs.page.load(Ordering::Acquire);
+        let session_epoch = self.epochs.session.load(Ordering::Acquire);
+        let mut shuffle_context = None;
+        if let Control::Player(command) = control {
+            let db = app.state::<crate::state::AppState>().db.clone();
+            let mut command = *command;
+            let prepared = db
+                .blocking(move |db| {
+                    let mut context = None;
+                    if let Ok(uid) = db.active_uid() {
+                        command.canonicalize(db, uid)?;
+                        if matches!(
+                            &command,
+                            session::Command::ToggleShuffle
+                                | session::Command::Shuffle { .. }
+                                | session::Command::ShuffleMode { .. }
+                                | session::Command::PlayPlaylist { .. }
+                        ) {
+                            context = Some(shuffle::Context::load(db, uid)?);
+                        }
+                    } else if !matches!(
+                        command,
+                        session::Command::Clear | session::Command::Attach { .. }
+                    ) {
+                        return Err(crate::error::AppError::NotAuthorized);
+                    }
+                    Ok((command, context))
+                })
+                .await
+                .map_err(|e| e.to_string())?;
+            (command, shuffle_context) = prepared;
+            control = Control::Player(Box::new(command));
+        }
         #[cfg(target_os = "android")]
         android::initialize(&app).await?;
         if self.stopping.load(Ordering::Acquire) {
@@ -265,9 +440,10 @@ impl NativeAudioService {
                 .0
                 .try_send(Envelope {
                     control,
+                    shuffle: shuffle_context,
                     reply,
-                    page_epoch: self.epochs.page.load(Ordering::Acquire),
-                    session_epoch: self.epochs.session.load(Ordering::Acquire),
+                    page_epoch,
+                    session_epoch,
                 })
                 .map_err(|_| "audio command queue unavailable")?;
         }
@@ -290,6 +466,7 @@ impl NativeAudioService {
                 page_epoch: self.epochs.page.load(Ordering::Acquire),
                 session_epoch: self.epochs.session.load(Ordering::Acquire),
                 control: Control::Remote(command),
+                shuffle: None,
                 reply,
             })
             .map_err(|_| "audio command queue unavailable".into())
@@ -311,6 +488,7 @@ impl NativeAudioService {
                 page_epoch: self.epochs.page.load(Ordering::Acquire),
                 session_epoch: self.epochs.session.load(Ordering::Acquire),
                 control: Control::Lifecycle(event),
+                shuffle: None,
                 reply,
             })
             .map_err(|_| "audio command queue unavailable".into())
@@ -337,7 +515,7 @@ fn fail(snapshot: &mut Snapshot, code: &str, diagnostic: Option<String>) {
         "audio playback failed"
     );
     snapshot.seeking = false;
-    snapshot.status = "error";
+    snapshot.status = Status::Error;
     snapshot.initial_loading = false;
     snapshot.error = Some(AudioError {
         code: code.into(),
@@ -583,6 +761,18 @@ fn session_control(
         }
     }
 }
+fn apply_player_command(
+    session: &mut session::Session,
+    snapshot: &Snapshot,
+    shuffle: &shuffle::Context,
+    command: session::Command,
+) -> Result<Control, String> {
+    let effect = session.apply(command, snapshot.current_time_seconds, |entries, mode| {
+        shuffle.shuffle(entries, mode)
+    })?;
+    Ok(session_control(effect, session, snapshot))
+}
+
 fn run(
     app: AppHandle,
     rx: Receiver<Envelope>,
@@ -621,6 +811,7 @@ fn run(
             let (reply, _) = tokio::sync::oneshot::channel();
             Some(Envelope {
                 control: Control::from(session::Command::Clear),
+                shuffle: None,
                 reply,
                 page_epoch: epochs.page.load(Ordering::Acquire),
                 session_epoch: epochs.session.load(Ordering::Acquire),
@@ -629,6 +820,7 @@ fn run(
             let (reply, _) = tokio::sync::oneshot::channel();
             Some(Envelope {
                 control: Control::Complete(attempt),
+                shuffle: None,
                 reply,
                 page_epoch: epochs.page.load(Ordering::Acquire),
                 session_epoch: epochs.session.load(Ordering::Acquire),
@@ -652,6 +844,15 @@ fn run(
             let mut restart = None;
             let from_remote = matches!(&envelope.control, Control::Remote(_));
             let incoming = match envelope.control {
+                Control::ListenSettings { enabled, clear } => {
+                    activity.update_listen_settings(
+                        enabled,
+                        clear,
+                        envelope.session_epoch,
+                        envelope.reply,
+                    );
+                    continue;
+                }
                 Control::Remote(command) => {
                     snapshot.last_control = Some(format!("remote: {command:?}"));
                     command.control(&snapshot).unwrap_or(Control::Sync)
@@ -674,26 +875,19 @@ fn run(
                     if name != "attach" && !from_remote {
                         snapshot.last_control = Some(format!("ui: {name}"));
                     }
-                    let saves_preferences = command.saves_preferences();
-                    let effect =
-                        session.apply(command, snapshot.current_time_seconds, |entries, mode| {
-                            shuffle::shuffle(entries, mode, &state.db)
-                        });
-                    let effect = match effect {
-                        Ok(effect) => effect,
+                    let saves = command.saves_preferences();
+                    let context = envelope.shuffle.unwrap_or_default();
+                    match apply_player_command(&mut session, &snapshot, &context, command) {
+                        Ok(control) if saves => {
+                            activity.save_preferences(&session.preferences);
+                            control
+                        }
+                        Ok(control) => control,
                         Err(error) => {
                             let _ = envelope.reply.send(Err(error));
                             continue;
                         }
-                    };
-                    if saves_preferences {
-                        if let Ok(raw) = serde_json::to_string(&session.preferences) {
-                            if let Err(error) = state.db.set_setting("playback_preferences", &raw) {
-                                tracing::warn!(%error, "Could not save playback preferences");
-                            }
-                        }
                     }
-                    session_control(effect, &session, &snapshot)
                 }
                 Control::SeekAttempt(seconds, attempt) => {
                     snapshot.last_control =
@@ -727,7 +921,7 @@ fn run(
                     current = None;
                     paused_observer = None;
                     snapshot.current_time_seconds = 0.0;
-                    snapshot.status = "paused";
+                    snapshot.status = Status::Paused;
                     snapshot.seeking = false;
                     snapshot.initial_loading = false;
                     snapshot.error = None;
@@ -748,27 +942,10 @@ fn run(
                         if let Some(p) = current.as_ref() {
                             p.output.clock.playing.store(false, Ordering::Release);
                         }
-                        snapshot.status = "paused";
+                        snapshot.status = Status::Paused;
                     }
                 }
-                Control::ListenSettings { enabled, clear } => {
-                    let result = if clear {
-                        state.db.clear_listen_stats()
-                    } else if let Some(enabled) = enabled {
-                        state.db.set_setting(
-                            crate::db::SETTING_LISTEN_STATS_ENABLED,
-                            if enabled { "true" } else { "false" },
-                        )
-                    } else {
-                        Ok(())
-                    };
-                    if let Err(error) = result {
-                        let _ = envelope.reply.send(Err(error.to_string()));
-                        continue;
-                    }
-                    state.audio.accounting_epoch.fetch_add(1, Ordering::AcqRel);
-                    activity.settings(&app);
-                }
+                Control::ListenSettings { .. } => unreachable!(),
                 Control::CacheStream(track_id, stream) => {
                     reconnect_cache_observer(
                         &snapshot,
@@ -858,7 +1035,7 @@ fn run(
                         if snapshot.status == "error" || current.is_none() {
                             restart = Some(snapshot.current_time_seconds);
                         }
-                        snapshot.status = "buffering";
+                        snapshot.status = Status::Buffering;
                         stalled_since = Instant::now();
                     }
                 }
@@ -870,7 +1047,7 @@ fn run(
                         p.output.clock.playing.store(false, Ordering::Release);
                     }
                     let release = cfg!(target_os = "ios")
-                        || matches!(snapshot.status, "loading" | "buffering");
+                        || matches!(snapshot.status, Status::Loading | Status::Buffering);
                     #[cfg(target_os = "android")]
                     let release = release
                         || current.as_mut().is_some_and(|p| {
@@ -885,7 +1062,7 @@ fn run(
                         current = None;
                     }
                     if request.is_some() && snapshot.status != "error" {
-                        snapshot.status = "paused";
+                        snapshot.status = Status::Paused;
                         snapshot.seeking = false;
                         snapshot.initial_loading = false;
                     }
@@ -898,7 +1075,7 @@ fn run(
                             seconds.max(0.0)
                         };
                         snapshot.current_time_seconds = target;
-                        snapshot.status = "buffering";
+                        snapshot.status = Status::Buffering;
                         snapshot.seeking = true;
                         snapshot.initial_loading = false;
                         #[cfg(target_os = "android")]
@@ -964,7 +1141,7 @@ fn run(
                     if ready && !failed {
                         // AAudio's synchronous start can return after PCM is already
                         // audible. Publish prepared playback before waiting for it.
-                        snapshot.status = "playing";
+                        snapshot.status = Status::Playing;
                         snapshot.initial_loading = false;
                         update_session(&mut snapshot, &mut session, desired);
                         snapshot.revision += 1;
@@ -987,9 +1164,9 @@ fn run(
                 *protection.lock().unwrap_or_else(|p| p.into_inner()) =
                     Some((generation, PathBuf::new()));
                 snapshot.status = if origin == 0.0 {
-                    "loading"
+                    Status::Loading
                 } else {
-                    "buffering"
+                    Status::Buffering
                 };
                 snapshot.initial_loading = origin == 0.0;
                 snapshot.error = None;
@@ -1082,7 +1259,7 @@ fn run(
             if !p.waiting_seek {
                 if p.eof && queued == 0 && consumed == 0 && snapshot.seeking {
                     snapshot.seeking = false;
-                    snapshot.status = "paused";
+                    snapshot.status = Status::Paused;
                     desired = false;
                 }
                 let ready = queued >= p.output.rate as u64 / 20 || (p.eof && queued > 0);
@@ -1104,21 +1281,24 @@ fn run(
                     if snapshot.status != "playing" {
                         dirty = true;
                     }
-                    snapshot.status = "playing";
+                    snapshot.status = Status::Playing;
                     snapshot.initial_loading = false;
                 } else if audible && stalled {
                     if snapshot.status != "buffering" {
                         dirty = true;
                     }
-                    snapshot.status = "buffering";
+                    snapshot.status = Status::Buffering;
                     if !ready {
                         clock.playing.store(false, Ordering::Release);
                     }
-                } else if !audible && ready && matches!(snapshot.status, "loading" | "buffering") {
+                } else if !audible
+                    && ready
+                    && matches!(snapshot.status, Status::Loading | Status::Buffering)
+                {
                     snapshot.status = if snapshot.initial_loading {
-                        "ready"
+                        Status::Ready
                     } else {
-                        "paused"
+                        Status::Paused
                     };
                     snapshot.initial_loading = false;
                     dirty = true;
@@ -1150,7 +1330,7 @@ fn run(
                     pending_completion = Some(session.attempt);
                     desired = false;
                     clock.playing.store(false, Ordering::Release);
-                    snapshot.status = "ended";
+                    snapshot.status = Status::Ended;
                     snapshot.initial_loading = false;
                     dirty = true;
                     snapshot.revision += 1;
@@ -1344,7 +1524,7 @@ mod tests {
             availability,
         });
         let mut snapshot = Snapshot {
-            status: "paused",
+            status: Status::Paused,
             track_id: Some(7),
             duration_seconds: 120.0,
             buffered_ranges: vec![Range {
@@ -1397,7 +1577,7 @@ mod tests {
             availability: availability.clone(),
         };
         let mut snapshot = Snapshot {
-            status: "paused",
+            status: Status::Paused,
             duration_seconds: 120.0,
             buffered_ranges: vec![Range {
                 start: 0.0,
@@ -1428,6 +1608,7 @@ mod tests {
                 page_epoch: 1,
                 session_epoch: 0,
                 control,
+                shuffle: None,
                 reply,
             }
         };
@@ -1531,7 +1712,7 @@ mod tests {
             track_id: Some(1),
             current_time_seconds: 40.0,
             duration_seconds: 120.0,
-            status: "paused",
+            status: Status::Paused,
             ..Default::default()
         };
         assert!(matches!(
@@ -1539,7 +1720,7 @@ mod tests {
             Control::Start(_, true, 40.0)
         ));
         let snapshot = Snapshot {
-            status: "ended",
+            status: Status::Ended,
             ..snapshot
         };
         assert!(matches!(
@@ -1564,5 +1745,42 @@ mod tests {
         *service.protection.lock().unwrap() = None;
         service.protect(3, PathBuf::from("a-new-attempt"));
         assert!(service.protected_paths().is_empty());
+    }
+    #[test]
+    fn membership_intent_uses_canonical_backend_metadata_and_rejects_foreign_tracks() {
+        let state = crate::cache::tests::test_state();
+        let id = crate::cache::tests::insert_track(&state, 1, "123");
+        let foreign = crate::cache::tests::insert_track(&state, 2, "124");
+        let mut command:session::Command=serde_json::from_value(serde_json::json!({"type":"playTrack","track":{"id":id,"title":"stale","duration":999}})).unwrap();
+        command.canonicalize(&state.db, 1).unwrap();
+        let mut session = session::Session::default();
+        let control = apply_player_command(
+            &mut session,
+            &Snapshot::default(),
+            &shuffle::Context::default(),
+            command,
+        )
+        .unwrap();
+        assert!(matches!(
+            control,
+            Control::Start(
+                Request {
+                    expected_duration_seconds: Some(60.0),
+                    ..
+                },
+                _,
+                _
+            )
+        ));
+        assert_eq!(
+            session.queue.current().unwrap().title.as_deref(),
+            Some("Track")
+        );
+        assert!(session.queue.current().unwrap().mtproto_document.is_none());
+        let mut invalid: session::Command =
+            serde_json::from_value(serde_json::json!({"type":"playTrack","track":{"id":foreign}}))
+                .unwrap();
+        assert!(invalid.canonicalize(&state.db, 1).is_err());
+        assert_eq!(session.queue.current().unwrap().id, id);
     }
 }

@@ -14,14 +14,14 @@ Native playback records attempts directly. React receives `listen:stats` updates
 
 Read/settings IPC: `get_track_listen_stats` / `list_listen_stats` / `rebuild_listen_stats` / `clear_listen_statistics` via [`src/lib/api.ts`](../src/lib/api.ts).
 
-Collection is enabled by default and persisted in `app_settings` under `listen_stats_enabled`. When disabled, the backend ignores listen attempts and the UI hides Popular and Recent without deleting existing history. Clearing statistics deletes both raw events and aggregates; the native attempt baseline restarts so listening before the clear boundary is not re-added later.
+Collection is enabled by default and persisted in `app_settings` under `listen_stats_enabled`. When disabled, the backend ignores listen attempts and the UI hides Popular and Recent without deleting existing history. Clearing statistics deletes both raw events and aggregates for the active Telegram account; the native attempt baseline restarts so listening before the clear boundary is not re-added later.
 
 ## UI consumers
 
 - **Popular** / **Recent** — virtual playlists (`id: popular` / `recent`) of library tracks that have listen history, ordered by likeness / `last_played_at_ms`. Immutable membership; not drag-reorderable.
 - **Track info** — Listening section via `get_track_listen_stats` (likeness, plays, skips, listened time, first/last played).
 
-The PCM lifetime counter is independent of seek position and excludes underrun silence. Pauses and temporary interruptions preserve the attempt; completion, replacement, stop, and output failure close it. Statistics clear/enable commands run on the native control worker, serialized with attempt ends. Last.fm start, qualification, and end are delivered in order by a single native task, using process-unique IDs and the existing durable scrobble queue.
+The PCM lifetime counter is independent of seek position and excludes underrun silence. Pauses and temporary interruptions preserve the attempt; completion, replacement, stop, and output failure close it. The native control worker sends statistics clear/enable operations and attempt edges to one ordered background sink. SQLite writes run on blocking workers; playback reads cached settings. Last.fm start, qualification, and end are delivered in order by that sink, using process-unique IDs and the existing durable scrobble queue.
 
 ## Counting (v1)
 
@@ -37,4 +37,6 @@ Full formula: `__local/listen-statistics.md`.
 - `listen_events` — immutable `attempt_start` / `attempt_end`
 - `track_listen_stats` — materialised counters + cached likeness
 
-`rebuild_listen_stats` replays all end events into aggregates.
+`listen_track_identity` retains account/document identity after a track is removed. Resaving that document reuses its local ID. Legacy unidentifiable history is retained without guessing its account.
+
+`rebuild_listen_stats` replays end events in bounded pages outside the connection lock, then commits only if history has not changed. Now Playing HTTP runs in a separate delivery worker using the immutable PCM-start timestamp and duration; it cannot delay qualification or local history writes.

@@ -3,14 +3,62 @@ use rusqlite::{params, OptionalExtension};
 use super::{Db, Track, UpsertTrack};
 use crate::error::AppResult;
 
+pub(super) fn projection(prefix: &str, document: bool) -> String {
+    let columns = [
+        "id",
+        "tg_user_id",
+        "file_id",
+        "file_unique_id",
+        "title",
+        "title_source",
+        "performer",
+        "duration",
+        "source",
+        "mime_type",
+        "file_size",
+        "created_at",
+    ];
+    let mut fields = columns
+        .iter()
+        .map(|name| format!("{prefix}{name}"))
+        .collect::<Vec<_>>();
+    fields.push(if document {
+        format!("{prefix}mtproto_document")
+    } else {
+        "NULL AS mtproto_document".into()
+    });
+    fields.join(", ")
+}
+
 impl Db {
+    pub fn playback_tracks(
+        &self,
+        uid: i64,
+        ids: &[i64],
+    ) -> AppResult<std::collections::HashMap<i64, Track>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {} FROM tracks WHERE id=?1 AND tg_user_id=?2",
+            projection("", false)
+        ))?;
+        let mut tracks = std::collections::HashMap::new();
+        for id in ids {
+            if tracks.contains_key(id) {
+                continue;
+            }
+            let track = stmt
+                .query_row(params![id, uid], map_track)
+                .optional()?
+                .ok_or_else(|| crate::error::AppError::msg("Track unavailable"))?;
+            tracks.insert(*id, track);
+        }
+        Ok(tracks)
+    }
+
     pub fn tracks_by_user(&self, tg_user_id: i64) -> AppResult<Vec<Track>> {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(
-            "SELECT id, tg_user_id, file_id, file_unique_id, title, title_source, performer, duration, \
-             source, mime_type, file_size, created_at, mtproto_document \
-             FROM tracks WHERE tg_user_id = ?1 \
-             ORDER BY track_position ASC, created_at DESC, id DESC",
+            &format!("SELECT {} FROM tracks WHERE tg_user_id=?1 ORDER BY track_position ASC,created_at DESC,id DESC",projection("",true)),
         )?;
         let rows = stmt
             .query_map(params![tg_user_id], map_track)?
@@ -22,9 +70,10 @@ impl Db {
         let conn = self.conn.lock().unwrap();
         let track = conn
             .query_row(
-                "SELECT id, tg_user_id, file_id, file_unique_id, title, title_source, performer, duration, \
-                 source, mime_type, file_size, created_at, mtproto_document \
-                 FROM tracks WHERE id = ?1 AND tg_user_id = ?2",
+                &format!(
+                    "SELECT {} FROM tracks WHERE id=?1 AND tg_user_id=?2",
+                    projection("", true)
+                ),
                 params![id, tg_user_id],
                 map_track,
             )
@@ -92,10 +141,10 @@ impl Db {
 
 pub(super) fn upsert_on(conn: &rusqlite::Connection, t: &UpsertTrack) -> AppResult<()> {
     let affected = conn.execute(
-            "INSERT INTO tracks (tg_user_id, file_id, file_unique_id, title, title_source, performer, duration, \
+            "INSERT INTO tracks (id, tg_user_id, file_id, file_unique_id, title, title_source, performer, duration, \
              source, mime_type, file_size, track_position, mtproto_document) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'mtproto', ?8, ?9, ?10, ?11) \
-             ON CONFLICT (file_unique_id) DO UPDATE SET \
+             VALUES ((SELECT track_id FROM listen_track_identity WHERE tg_user_id=?1 AND file_unique_id=?3), ?1, ?2, ?3, ?4, ?5, ?6, ?7, 'mtproto', ?8, ?9, ?10, ?11) \
+             ON CONFLICT (tg_user_id, file_unique_id) DO UPDATE SET \
                file_id = excluded.file_id, title = excluded.title, title_source = excluded.title_source, performer = excluded.performer, \
                duration = excluded.duration, mime_type = excluded.mime_type, \
                file_size = excluded.file_size, track_position = excluded.track_position, \
@@ -120,6 +169,10 @@ pub(super) fn upsert_on(conn: &rusqlite::Connection, t: &UpsertTrack) -> AppResu
             "Track belongs to another account",
         ));
     }
+    conn.execute("INSERT INTO listen_track_identity(track_id,tg_user_id,file_unique_id) \
+        SELECT id,tg_user_id,file_unique_id FROM tracks WHERE tg_user_id=?1 AND file_unique_id=?2 \
+        ON CONFLICT(track_id) DO UPDATE SET tg_user_id=excluded.tg_user_id,file_unique_id=excluded.file_unique_id",
+        params![t.tg_user_id,t.file_unique_id])?;
     Ok(())
 }
 

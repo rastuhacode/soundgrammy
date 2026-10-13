@@ -5,17 +5,22 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Track {
     pub id: i64,
+    #[serde(default)]
     pub tg_user_id: i64,
+    #[serde(default)]
     pub file_id: String,
+    #[serde(default)]
     pub file_unique_id: String,
     pub title: Option<String>,
     #[serde(skip)]
     pub title_source: String,
     pub performer: Option<String>,
     pub duration: Option<i64>,
+    #[serde(default)]
     pub source: String,
     pub mime_type: Option<String>,
     pub file_size: Option<i64>,
+    #[serde(default)]
     pub created_at: String,
     /// The serialized Telegram document JSON stays server-side only.
     #[serde(skip)]

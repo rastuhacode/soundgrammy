@@ -1,7 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { api } from '@/lib/api'
 import { deferred } from '@/test-support/fixtures'
-import type { LastFmStatus } from '@/types'
+import type { CacheClearResult, LastFmStatus } from '@/types'
 import { useSessionStore } from './session-store'
 import { useListenStatsStore } from './listen-stats-store'
 import { useLastFmStore } from './lastfm-store'
@@ -68,7 +68,7 @@ describe('settings mutation lifetime', () => {
     expect(useLastFmStore.getState().status?.pendingCount).toBe(2)
   })
   it('does not clear a new account cache after an old clear completes', async () => {
-    const response = deferred<void>()
+    const response = deferred<CacheClearResult>()
     vi.mocked(api.clearAudioCache).mockReturnValueOnce(response.promise)
     const pending = useCacheStore.getState().clearAudio()
     const rejected = expect(pending).rejects.toThrow('account changed')
@@ -76,7 +76,7 @@ describe('settings mutation lifetime', () => {
     useSessionStore.getState().clearSession()
     useCacheStore.getState().markCached([2])
     useCacheStore.getState().markBusy([2])
-    response.resolve()
+    response.resolve({ removedTrackIds: [1], protectedTrackIds: [], failedFiles: 0 })
     await rejected
     expect(useCacheStore.getState().isCached(2)).toBe(true)
     expect(useCacheStore.getState().isBusy(2)).toBe(true)

@@ -228,6 +228,7 @@ export interface PlaylistDownloadResult {
   folderPath: string | null
   succeeded: PlaylistDownloadSucceeded[]
   failed: PlaylistDownloadFailed[]
+  warnings?: string[]
 }
 
 export interface PlaylistDownloadProgress {
@@ -273,3 +274,7 @@ export interface PlaylistImportResult {
   succeeded: PlaylistImportSucceeded[]
   failed: PlaylistImportFailed[]
 }
+
+export interface CacheJobResult { succeeded: number[], failed: Array<{ trackId: number, error: string }> }
+
+export interface CacheClearResult { removedTrackIds: number[], protectedTrackIds: number[], failedFiles: number }

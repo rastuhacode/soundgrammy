@@ -1,5 +1,6 @@
 //! SoundGrammy desktop backend: Tauri builder, state, and command registration.
 
+mod atomic_file;
 mod audio;
 
 #[cfg(target_os = "android")]
@@ -24,6 +25,7 @@ mod session;
 mod state;
 mod streaming;
 mod telegram;
+mod time;
 
 use tauri::Manager;
 
@@ -52,6 +54,19 @@ pub fn run() {
 
             app.manage(display_wake::DisplayWakeState::new()?);
 
+            #[cfg(all(target_os = "android", debug_assertions))]
+            let debug_suffix = handle
+                .config()
+                .bundle
+                .android
+                .debug_application_id_suffix
+                .as_deref();
+            #[cfg(not(all(target_os = "android", debug_assertions)))]
+            let debug_suffix = None;
+            session::initialize_namespace(&session::app_namespace(
+                &handle.config().identifier,
+                debug_suffix,
+            ));
             let config = config::Config::load()?;
 
             let data_dir = handle.path().app_data_dir()?;
@@ -130,15 +145,12 @@ pub fn run() {
             commands::playlists::delete_playlist,
             commands::playlists::add_track_to_playlist,
             commands::playlists::add_tracks_to_playlist,
-            commands::playlists::remove_track_from_playlist,
             commands::playlists::remove_tracks_from_playlist,
             commands::playlists::reorder_playlist_tracks,
             commands::playlists::toggle_like,
             commands::playlists::export_playlist_json,
             commands::playlists::analyze_playlist_json,
             commands::playlists::import_playlist_json,
-            commands::listen_stats::record_listen_start,
-            commands::listen_stats::record_listen_end,
             commands::listen_stats::get_listen_statistics_enabled,
             commands::listen_stats::set_listen_statistics_enabled,
             commands::listen_stats::get_track_listen_stats,
@@ -153,9 +165,6 @@ pub fn run() {
             commands::lastfm::disconnect_lastfm,
             commands::lastfm::open_lastfm_profile,
             commands::lastfm::flush_lastfm_queue,
-            commands::lastfm::lastfm_attempt_started,
-            commands::lastfm::lastfm_attempt_qualified,
-            commands::lastfm::lastfm_attempt_ended,
             commands::get_proxy_settings,
             commands::set_proxy_settings,
             commands::parse_proxy_link,

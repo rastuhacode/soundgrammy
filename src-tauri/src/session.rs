@@ -7,7 +7,7 @@
 
 use std::io;
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, OnceLock};
 
 use aes_gcm::aead::{Aead, Generate, Key, KeyInit};
 use aes_gcm::{Aes256Gcm, Nonce};
@@ -23,6 +23,21 @@ use keyring_core as credential_store;
 
 use crate::error::{AppError, AppResult};
 
+static NAMESPACE: OnceLock<String> = OnceLock::new();
+static SESSION_WRITE: Mutex<()> = Mutex::new(());
+pub(crate) fn app_namespace(identifier: &str, android_debug_suffix: Option<&str>) -> String {
+    format!("{identifier}{}", android_debug_suffix.unwrap_or(""))
+}
+pub fn initialize_namespace(identifier: &str) {
+    let _ = NAMESPACE.set(identifier.into());
+}
+pub(crate) fn credential_namespace() -> &'static str {
+    NAMESPACE
+        .get()
+        .map(String::as_str)
+        .unwrap_or("com.soundgrammy.app")
+}
+
 const KEYRING_SERVICE: &str = "com.soundgrammy.app";
 const KEYRING_USER: &str = "session-encryption-key";
 const SESSION_FILE: &str = "session.enc";
@@ -35,8 +50,8 @@ fn session_path(data_dir: &Path) -> PathBuf {
 
 /// Loads the AES key from the OS credential store, generating and storing a new random
 /// one on first run.
-fn load_or_create_key() -> AppResult<[u8; 32]> {
-    let entry = credential_store::Entry::new(KEYRING_SERVICE, KEYRING_USER)
+fn load_key(create: bool) -> AppResult<[u8; 32]> {
+    let entry = credential_store::Entry::new(credential_namespace(), KEYRING_USER)
         .map_err(|e| AppError::msg(format!("keychain unavailable: {e}")))?;
 
     match entry.get_password() {
@@ -50,6 +65,26 @@ fn load_or_create_key() -> AppResult<[u8; 32]> {
             Ok(arr)
         }
         Err(credential_store::Error::NoEntry) => {
+            // Copy a legacy development key into its own namespace; never delete the release key.
+            if credential_namespace() != KEYRING_SERVICE {
+                if let Ok(legacy) = credential_store::Entry::new(KEYRING_SERVICE, KEYRING_USER)
+                    .and_then(|e| e.get_password())
+                {
+                    let decoded = B64
+                        .decode(legacy.as_bytes())
+                        .map_err(|_| AppError::msg("corrupt legacy session key"))?;
+                    let key: [u8; 32] = decoded
+                        .try_into()
+                        .map_err(|_| AppError::msg("session key has unexpected length"))?;
+                    entry
+                        .set_password(&legacy)
+                        .map_err(|_| AppError::msg("failed to migrate session key"))?;
+                    return Ok(key);
+                }
+            }
+            if !create {
+                return Err(AppError::msg("Session encryption key is unavailable; unlock the credential store or sign in again"));
+            }
             let key = Key::<Aes256Gcm>::generate();
             entry
                 .set_password(&B64.encode(key.as_slice()))
@@ -62,7 +97,10 @@ fn load_or_create_key() -> AppResult<[u8; 32]> {
 }
 
 fn cipher() -> AppResult<Aes256Gcm> {
-    let key_bytes = load_or_create_key()?;
+    cipher_for(true)
+}
+fn cipher_for(create: bool) -> AppResult<Aes256Gcm> {
+    let key_bytes = load_key(create)?;
     let key = Key::<Aes256Gcm>::try_from(key_bytes.as_slice())
         .map_err(|_| AppError::msg("session key has unexpected length"))?;
     Ok(Aes256Gcm::new(&key))
@@ -136,6 +174,7 @@ impl EncryptedSessionBackend {
 
 impl SessionBackend for EncryptedSessionBackend {
     fn save(&self, session: &PersistedSession) -> io::Result<()> {
+        let _guard = SESSION_WRITE.lock().unwrap_or_else(|p| p.into_inner());
         if let Some(parent) = self.path.parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -150,15 +189,16 @@ impl SessionBackend for EncryptedSessionBackend {
         let mut blob = Vec::with_capacity(NONCE_LEN + ciphertext.len());
         blob.extend_from_slice(nonce.as_slice());
         blob.extend_from_slice(&ciphertext);
-        std::fs::write(&self.path, blob)?;
+        crate::atomic_file::write(&self.path, &blob)?;
         Ok(())
     }
 
     fn load(&self) -> io::Result<Option<PersistedSession>> {
-        self.load_with_cipher(|| cipher().map_err(io_err))
+        self.load_with_cipher(|| cipher_for(false).map_err(io_err))
     }
 
     fn delete(&self) -> io::Result<()> {
+        let _guard = SESSION_WRITE.lock().unwrap_or_else(|p| p.into_inner());
         if self.path.exists() {
             std::fs::remove_file(&self.path)?;
         }
@@ -170,13 +210,47 @@ impl SessionBackend for EncryptedSessionBackend {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum LocalSessionState {
+    Missing,
+    Usable,
+    Corrupt,
+    Unavailable,
+}
+fn classify_local_session(result: io::Result<Option<PersistedSession>>) -> LocalSessionState {
+    match result {
+        Ok(Some(_)) => LocalSessionState::Usable,
+        Ok(None) => LocalSessionState::Missing,
+        Err(error) if error.kind() == io::ErrorKind::InvalidData => LocalSessionState::Corrupt,
+        Err(_) => LocalSessionState::Unavailable,
+    }
+}
+pub fn local_state(data_dir: &Path) -> LocalSessionState {
+    classify_local_session(EncryptedSessionBackend::new(data_dir).load())
+}
+/// An explicitly requested new login can recover confirmed corruption without
+/// deleting the old ciphertext or interpreting a keychain outage as corruption.
+pub fn prepare_new_login(data_dir: &Path) -> AppResult<()> {
+    let _guard = SESSION_WRITE.lock().unwrap_or_else(|p| p.into_inner());
+    if local_state(data_dir) == LocalSessionState::Corrupt {
+        let path = session_path(data_dir);
+        let quarantine = data_dir.join(format!(
+            "session.enc.corrupt-{:016x}",
+            rand::random::<u64>()
+        ));
+        std::fs::rename(path, quarantine)?;
+    }
+    Ok(())
+}
+
 /// Whether a non-trivial encrypted session file is on disk (no network, no decrypt).
 ///
 /// Used as the local “logged in” gate together with a SQLite profile row.
 pub fn exists(data_dir: &Path) -> bool {
     let path = session_path(data_dir);
     match std::fs::metadata(&path) {
-        Ok(meta) => meta.is_file() && meta.len() > NONCE_LEN as u64,
+        Ok(meta) => meta.is_file() && meta.len() >= (NONCE_LEN + TAG_LEN) as u64,
         Err(_) => false,
     }
 }
@@ -193,7 +267,7 @@ pub fn clear(data_dir: &Path) -> AppResult<()> {
 /// Discard only that unusable login state; keep the SQLite music library.
 #[cfg(target_os = "android")]
 pub fn repair_android_restored_session(data_dir: &Path) -> AppResult<()> {
-    let entry = credential_store::Entry::new(KEYRING_SERVICE, KEYRING_USER)
+    let entry = credential_store::Entry::new(credential_namespace(), KEYRING_USER)
         .map_err(|e| AppError::msg(format!("keychain unavailable: {e}")))?;
 
     let unreadable = match entry.get_password() {
@@ -354,11 +428,48 @@ mod tests {
         assert!(!exists(&dir), "nonce-only file is not a session");
 
         fs::write(session_path(&dir), [0u8; NONCE_LEN + 1]).unwrap();
+        assert!(!exists(&dir));
+        fs::write(session_path(&dir), [0u8; NONCE_LEN + TAG_LEN]).unwrap();
         assert!(exists(&dir));
 
         clear(&dir).unwrap();
         assert!(!exists(&dir));
 
         let _ = fs::remove_dir_all(&dir);
+    }
+    #[test]
+    fn local_state_distinguishes_corruption_from_temporarily_unreadable_credentials() {
+        assert_eq!(classify_local_session(Ok(None)), LocalSessionState::Missing);
+        assert_eq!(
+            classify_local_session(Ok(Some(PersistedSession::default()))),
+            LocalSessionState::Usable
+        );
+        assert_eq!(
+            classify_local_session(Err(io::Error::new(io::ErrorKind::InvalidData, "truncated"))),
+            LocalSessionState::Corrupt
+        );
+        assert_eq!(
+            classify_local_session(Err(io::Error::other("keychain locked"))),
+            LocalSessionState::Unavailable
+        );
+    }
+    #[test]
+    fn a_new_login_quarantines_confirmed_truncation_without_destroying_ciphertext() {
+        let dir = test_dir("quarantine");
+        let blob = vec![1u8; NONCE_LEN + 1];
+        fs::write(session_path(&dir), &blob).unwrap();
+        prepare_new_login(&dir).unwrap();
+        assert_eq!(local_state(&dir), LocalSessionState::Missing);
+        let files = fs::read_dir(&dir)
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(files.len(), 1);
+        assert!(files[0]
+            .file_name()
+            .to_string_lossy()
+            .starts_with("session.enc.corrupt-"));
+        assert_eq!(fs::read(files[0].path()).unwrap(), blob);
+        fs::remove_dir_all(dir).unwrap();
     }
 }

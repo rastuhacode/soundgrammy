@@ -4,17 +4,20 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use futures_util::stream::{FuturesUnordered, StreamExt};
-use tauri::{Emitter, Manager};
+use futures_util::{
+    stream::{FuturesUnordered, StreamExt},
+    FutureExt,
+};
+use tauri::Manager;
 use tokio::io::{AsyncSeekExt, AsyncWriteExt};
-use tokio::sync::Notify;
+use tokio::sync::{Mutex, Notify};
 
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 use crate::telegram::download;
 use crate::telegram::media_requests::{acquire_cancellable, MediaPriority};
 
-use super::progress::{progress_from_state, ChunkStatus};
+use super::progress::ChunkStatus;
 use super::{TrackStream, CHUNK_SIZE, FOREGROUND_CONCURRENCY};
 
 #[derive(Debug, Eq, PartialEq)]
@@ -159,44 +162,34 @@ impl TrackStream {
                 }
             }
 
-            // Once marked Loading, always settle the slot, including cancellation.
-            let result = self.fetch_and_store(index, active.clone(), priority).await;
-            let mut state = self.state.lock().await;
-            let notify = Arc::clone(&state.chunks[index].notify);
-            if let Ok(bytes_written) = &result {
-                state.received += *bytes_written;
-            }
-            let slot = &mut state.chunks[index];
-            match &result {
-                Ok(_) => {
-                    slot.status = ChunkStatus::Ready;
-                    slot.error = None;
-                }
-                Err(error) => {
-                    slot.status = ChunkStatus::Missing;
-                    slot.error = Some(error.to_string());
-                }
-            }
-            notify.notify_waiters();
-            let progress = progress_from_state(self.track.id, self.total, &state);
-            drop(state);
-            let metadata_result = if result.is_ok() {
-                self.persist_partial_metadata().await
-            } else {
-                Ok(())
-            };
-            let _ = self.app.emit("download:progress", progress);
-
-            return match result {
-                Ok(_) => {
-                    self.try_finalize().await?;
-                    if self.final_path.lock().await.is_none() {
-                        metadata_result?;
-                    }
+            // The task owns the claim even if its caller drops a range future.
+            let stream = Arc::clone(self);
+            return tokio::spawn(async move {
+                let result = settle_claim(
+                    &stream.state,
+                    index,
+                    stream.fetch_and_store(index, active, priority),
+                )
+                .await;
+                let metadata_result = if result.is_ok() {
+                    stream.persist_partial_metadata().await
+                } else {
                     Ok(())
+                };
+                stream.emit_progress().await;
+                match result {
+                    Ok(_) => {
+                        stream.try_finalize().await?;
+                        if stream.final_path.lock().await.is_none() {
+                            metadata_result?;
+                        }
+                        Ok(())
+                    }
+                    Err(error) => Err(error),
                 }
-                Err(error) => Err(error),
-            };
+            })
+            .await
+            .map_err(|_| AppError::msg("Audio transfer worker interrupted"))?;
         }
     }
 
@@ -241,8 +234,16 @@ impl TrackStream {
         let _permit = acquire_cancellable(&self.request_slots, active.as_deref()).await?;
         Self::require_active(active.as_deref())?;
 
+        let owner = self.owner.lock().await;
+        let (track, generation) = owner.clone();
         let document = self.document.lock().await.clone();
+        drop(owner);
         let state = self.app.state::<AppState>();
+        if state.db.active_uid()? != track.tg_user_id
+            || state.db.account_generation()? != generation
+        {
+            return Err(AppError::NotAuthorized);
+        }
         let client = state.ensure_client().await?;
         let first_attempt = download::download_chunk(
             &client,
@@ -257,6 +258,11 @@ impl TrackStream {
             Ok(bytes) => bytes,
             Err(error) if download::is_file_reference_error(&error) => {
                 let _refresh_guard = self.refresh_lock.lock().await;
+                if state.db.active_uid()? != track.tg_user_id
+                    || state.db.account_generation()? != generation
+                {
+                    return Err(AppError::NotAuthorized);
+                }
                 let latest = self.document.lock().await.clone();
                 let client = state.client().await?;
                 match download::download_chunk(
@@ -273,9 +279,14 @@ impl TrackStream {
                     Err(retry_error) if download::is_file_reference_error(&retry_error) => {
                         let refreshed = {
                             let state = self.app.state::<AppState>();
-                            download::refresh_file_reference(&state, &self.track).await?
+                            download::refresh_file_reference(&state, &track).await?
                         };
+                        let owner = self.owner.lock().await;
+                        if owner.1 != generation || owner.0.id != track.id {
+                            return Err(AppError::NotAuthorized);
+                        }
                         *self.document.lock().await = refreshed.clone();
+                        drop(owner);
                         let client = state.client().await?;
                         download::download_chunk(
                             &client,
@@ -315,10 +326,88 @@ impl TrackStream {
     }
 }
 
+async fn settle_claim(
+    state: &Mutex<super::progress::StreamState>,
+    index: usize,
+    transfer: impl std::future::Future<Output = AppResult<u64>>,
+) -> AppResult<u64> {
+    let result = std::panic::AssertUnwindSafe(transfer)
+        .catch_unwind()
+        .await
+        .unwrap_or_else(|_| Err(AppError::msg("Audio transfer worker panicked")));
+    let mut ledger = state.lock().await;
+    if let Ok(bytes) = result.as_ref() {
+        ledger.received += bytes;
+    }
+    let slot = &mut ledger.chunks[index];
+    slot.status = if result.is_ok() {
+        ChunkStatus::Ready
+    } else {
+        ChunkStatus::Missing
+    };
+    slot.error = result.as_ref().err().map(ToString::to_string);
+    slot.notify.notify_waiters();
+    result
+}
+
 fn range_priority(cancellable: bool) -> MediaPriority {
     if cancellable {
         MediaPriority::Playback
     } else {
         MediaPriority::Background
+    }
+}
+
+#[cfg(test)]
+mod cancellation_tests {
+    use super::super::progress::{ChunkSlot, StreamState};
+    use super::*;
+    #[tokio::test]
+    async fn abandoned_range_waiter_does_not_abandon_shared_claim() {
+        for fails in [false, true] {
+            let state = Arc::new(Mutex::new(StreamState {
+                chunks: vec![ChunkSlot::default()],
+                received: 0,
+                terminal_error: None,
+            }));
+            state.lock().await.chunks[0].status = ChunkStatus::Loading;
+            let (send, receive) = tokio::sync::oneshot::channel();
+            let ledger = state.clone();
+            let owned = tokio::spawn(async move {
+                settle_claim(&ledger, 0, async {
+                    receive.await.unwrap();
+                    if fails {
+                        Err(AppError::msg("injected failure"))
+                    } else {
+                        Ok(12)
+                    }
+                })
+                .await
+            });
+            let waiter = tokio::spawn(owned);
+            tokio::task::yield_now().await;
+            waiter.abort();
+            send.send(()).unwrap();
+            tokio::time::timeout(std::time::Duration::from_secs(1), async {
+                loop {
+                    if state.lock().await.chunks[0].status != ChunkStatus::Loading {
+                        break;
+                    }
+                    tokio::task::yield_now().await;
+                }
+            })
+            .await
+            .expect("claim remained ownerless");
+            let ledger = state.lock().await;
+            assert_eq!(
+                ledger.chunks[0].status,
+                if fails {
+                    ChunkStatus::Missing
+                } else {
+                    ChunkStatus::Ready
+                }
+            );
+            assert_eq!(ledger.received, if fails { 0 } else { 12 });
+        }
     }
 }

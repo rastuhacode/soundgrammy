@@ -1,4 +1,5 @@
 //! Presentation-only bridge. The audio worker remains the sole transport/queue owner.
+use super::Status;
 use super::{session, Control, Snapshot};
 use serde::Serialize;
 use std::{
@@ -76,7 +77,7 @@ impl Presentation {
         let track = s.player.as_ref().and_then(|p| p.queue.current());
         let active = track.is_some() && s.track_id == track.map(|t| t.id);
         let desired = s.player.as_ref().is_some_and(|p| p.is_playing)
-            && !matches!(s.status, "error" | "ended" | "idle");
+            && !matches!(s.status, Status::Error | Status::Ended | Status::Idle);
         let previous = s.player.as_ref().is_some_and(|p| {
             p.queue.cursor > 0
                 || p.queue.tracks.len() > 1
@@ -103,7 +104,7 @@ impl Presentation {
             status: s.status.into(),
             background_active: active
                 && s.player.as_ref().is_some_and(|p| p.is_playing)
-                && !matches!(s.status, "error" | "idle"),
+                && !matches!(s.status, Status::Error | Status::Idle),
             duration: finite(s.duration_seconds),
             position: finite(s.current_time_seconds),
             rate: if s.status == "playing" { 1.0 } else { 0.0 },
@@ -390,7 +391,7 @@ mod tests {
             revision: 1,
             track_id: Some(7),
             attempt_id: Some(format!("native:{}", session.attempt)),
-            status: "playing",
+            status: Status::Playing,
             duration_seconds: 120.0,
             current_time_seconds: 10.0,
             player: Some(Arc::new(session)),
@@ -415,10 +416,10 @@ mod tests {
                 seek: true
             }
         );
-        s.status = "buffering";
+        s.status = Status::Buffering;
         assert_eq!(Presentation::from_snapshot(&s).rate, 0.0);
         assert!(Presentation::from_snapshot(&s).actions.pause);
-        s.status = "error";
+        s.status = Status::Error;
         Arc::make_mut(s.player.as_mut().unwrap()).is_playing = false;
         assert!(Presentation::from_snapshot(&s).actions.play);
         s.current_time_seconds = 2.0;
@@ -453,13 +454,13 @@ mod tests {
     #[test]
     fn foreground_lifetime_survives_queue_handoff_and_transient_interruption() {
         let mut s = snapshot();
-        s.status = "paused"; // OS interruption, user still intends playback.
+        s.status = Status::Paused; // OS interruption, user still intends playback.
         assert!(Presentation::from_snapshot(&s).background_active);
-        s.status = "ended"; // Next queue item has not been selected yet.
+        s.status = Status::Ended; // Next queue item has not been selected yet.
         assert!(Presentation::from_snapshot(&s).background_active);
         Arc::make_mut(s.player.as_mut().unwrap()).is_playing = false;
         assert!(!Presentation::from_snapshot(&s).background_active);
-        s.status = "error";
+        s.status = Status::Error;
         assert!(!Presentation::from_snapshot(&s).background_active);
     }
     #[test]
@@ -472,7 +473,7 @@ mod tests {
         assert_eq!(session.complete(session.attempt), session::Effect::Load);
         successor.track_id = session.queue.current().map(|track| track.id);
         successor.attempt_id = Some(format!("native:{}", session.attempt));
-        successor.status = "loading";
+        successor.status = Status::Loading;
 
         assert!(queued.control(&successor).is_none());
         assert!(matches!(

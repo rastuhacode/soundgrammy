@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::time::{SystemTime, UNIX_EPOCH};
 
 use rusqlite::params;
 
@@ -18,15 +17,27 @@ pub struct AudioCacheEntryRecord {
     pub last_accessed_at_ms: i64,
 }
 
-fn now_ms() -> i64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis()
-        .min(i64::MAX as u128) as i64
-}
+use crate::time::now_ms;
 
 impl Db {
+    pub fn cache_identities_for_user(&self, uid: i64) -> AppResult<Vec<(i64, String)>> {
+        let conn = self.conn.lock().unwrap();
+        let mut statement =
+            conn.prepare("SELECT id,file_unique_id FROM tracks WHERE tg_user_id=?1")?;
+        let rows = statement
+            .query_map([uid], |r| Ok((r.get(0)?, r.get(1)?)))?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+    pub fn cache_identities(&self) -> AppResult<Vec<(i64, String)>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT id,file_unique_id FROM tracks")?;
+        let rows = stmt
+            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(rows)
+    }
+
     pub fn mark_audio_cache_automatic(&self, track_id: i64) -> AppResult<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
@@ -61,12 +72,6 @@ impl Db {
             "DELETE FROM audio_cache_entries WHERE track_id = ?1",
             [track_id],
         )?;
-        Ok(())
-    }
-
-    pub fn clear_audio_cache_entries(&self) -> AppResult<()> {
-        let conn = self.conn.lock().unwrap();
-        conn.execute("DELETE FROM audio_cache_entries", [])?;
         Ok(())
     }
 

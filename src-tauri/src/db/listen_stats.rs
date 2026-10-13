@@ -7,22 +7,50 @@ use crate::listen_stats::{
     ListenAggregates,
 };
 
-impl Db {
-    fn now_ms() -> i64 {
-        use std::time::{SystemTime, UNIX_EPOCH};
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .map(|d| d.as_millis() as i64)
-            .unwrap_or(0)
-    }
+fn ensure_listen_identity(conn: &Connection, track_id: i64) -> AppResult<()> {
+    conn.execute(
+        "INSERT OR IGNORE INTO listen_track_identity(track_id,tg_user_id,file_unique_id)
+        SELECT ?1,tg_user_id,file_unique_id FROM tracks WHERE id=?1",
+        [track_id],
+    )?;
+    conn.execute(
+        "INSERT OR IGNORE INTO listen_track_identity(track_id) VALUES(?1)",
+        [track_id],
+    )?;
+    Ok(())
+}
 
+fn bump_history_revision(conn: &Connection) -> AppResult<()> {
+    conn.execute(
+        "INSERT INTO app_settings(key,value) VALUES('listen_history_revision','1') \
+        ON CONFLICT(key) DO UPDATE SET value=CAST(value AS INTEGER)+1",
+        [],
+    )?;
+    Ok(())
+}
+fn history_revision(conn: &Connection) -> AppResult<i64> {
+    Ok(conn
+        .query_row(
+            "SELECT CAST(value AS INTEGER) FROM app_settings WHERE key='listen_history_revision'",
+            [],
+            |r| r.get(0),
+        )
+        .optional()?
+        .unwrap_or(0))
+}
+
+impl Db {
     pub fn record_attempt_start(&self, track_id: i64) -> AppResult<()> {
-        let conn = self.conn.lock().unwrap();
-        let ts = Self::now_ms();
+        let guard = self.conn.lock().unwrap();
+        let conn = guard.unchecked_transaction()?;
+        ensure_listen_identity(&conn, track_id)?;
+        let ts = crate::time::now_ms();
         conn.execute(
             "INSERT INTO listen_events (track_id, event_type, ts_ms) VALUES (?1, 'attempt_start', ?2)",
             params![track_id, ts],
         )?;
+        bump_history_revision(&conn)?;
+        conn.commit()?;
         Ok(())
     }
 
@@ -35,7 +63,8 @@ impl Db {
     ) -> AppResult<ListenEndResult> {
         let conn = self.conn.lock().unwrap();
         let tx = conn.unchecked_transaction()?;
-        let ended_at_ms = Self::now_ms();
+        ensure_listen_identity(&tx, track_id)?;
+        let ended_at_ms = crate::time::now_ms();
         let input = AttemptEndInput {
             listened_ms,
             duration_ms,
@@ -63,6 +92,7 @@ impl Db {
         let next = apply_attempt_end(prev, derived, end_reason, ended_at_ms);
         let likeness = compute_likeness(&next, ended_at_ms);
         Self::upsert_aggregates(&tx, track_id, &next, likeness)?;
+        bump_history_revision(&tx)?;
         tx.commit()?;
 
         Ok(ListenEndResult {
@@ -89,7 +119,7 @@ impl Db {
             Some(s) => s,
             None => return Ok(None),
         };
-        let now = Self::now_ms();
+        let now = crate::time::now_ms();
         let agg = ListenAggregates {
             starts: row.starts,
             qualified_plays: row.qualified_plays,
@@ -103,9 +133,10 @@ impl Db {
         Ok(Some(row))
     }
 
+    #[cfg(test)]
     pub fn all_listen_stats(&self) -> AppResult<Vec<TrackListenStats>> {
         let conn = self.conn.lock().unwrap();
-        let now = Self::now_ms();
+        let now = crate::time::now_ms();
         let mut stmt = conn.prepare(
             "SELECT track_id, starts, qualified_plays, completes, early_skips, \
              total_listened_ms, first_played_at_ms, last_played_at_ms, likeness \
@@ -132,60 +163,121 @@ impl Db {
             .collect())
     }
 
-    pub fn rebuild_listen_stats(&self) -> AppResult<()> {
+    pub fn listen_stats_for_user(&self, uid: i64) -> AppResult<Vec<TrackListenStats>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT s.track_id,s.starts,s.qualified_plays,s.completes,s.early_skips,s.total_listened_ms,s.first_played_at_ms,s.last_played_at_ms,s.likeness
+            FROM track_listen_stats s JOIN listen_track_identity i ON i.track_id=s.track_id WHERE i.tg_user_id=?1 ORDER BY s.track_id")?;
+        let mut rows = stmt
+            .query_map([uid], Self::map_stats_row)?
+            .collect::<Result<Vec<_>, _>>()?;
+        let now = crate::time::now_ms();
+        for s in &mut rows {
+            s.likeness = compute_likeness(
+                &ListenAggregates {
+                    starts: s.starts,
+                    qualified_plays: s.qualified_plays,
+                    completes: s.completes,
+                    early_skips: s.early_skips,
+                    total_listened_ms: s.total_listened_ms,
+                    first_played_at_ms: s.first_played_at_ms,
+                    last_played_at_ms: s.last_played_at_ms,
+                },
+                now,
+            );
+        }
+        Ok(rows)
+    }
+    pub fn clear_listen_stats_for_user(&self, uid: i64) -> AppResult<()> {
         let conn = self.conn.lock().unwrap();
         let tx = conn.unchecked_transaction()?;
-        tx.execute_batch("DELETE FROM track_listen_stats;")?;
+        tx.execute("DELETE FROM listen_events WHERE track_id IN (SELECT track_id FROM listen_track_identity WHERE tg_user_id=?1)",[uid])?;
+        tx.execute("DELETE FROM track_listen_stats WHERE track_id IN (SELECT track_id FROM listen_track_identity WHERE tg_user_id=?1)",[uid])?;
+        bump_history_revision(&tx)?;
+        tx.commit()?;
+        Ok(())
+    }
 
-        let mut stmt = tx.prepare(
-            "SELECT track_id, listened_ms, duration_ms, end_reason, ts_ms \
-             FROM listen_events WHERE event_type = 'attempt_end' ORDER BY id ASC",
-        )?;
-        let events: Vec<(i64, i64, Option<i64>, String, i64)> = stmt
-            .query_map([], |row| {
-                Ok((
-                    row.get(0)?,
-                    row.get(1)?,
-                    row.get(2)?,
-                    row.get(3)?,
-                    row.get(4)?,
-                ))
-            })?
-            .collect::<Result<Vec<_>, _>>()?;
-        drop(stmt);
-
+    pub fn rebuild_listen_stats(&self) -> AppResult<()> {
+        self.rebuild_listen_stats_with(|| {})
+    }
+    pub(super) fn rebuild_listen_stats_with(&self, before_commit: impl FnOnce()) -> AppResult<()> {
+        let (revision, cutoff) = {
+            let conn = self.conn.lock().unwrap();
+            (
+                history_revision(&conn)?,
+                conn.query_row("SELECT COALESCE(MAX(id),0) FROM listen_events", [], |r| {
+                    r.get::<_, i64>(0)
+                })?,
+            )
+        };
         let mut by_track: std::collections::HashMap<i64, ListenAggregates> =
             std::collections::HashMap::new();
-
-        for (track_id, listened_ms, duration_ms, end_reason_str, ended_at_ms) in events {
-            let Some(end_reason) = EndReason::parse(&end_reason_str) else {
-                continue;
+        let mut last_id = 0;
+        loop {
+            // Release the shared connection between pages and perform aggregate CPU work outside it.
+            let events = {
+                let conn = self.conn.lock().unwrap();
+                let mut stmt=conn.prepare("SELECT id,track_id,listened_ms,duration_ms,end_reason,ts_ms
+                    FROM listen_events WHERE event_type='attempt_end' AND id>?1 AND id<=?2 ORDER BY id LIMIT 1000")?;
+                let events = stmt
+                    .query_map(params![last_id, cutoff], |r| {
+                        Ok((
+                            r.get::<_, i64>(0)?,
+                            r.get::<_, i64>(1)?,
+                            r.get::<_, i64>(2)?,
+                            r.get::<_, Option<i64>>(3)?,
+                            r.get::<_, String>(4)?,
+                            r.get::<_, i64>(5)?,
+                        ))
+                    })?
+                    .collect::<Result<Vec<_>, _>>()?;
+                events
             };
-            let derived = derive_attempt_end(AttemptEndInput {
-                listened_ms,
-                duration_ms,
-                end_reason,
-                ended_at_ms,
-            });
-            let prev = by_track.remove(&track_id).unwrap_or_default();
-            let next = apply_attempt_end(prev, derived, end_reason, ended_at_ms);
-            by_track.insert(track_id, next);
+            if events.is_empty() {
+                break;
+            }
+            for (id, track_id, listened_ms, duration_ms, end_reason, ended_at_ms) in events {
+                last_id = id;
+                let Some(end_reason) = EndReason::parse(&end_reason) else {
+                    continue;
+                };
+                let derived = derive_attempt_end(AttemptEndInput {
+                    listened_ms,
+                    duration_ms,
+                    end_reason,
+                    ended_at_ms,
+                });
+                let previous = by_track.remove(&track_id).unwrap_or_default();
+                by_track.insert(
+                    track_id,
+                    apply_attempt_end(previous, derived, end_reason, ended_at_ms),
+                );
+            }
         }
-
-        let now = Self::now_ms();
-        for (track_id, agg) in by_track {
-            let likeness = compute_likeness(&agg, now);
-            Self::upsert_aggregates(&tx, track_id, &agg, likeness)?;
+        before_commit();
+        let conn = self.conn.lock().unwrap();
+        let tx = conn.unchecked_transaction()?;
+        if history_revision(&tx)? != revision {
+            return Err(crate::error::AppError::msg(
+                "Listen history changed during rebuild; retry",
+            ));
+        }
+        tx.execute("DELETE FROM track_listen_stats", [])?;
+        let now = crate::time::now_ms();
+        for (track_id, aggregate) in by_track {
+            Self::upsert_aggregates(&tx, track_id, &aggregate, compute_likeness(&aggregate, now))?;
         }
         tx.commit()?;
         Ok(())
     }
 
     /// Permanently removes both raw listen history and derived aggregates.
+    #[cfg(test)]
     pub fn clear_listen_stats(&self) -> AppResult<()> {
         let conn = self.conn.lock().unwrap();
         let tx = conn.unchecked_transaction()?;
         tx.execute_batch("DELETE FROM listen_events; DELETE FROM track_listen_stats;")?;
+        bump_history_revision(&tx)?;
         tx.commit()?;
         Ok(())
     }

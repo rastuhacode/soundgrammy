@@ -39,6 +39,7 @@ pub struct PlaylistDownloadResult {
     pub folder_path: Option<String>,
     pub succeeded: Vec<PlaylistDownloadSucceeded>,
     pub failed: Vec<PlaylistDownloadFailed>,
+    pub warnings: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -93,40 +94,78 @@ fn track_export_basename(track: &crate::db::Track) -> String {
     }
 }
 
+#[cfg(test)]
 fn unique_path(dir: &Path, basename: &str, ext: &str) -> PathBuf {
-    let primary = dir.join(format!("{basename}.{ext}"));
-    if !primary.exists() {
-        return primary;
-    }
-    let mut n = 2u32;
-    loop {
-        let candidate = dir.join(format!("{basename} ({n}).{ext}"));
-        if !candidate.exists() {
-            return candidate;
-        }
-        n = n.saturating_add(1);
-        if n > 10_000 {
-            return dir.join(format!("{basename} ({n}).{ext}"));
+    for n in 1..=10_000 {
+        let name = if n == 1 {
+            format!("{basename}.{ext}")
+        } else {
+            format!("{basename} ({n}).{ext}")
+        };
+        let path = dir.join(name);
+        if !path.exists() {
+            return path;
         }
     }
+    panic!("No unused export filename");
 }
 
-fn unique_dir(parent: &Path, basename: &str) -> PathBuf {
-    let primary = parent.join(basename);
-    if !primary.exists() {
-        return primary;
-    }
-    let mut n = 2u32;
-    loop {
-        let candidate = parent.join(format!("{basename} ({n})"));
-        if !candidate.exists() {
-            return candidate;
-        }
-        n = n.saturating_add(1);
-        if n > 10_000 {
-            return parent.join(format!("{basename} ({n})"));
+fn unique_dir(parent: &Path, basename: &str) -> std::io::Result<PathBuf> {
+    for n in 1..=10_000 {
+        let name = if n == 1 {
+            basename.to_string()
+        } else {
+            format!("{basename} ({n})")
+        };
+        let path = parent.join(name);
+        match std::fs::create_dir(&path) {
+            Ok(()) => return Ok(path),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error),
         }
     }
+    Err(std::io::Error::other("No unused export directory"))
+}
+
+async fn copy_complete_file(
+    source: &Path,
+    dir: &Path,
+    basename: &str,
+    ext: &str,
+) -> AppResult<PathBuf> {
+    use tokio::io::AsyncWriteExt;
+    tokio::fs::create_dir_all(dir).await?;
+    let temp = dir.join(format!(".soundgrammy-{:016x}.tmp", rand::random::<u64>()));
+    let result = async {
+        let mut input = tokio::fs::File::open(source).await?;
+        let mut output = tokio::fs::OpenOptions::new()
+            .create_new(true)
+            .write(true)
+            .open(&temp)
+            .await?;
+        tokio::io::copy(&mut input, &mut output).await?;
+        output.flush().await?;
+        output.sync_all().await?;
+        drop(output);
+        // Linking the completed inode publishes atomically and cannot overwrite another export.
+        for n in 1..=10_000 {
+            let name = if n == 1 {
+                format!("{basename}.{ext}")
+            } else {
+                format!("{basename} ({n}).{ext}")
+            };
+            let destination = dir.join(name);
+            match tokio::fs::hard_link(&temp, &destination).await {
+                Ok(()) => return Ok(destination),
+                Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(error) => return Err(AppError::Io(error)),
+            }
+        }
+        Err(AppError::msg("No unused export filename"))
+    }
+    .await;
+    let _ = tokio::fs::remove_file(temp).await;
+    result
 }
 
 fn soundgrammy_downloads_root(app: &AppHandle) -> AppResult<PathBuf> {
@@ -137,25 +176,28 @@ fn soundgrammy_downloads_root(app: &AppHandle) -> AppResult<PathBuf> {
     Ok(downloads.join("SoundGrammy"))
 }
 
-fn local_date_ymd() -> String {
-    use std::time::{SystemTime, UNIX_EPOCH};
-    let secs = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|d| d.as_secs())
-        .unwrap_or(0);
-    // YYYY-MM-DD in UTC (stable export-folder label without extra deps).
-    let days = secs / 86_400;
-    let z = days as i64 + 719_468;
-    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
-    let doe = (z - era * 146_097) as u64;
-    let yoe = (doe - doe / 1460 + doe / 36524 - doe / 146_096) / 365;
-    let y = yoe as i64 + era * 400;
-    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    let mp = (5 * doy + 2) / 153;
-    let d = doy - (153 * mp + 2) / 5 + 1;
-    let m = if mp < 10 { mp + 3 } else { mp - 9 };
-    let y = if m <= 2 { y + 1 } else { y };
-    format!("{y:04}-{m:02}-{d:02}")
+fn utc_date_ymd() -> String {
+    crate::time::date_utc(crate::time::now_ms())
+}
+
+fn finalized_format(path: &Path, track: &crate::db::Track) -> AppResult<(String, String)> {
+    let ext = path.extension().and_then(|s| s.to_str());
+    let mime = match ext {
+        Some("webm") => "audio/webm",
+        Some("ogg") => "audio/ogg",
+        Some("opus") => "audio/opus",
+        Some("m4a") => "audio/mp4",
+        Some("flac") => "audio/flac",
+        Some("wav") => "audio/wav",
+        Some("mp3") => "audio/mpeg",
+        _ => {
+            return Ok((
+                extension_for_mime(&download::stored_document(track)?.mime_type).into(),
+                download::stored_document(track)?.mime_type,
+            ))
+        }
+    };
+    Ok((ext.unwrap().into(), mime.into()))
 }
 
 async fn copy_track_to_dir(
@@ -165,25 +207,12 @@ async fn copy_track_to_dir(
     dest_dir: &Path,
 ) -> AppResult<PathBuf> {
     let track = cache::require_track(state, track_id)?;
-    let doc = download::stored_document(&track)?;
-    let ext = extension_for_mime(&doc.mime_type);
+    let cached = cache::ensure_audio_leased(state, app, track_id).await?;
+    let (ext, _) = finalized_format(&cached, &track)?;
     let basename = track_export_basename(&track);
-    let dest = unique_path(dest_dir, &basename, ext);
-
-    let cached = cache::ensure_audio(state, app, track_id).await?;
-    tokio::fs::create_dir_all(dest_dir).await.map_err(|e| {
-        AppError::msg(format!(
-            "Cannot write to Downloads ({}): {e}",
-            dest_dir.display()
-        ))
-    })?;
-    tokio::fs::copy(&cached, &dest).await.map_err(|e| {
-        AppError::msg(format!(
-            "Cannot write download file ({}): {e}",
-            dest.display()
-        ))
-    })?;
-    Ok(dest)
+    // Revalidate ownership after a download that may outlive logout/account replacement.
+    cache::require_track(state, track_id)?;
+    copy_complete_file(&cached, dest_dir, &basename, &ext).await
 }
 
 /// Export a single track into `Downloads/SoundGrammy/`.
@@ -191,14 +220,10 @@ pub async fn export_track(state: &AppState, app: &AppHandle, track_id: i64) -> A
     #[cfg(target_os = "android")]
     {
         let track = cache::require_track(state, track_id)?;
-        let doc = download::stored_document(&track)?;
-        let file_name = format!(
-            "{}.{}",
-            track_export_basename(&track),
-            extension_for_mime(&doc.mime_type)
-        );
-        let cached = cache::ensure_audio(state, app, track_id).await?;
-        return crate::android_downloads::save(cached, file_name, doc.mime_type).await;
+        let cached = cache::ensure_audio_leased(state, app, track_id).await?;
+        let (ext, mime) = finalized_format(&cached, &track)?;
+        let file_name = format!("{}.{}", track_export_basename(&track), ext);
+        return crate::android_downloads::save(cached.path.clone(), file_name, mime).await;
     }
 
     #[cfg(not(target_os = "android"))]
@@ -218,28 +243,16 @@ pub async fn export_tracks(
     state: &AppState,
     app: &AppHandle,
     track_ids: &[i64],
-) -> AppResult<String> {
-    if track_ids.is_empty() {
-        return Err(AppError::msg("No tracks to download"));
-    }
-    let root = soundgrammy_downloads_root(app)?;
-    tokio::fs::create_dir_all(&root)
-        .await
-        .map_err(|e| AppError::msg(format!("Cannot create Downloads/SoundGrammy folder: {e}")))?;
-    let folder_name = format!("Export {}", local_date_ymd());
-    let dest_dir = unique_dir(&root, &folder_name);
-    tokio::fs::create_dir_all(&dest_dir).await.map_err(|e| {
-        AppError::msg(format!(
-            "Cannot create export folder ({}): {e}",
-            dest_dir.display()
-        ))
-    })?;
-
-    for &track_id in track_ids {
-        copy_track_to_dir(state, app, track_id, &dest_dir).await?;
-    }
-
-    Ok(dest_dir.to_string_lossy().into_owned())
+) -> AppResult<PlaylistDownloadResult> {
+    export_folder(
+        state,
+        app,
+        format!("Export {}", utc_date_ymd()),
+        track_ids,
+        None,
+        false,
+    )
+    .await
 }
 
 fn playlist_folder_basename(name: &str) -> String {
@@ -296,6 +309,17 @@ pub async fn download_playlist(
     track_ids: &[i64],
     job_id: String,
 ) -> AppResult<PlaylistDownloadResult> {
+    export_folder(state, app, name, track_ids, Some(job_id), true).await
+}
+
+async fn export_folder(
+    state: &AppState,
+    app: &AppHandle,
+    name: String,
+    track_ids: &[i64],
+    job_id: Option<String>,
+    playlist: bool,
+) -> AppResult<PlaylistDownloadResult> {
     if track_ids.is_empty() {
         return Err(AppError::msg("No tracks to download"));
     }
@@ -306,7 +330,7 @@ pub async fn download_playlist(
         .map_err(|e| AppError::msg(format!("Cannot create Downloads/SoundGrammy folder: {e}")))?;
 
     let folder_basename = playlist_folder_basename(&name);
-    let dest_dir = unique_dir(&root, &folder_basename);
+    let dest_dir = unique_dir(&root, &folder_basename)?;
     tokio::fs::create_dir_all(&dest_dir).await.map_err(|e| {
         AppError::msg(format!(
             "Cannot create playlist folder ({}): {e}",
@@ -321,15 +345,17 @@ pub async fn download_playlist(
 
     for (index, &track_id) in track_ids.iter().enumerate() {
         let current = (index as u32).saturating_add(1);
-        let _ = app.emit(
-            "download_playlist:progress",
-            PlaylistDownloadProgress {
-                job_id: job_id.clone(),
-                current,
-                total,
-                track_id,
-            },
-        );
+        if let Some(job_id) = &job_id {
+            let _ = app.emit(
+                "download_playlist:progress",
+                PlaylistDownloadProgress {
+                    job_id: job_id.clone(),
+                    current,
+                    total,
+                    track_id,
+                },
+            );
+        }
 
         let meta = cache::require_track(state, track_id).ok();
         let title = meta.as_ref().and_then(|t| t.title.clone());
@@ -369,26 +395,58 @@ pub async fn download_playlist(
         }
     }
 
+    finish_export(
+        dest_dir,
+        folder_basename,
+        succeeded,
+        failed,
+        m3u_entries,
+        playlist,
+        |path, body| async move {
+            tokio::task::spawn_blocking(move || crate::atomic_file::write(&path, body.as_bytes()))
+                .await
+                .map_err(|_| AppError::msg("Playlist file worker interrupted"))??;
+            Ok(())
+        },
+    )
+    .await
+}
+
+async fn finish_export<F: std::future::Future<Output = AppResult<()>>>(
+    dest_dir: PathBuf,
+    folder_basename: String,
+    succeeded: Vec<PlaylistDownloadSucceeded>,
+    failed: Vec<PlaylistDownloadFailed>,
+    m3u_entries: Vec<M3uEntry>,
+    playlist: bool,
+    write_playlist: impl FnOnce(PathBuf, String) -> F,
+) -> AppResult<PlaylistDownloadResult> {
     if succeeded.is_empty() {
         let _ = tokio::fs::remove_dir_all(&dest_dir).await;
         return Ok(PlaylistDownloadResult {
             folder_path: None,
             succeeded,
             failed,
+            warnings: Vec::new(),
         });
     }
 
-    let m3u_name = format!("{folder_basename}.m3u8");
-    let m3u_path = dest_dir.join(&m3u_name);
-    let m3u_body = build_m3u8(&m3u_entries);
-    // Audio files are already on disk — do not fail the whole job if the
-    // playlist file cannot be written; the UI needs the per-track summary.
-    let _ = tokio::fs::write(&m3u_path, m3u_body.as_bytes()).await;
+    let mut warnings = Vec::new();
+    if playlist {
+        let m3u_path = dest_dir.join(format!("{folder_basename}.m3u8"));
+        let m3u_body = build_m3u8(&m3u_entries);
+        if write_playlist(m3u_path, m3u_body).await.is_err() {
+            warnings.push(
+                "Audio files were exported, but the playlist file could not be written.".into(),
+            );
+        }
+    }
 
     Ok(PlaylistDownloadResult {
         folder_path: Some(dest_dir.to_string_lossy().into_owned()),
         succeeded,
         failed,
+        warnings,
     })
 }
 

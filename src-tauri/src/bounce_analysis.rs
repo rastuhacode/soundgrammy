@@ -92,7 +92,7 @@ pub async fn profile_for_track(
 
     // Playback owns the same deduplicated download, so waiting here never
     // blocks entering fullscreen or the media element itself.
-    let path = match cache::ensure_audio(state, app, track_id).await {
+    let path = match cache::ensure_audio_leased(state, app, track_id).await {
         Ok(path) => path,
         Err(error) => {
             tracing::warn!(track_id, "bounce profile download unavailable: {error}");

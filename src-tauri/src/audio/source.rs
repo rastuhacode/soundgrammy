@@ -99,6 +99,7 @@ pub struct Source {
     block_start: u64,
     block: Vec<u8>,
     _session: Option<Session>,
+    _lease: Option<cache::CacheLease>,
 }
 pub struct OpenOptions {
     pub active: Arc<AtomicBool>,
@@ -134,6 +135,10 @@ impl Source {
                 let state = app.state::<AppState>();
                 let track = cache::require_track(&state, track_id)?;
                 let path = cache::audio_path(&state, &track)?;
+                let lease = {
+                    let _guard = state.cache_lifecycle.lock().await;
+                    state.cache_leases.acquire(&track.file_unique_id)
+                };
                 // Protection is registered before opening either source, including cache hits.
                 if !token.load(Ordering::Acquire) {
                     return Err(crate::error::AppError::msg("cancelled"));
@@ -143,7 +148,7 @@ impl Source {
                     let file = File::open(path)?;
                     let total = file.metadata()?.len();
                     let _ = state.db.touch_audio_cache(track_id);
-                    return Ok::<_, crate::error::AppError>((Some(file), None, total));
+                    return Ok::<_, crate::error::AppError>((Some(file), None, total, lease));
                 }
                 let stream = state
                     .streaming
@@ -154,7 +159,7 @@ impl Source {
                     return Err(crate::error::AppError::msg("cancelled"));
                 }
                 let total = stream.total();
-                Ok((None, Some(stream), total))
+                Ok((None, Some(stream), total, lease))
             }
             .await
             .map_err(|error| {
@@ -167,7 +172,7 @@ impl Source {
             });
             let _ = tx.send(result);
         });
-        let (file, stream, total) = wait(&rx, &active)??;
+        let (file, stream, total, lease) = wait(&rx, &active)??;
         if file.is_some() {
             coverage.complete.store(true, Ordering::Release);
         }
@@ -196,6 +201,7 @@ impl Source {
             block_start: 0,
             block: Vec::new(),
             _session: Some(session),
+            _lease: Some(lease),
         })
     }
 }
@@ -221,6 +227,7 @@ pub fn spawn_observer(
         block_start: 0,
         block: Vec::new(),
         _session: None,
+        _lease: None,
     };
     spawn_scanner(Box::new(observer), active, coverage).map(|_| ())
 }
@@ -359,6 +366,7 @@ mod tests {
             block_start: 0,
             block: Vec::new(),
             _session: None,
+            _lease: None,
         };
         let mut bytes = [0; 16];
         source.read_exact(&mut bytes).unwrap();
@@ -433,6 +441,7 @@ mod streaming_decode_tests {
             block_start: 0,
             block: Vec::new(),
             _session: None,
+            _lease: None,
         };
         let (producer, consumer) = HeapRb::<f32>::new(4096).split();
         let (sender, _receiver) = mpsc::sync_channel(8);
@@ -491,6 +500,7 @@ mod streaming_decode_tests {
                 block_start: 0,
                 block: Vec::new(),
                 _session: None,
+                _lease: None,
             };
             let (producer, consumer) = HeapRb::<f32>::new(4096).split();
             let (sender, _receiver) = mpsc::sync_channel(8);

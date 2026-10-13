@@ -5,11 +5,15 @@ Rust owns the complete playback path: `audio/source.rs` reads cached files or ve
 ## Download lifecycle and partial cache
 
 - Each native source owns a playback session and cancellation token. Replacing or disposing the source closes the session and prevents new playback downloads. An already in-flight chunk can settle safely.
+- Shared streams are keyed by Telegram document identity across account-scoped track rows. Each account retains its own MTProto reference, and generation checks reject stale fetch/reference writes.
+- Chunk claims belong to downloader tasks; dropping a range waiter cannot leave an ownerless Loading slot.
 - Missing ranges use the shared downloader and bounded range cache. Sparse file holes are never treated as downloaded bytes.
 - Completed chunks are recorded in a sidecar manifest next to the sparse `.part` file. Reopening restores verified chunks.
 - Export and explicit cache operations retain independent download lifetimes.
 - Complete files are atomically finalized and subsequent playback opens the cached file directly.
-- Active sources protect their files from eviction. Partial playback data remains lowest-priority cache data; explicitly pinned complete files survive normal eviction and TTL cleanup.
+- Playback, exports, analysis, artwork extraction and explicit jobs hold document leases; lease acquisition and deletion eligibility share a lifecycle lock. Cache clear returns removed/protected IDs and failure counts while retaining records for files it keeps. Inactive-account pins also protect shared files. Partial playback data remains lowest-priority cache data; explicitly pinned complete files survive normal eviction and TTL cleanup.
+
+Explicit cache jobs reserve logical bytes and deduplicate repeated memberships. Automatic playback uses the limit as an eviction target while protecting active/pinned files. Invalid partials and orphan sidecars are accounted for and cleaned independently of TTL.
 
 ## Seeking and buffer display
 

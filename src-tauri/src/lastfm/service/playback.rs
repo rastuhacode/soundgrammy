@@ -1,17 +1,22 @@
 use super::*;
 
 impl LastFmService {
-    pub async fn attempt_started(
+    pub async fn register_started(
         &self,
         db: &Db,
-        app: &AppHandle,
-        attempt_id: String,
-        track_id: i64,
+        app: &dyn LastFmHost,
+        start: crate::lastfm::models::PlaybackStart,
     ) -> AppResult<()> {
+        let crate::lastfm::models::PlaybackStart {
+            attempt_id,
+            track_id,
+            started_at_utc,
+            duration_seconds,
+        } = start;
         if attempt_id.trim().is_empty() || db.lastfm_attempt_is_queued(&attempt_id)? {
             return Ok(());
         }
-        let (username, account_key, session_key) = {
+        let (username, account_key, session_key, generation) = {
             let runtime = self.runtime.lock().await;
             if !runtime.enabled || runtime.auth_state != LastFmAuthState::Connected {
                 return Ok(());
@@ -23,7 +28,7 @@ impl LastFmService {
             ) else {
                 return Ok(());
             };
-            (username, account_key, session_key)
+            (username, account_key, session_key, runtime.generation)
         };
         let Some(profile) = db.load_profile()? else {
             return Ok(());
@@ -39,6 +44,9 @@ impl LastFmService {
             Ok(metadata) => metadata,
             Err(message) => {
                 let mut runtime = self.runtime.lock().await;
+                if runtime.generation != generation {
+                    return Ok(());
+                }
                 runtime.last_metadata_warning = Some(issue("metadata", None, message));
                 drop(runtime);
                 self.emit_status(db, app).await;
@@ -52,42 +60,68 @@ impl LastFmService {
             track_id,
             artist: artist.to_owned(),
             track_title: title.to_owned(),
-            duration_seconds: track.duration.filter(|value| *value > 0),
-            started_at_utc: now_seconds(),
+            duration_seconds: duration_seconds.filter(|value| *value > 0),
+            started_at_utc,
         };
         {
             let mut runtime = self.runtime.lock().await;
-            if runtime.active_attempts.contains_key(&attempt_id) {
+            if runtime.generation != generation || runtime.active_attempts.contains_key(&attempt_id)
+            {
                 return Ok(());
             }
-            runtime.active_attempts.insert(attempt_id, snapshot.clone());
+            runtime
+                .active_attempts
+                .insert(attempt_id.clone(), snapshot.clone());
+            *self.now_playing.lock().await =
+                Some((generation, attempt_id.clone(), session_key, snapshot));
+        }
+        self.wake();
+        Ok(())
+    }
+
+    pub(super) async fn deliver_now_playing(&self, db: &Db, app: &dyn LastFmHost) -> AppResult<()> {
+        let Some((generation, attempt_id, session_key, snapshot)) =
+            self.now_playing.lock().await.take()
+        else {
+            return Ok(());
+        };
+        {
+            let runtime = self.runtime.lock().await;
+            if runtime.generation != generation
+                || !runtime.active_attempts.contains_key(&attempt_id)
+            {
+                return Ok(());
+            }
         }
         let client = self.client()?;
-        match client
+        let result = client
             .update_now_playing(
                 &session_key,
                 &snapshot.artist,
                 &snapshot.track_title,
                 snapshot.duration_seconds,
             )
-            .await
-        {
+            .await;
+        let mut runtime = self.runtime.lock().await;
+        if runtime.generation != generation || !runtime.active_attempts.contains_key(&attempt_id) {
+            return Ok(());
+        }
+        match result {
             Ok(0) => {}
             Ok(code) => {
-                let mut runtime = self.runtime.lock().await;
                 runtime.last_metadata_warning = Some(issue(
                     "filtered",
                     Some(code),
                     "Last.fm filtered the Now Playing update.",
                 ));
             }
-            Err(LastFmError::Api(9)) => self.mark_needs_reauth(db).await?,
+            Err(LastFmError::Api(9)) => mark_runtime_needs_reauth(&mut runtime, db)?,
             Err(error) => {
-                let mut runtime = self.runtime.lock().await;
                 runtime.last_error =
                     Some(issue("now_playing", api_code(&error), error.safe_message()));
             }
         }
+        drop(runtime);
         self.emit_status(db, app).await;
         Ok(())
     }
@@ -95,18 +129,15 @@ impl LastFmService {
     pub async fn attempt_qualified(
         &self,
         db: &Db,
-        app: &AppHandle,
+        app: &dyn LastFmHost,
         attempt_id: &str,
         listened_ms: i64,
     ) -> AppResult<()> {
-        let snapshot = {
-            let runtime = self.runtime.lock().await;
-            if !runtime.enabled || runtime.auth_state != LastFmAuthState::Connected {
-                return Ok(());
-            }
-            runtime.active_attempts.get(attempt_id).cloned()
-        };
-        let Some(snapshot) = snapshot else {
+        let runtime = self.runtime.lock().await;
+        if !runtime.enabled || runtime.auth_state != LastFmAuthState::Connected {
+            return Ok(());
+        }
+        let Some(snapshot) = runtime.active_attempts.get(attempt_id).cloned() else {
             return Ok(());
         };
         let Some(threshold) = qualification_threshold_ms(snapshot.duration_seconds) else {
@@ -126,6 +157,7 @@ impl LastFmService {
             started_at_utc: snapshot.started_at_utc,
             created_at_ms: now_ms(),
         })?;
+        drop(runtime);
         if inserted {
             self.wake();
             self.emit_status(db, app).await;
@@ -159,10 +191,10 @@ fn eligible_metadata<'a>(
     Ok((artist, title))
 }
 
-fn qualification_threshold_ms(duration_seconds: Option<i64>) -> Option<i64> {
+pub(crate) fn qualification_threshold_ms(duration_seconds: Option<i64>) -> Option<i64> {
     match duration_seconds {
         Some(duration) if duration <= 30 => None,
-        Some(duration) => Some((duration * 1000 / 2).min(240_000)),
+        Some(duration) => Some((duration.saturating_mul(1000) / 2).min(240_000)),
         None => Some(240_000),
     }
 }

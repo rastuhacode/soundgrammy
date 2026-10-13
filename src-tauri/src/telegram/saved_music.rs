@@ -61,6 +61,7 @@ trait MusicSource: Sync {
 struct TelegramSource<'a> {
     state: &'a AppState,
     uid: i64,
+    generation: i64,
 }
 
 impl TelegramSource<'_> {
@@ -70,6 +71,7 @@ impl TelegramSource<'_> {
             .db
             .load_profile()?
             .is_none_or(|p| p.tg_user_id != self.uid)
+            || self.state.db.account_generation()? != self.generation
         {
             return Err(AppError::NotAuthorized);
         }
@@ -199,7 +201,12 @@ pub async fn sync(state: &AppState, app: &AppHandle, mode: SyncMode) -> AppResul
             .load_profile()?
             .ok_or(AppError::NotAuthorized)?
             .tg_user_id;
-        let source = TelegramSource { state, uid };
+        let generation = state.db.account_generation()?;
+        let source = TelegramSource {
+            state,
+            uid,
+            generation,
+        };
         if mode == SyncMode::Full {
             let batch = state.db.request_full_reindex(uid)?;
             let _ = app.emit("library:batch", batch);
@@ -210,8 +217,9 @@ pub async fn sync(state: &AppState, app: &AppHandle, mode: SyncMode) -> AppResul
         if user.id != uid {
             return Err(AppError::NotAuthorized);
         }
-        state.db.refresh_active_profile(
+        state.db.refresh_profile_at_generation(
             uid,
+            generation,
             &user.first_name,
             user.last_name.as_deref(),
             user.username.as_deref(),
@@ -227,11 +235,15 @@ pub async fn sync(state: &AppState, app: &AppHandle, mode: SyncMode) -> AppResul
             );
             let _ = app.emit("library:batch", batch);
         };
-        if state.db.library_status(uid)?.blocking {
+        let result = if state.db.library_status(uid)?.blocking {
             index(&state.db, uid, &source, publish).await
         } else {
             soft_index(&state.db, uid, &source, publish).await
+        };
+        if state.db.library_status(uid)?.complete {
+            state.audio.reconcile_library(app.clone(), uid).await?;
         }
+        result
     }
     .await;
     match &result {

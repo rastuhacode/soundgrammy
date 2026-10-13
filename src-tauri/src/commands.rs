@@ -39,17 +39,22 @@ pub async fn prepare_full_reindex(state: State<'_, AppState>) -> AppResult<Libra
 
 #[tauri::command]
 pub async fn list_tracks(state: State<'_, AppState>) -> AppResult<Vec<Track>> {
-    let profile = state.db.load_profile()?;
-    match profile {
-        Some(p) if state.db.library_status(p.tg_user_id)?.blocking => Ok(Vec::new()),
-        Some(p) => state.db.tracks_by_user(p.tg_user_id),
-        None => Ok(Vec::new()),
-    }
+    state
+        .db
+        .blocking(|db| {
+            let profile = db.load_profile()?;
+            match profile {
+                Some(p) if db.library_status(p.tg_user_id)?.blocking => Ok(Vec::new()),
+                Some(p) => db.tracks_by_user(p.tg_user_id),
+                None => Ok(Vec::new()),
+            }
+        })
+        .await
 }
 
 #[tauri::command]
 pub async fn get_profile(state: State<'_, AppState>) -> AppResult<Option<Profile>> {
-    state.db.load_profile()
+    state.db.blocking(|db| db.load_profile()).await
 }
 
 #[tauri::command]
@@ -59,12 +64,10 @@ pub async fn list_tracks_page(
     limit: i64,
     revision: Option<i64>,
 ) -> AppResult<LibraryPage> {
-    let uid = state
+    state
         .db
-        .load_profile()?
-        .ok_or(crate::error::AppError::NotAuthorized)?
-        .tg_user_id;
-    state.db.tracks_page(uid, offset, limit, revision)
+        .blocking(move |db| db.tracks_page(db.active_uid()?, offset, limit, revision))
+        .await
 }
 
 #[tauri::command]
@@ -124,8 +127,10 @@ pub async fn cache_track(
     app: AppHandle,
     track_id: i64,
 ) -> AppResult<()> {
-    cache::ensure_audio(&state, &app, track_id).await?;
-    state.db.mark_audio_cache_pinned(track_id)?;
+    let result = cache::cache_tracks(&state, &app, &[track_id], None).await?;
+    if let Some(failure) = result.failed.first() {
+        return Err(crate::error::AppError::msg(&failure.error));
+    }
     Ok(())
 }
 
@@ -135,7 +140,7 @@ pub async fn cache_tracks(
     app: AppHandle,
     track_ids: Vec<i64>,
     job_id: Option<String>,
-) -> AppResult<Vec<i64>> {
+) -> AppResult<cache::CacheJobResult> {
     cache::cache_tracks(&state, &app, &track_ids, job_id.as_deref()).await
 }
 
@@ -149,7 +154,10 @@ pub async fn remove_track_from_cache(
 }
 
 #[tauri::command]
-pub async fn clear_audio_cache(state: State<'_, AppState>, app: AppHandle) -> AppResult<()> {
+pub async fn clear_audio_cache(
+    state: State<'_, AppState>,
+    app: AppHandle,
+) -> AppResult<cache::CacheClearResult> {
     cache::clear_audio_cache(&state, &app).await
 }
 
@@ -176,7 +184,7 @@ pub async fn set_cache_settings(
     let (used, _) = cache::usage_bytes(&state).await?;
     let limit = settings.limit_bytes.max(0) as u64;
     if used > limit {
-        let _ = cache::evict_for_room(&state, &app, used - limit).await;
+        let _ = cache::evict_for_room(&state, &app, 0).await;
     }
     Ok(settings)
 }
@@ -192,13 +200,7 @@ pub async fn get_cache_usage(state: State<'_, AppState>) -> AppResult<cache::Cac
 pub async fn get_proxy_settings(
     state: State<'_, AppState>,
 ) -> AppResult<crate::proxy_settings::ProxySettingsView> {
-    let settings = crate::proxy_settings::load(&state.db)?;
-    Ok(crate::proxy_settings::ProxySettingsView::from_parts(
-        settings,
-        state.proxy_active().await,
-        state.proxy_last_error().await,
-        state.is_telegram_online().await,
-    ))
+    state.proxy_view().await
 }
 
 #[tauri::command]
@@ -216,13 +218,7 @@ pub async fn set_proxy_settings(
         secret,
     };
     state.apply_proxy_settings(&settings).await?;
-    let settings = crate::proxy_settings::load(&state.db)?;
-    Ok(crate::proxy_settings::ProxySettingsView::from_parts(
-        settings,
-        state.proxy_active().await,
-        state.proxy_last_error().await,
-        state.is_telegram_online().await,
-    ))
+    state.proxy_view().await
 }
 
 #[tauri::command]
@@ -245,7 +241,7 @@ pub async fn export_tracks(
     state: State<'_, AppState>,
     app: AppHandle,
     track_ids: Vec<i64>,
-) -> AppResult<String> {
+) -> AppResult<crate::export::PlaylistDownloadResult> {
     crate::export::export_tracks(&state, &app, &track_ids).await
 }
 
@@ -369,11 +365,7 @@ pub async fn track_metadata(state: State<'_, AppState>, track_id: i64) -> AppRes
 // ---- playlists -----------------------------------------------------------
 
 fn require_uid(state: &AppState) -> AppResult<i64> {
-    state
-        .db
-        .load_profile()?
-        .map(|p| p.tg_user_id)
-        .ok_or(crate::error::AppError::NotAuthorized)
+    state.db.active_uid()
 }
 
 pub mod audio;

@@ -4,7 +4,7 @@ import { usePlaylistJobsStore } from './playlist-jobs-store'
 import { useCacheStore } from './cache-store'
 import { useSessionStore } from './session-store'
 import { deferred } from '@/test-support/fixtures'
-import type { PlaylistDownloadResult } from '@/types'
+import type { PlaylistDownloadResult, CacheJobResult } from '@/types'
 vi.mock('@/lib/api', () => ({ api: { downloadPlaylist: vi.fn(), cacheTracks: vi.fn() } }))
 vi.mock('@tauri-apps/plugin-opener', () => ({ revealItemInDir: vi.fn() }))
 beforeEach(() => {
@@ -16,7 +16,7 @@ beforeEach(() => {
 describe('playlist job account ownership', () => {
   it('keeps busy ownership until overlapping cache and download jobs both finish', async () => {
     const download = deferred<PlaylistDownloadResult>()
-    const cache = deferred<number[]>()
+    const cache = deferred<CacheJobResult>()
     vi.mocked(api.downloadPlaylist).mockReturnValueOnce(download.promise)
     vi.mocked(api.cacheTracks).mockReturnValueOnce(cache.promise)
     const input = { playlistId: 20, name: 'Shared', trackIds: [1] }
@@ -27,7 +27,7 @@ describe('playlist job account ownership', () => {
     await first
     expect(useCacheStore.getState().isBusy(1)).toBe(true)
     expect(usePlaylistJobsStore.getState().isCaching(20)).toBe(true)
-    cache.resolve([1])
+    cache.resolve({ succeeded: [1], failed: [] })
     await second
     expect(useCacheStore.getState().isBusy(1)).toBe(false)
     expect(useCacheStore.getState().isCached(1)).toBe(true)

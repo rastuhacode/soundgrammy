@@ -139,6 +139,10 @@ pub(crate) async fn refresh_file_reference(
     state: &AppState,
     track: &Track,
 ) -> AppResult<StoredDocument> {
+    let generation = state.db.account_generation()?;
+    if state.db.active_uid()? != track.tg_user_id {
+        return Err(AppError::NotAuthorized);
+    }
     let doc = stored_document(track)?;
     let client = state.client().await?;
     let result = client
@@ -148,6 +152,9 @@ pub(crate) async fn refresh_file_reference(
         })
         .await?;
 
+    if state.db.active_uid()? != track.tg_user_id || state.db.account_generation()? != generation {
+        return Err(AppError::NotAuthorized);
+    }
     let documents = match result {
         tl::enums::users::SavedMusic::SavedMusic(m) => m.documents,
         tl::enums::users::SavedMusic::NotModified(_) => Vec::new(),

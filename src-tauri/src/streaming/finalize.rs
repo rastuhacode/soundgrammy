@@ -12,7 +12,7 @@ use crate::state::AppState;
 use crate::telegram::document::{extension_for_mime, sniff_container_mime};
 
 use super::paths::{complete_path, partial_metadata_temp_path, resolve_stream_read_path};
-use super::progress::{progress_from_state, ChunkStatus};
+use super::progress::ChunkStatus;
 use super::{read_file_range, TrackStream};
 
 impl TrackStream {
@@ -43,20 +43,24 @@ impl TrackStream {
         Ok(())
     }
 
-    async fn persist_current_document_mime(&self) {
-        let document = self.document.lock().await.clone();
-        let Ok(json) = serde_json::to_string(&document) else {
-            return;
-        };
+    pub(super) async fn persist_current_document_mime(&self) {
+        let mime = self.mime_type();
         let state = self.app.state::<AppState>();
-        if let Ok(Some(profile)) = state.db.load_profile() {
-            let _ =
-                state
-                    .db
-                    .update_track_mime(self.track.id, profile.tg_user_id, &document.mime_type);
-            let _ = state
-                .db
-                .update_track_document(self.track.id, profile.tg_user_id, &json);
+        for track in self.participant_tracks().await {
+            // References remain account-specific even though media bytes are shared.
+            if let Ok(Some(stored)) = state.db.track_by_id(track.id, track.tg_user_id) {
+                if let Ok(mut document) = crate::telegram::download::stored_document(&stored) {
+                    document.mime_type = mime.clone();
+                    if let Ok(json) = serde_json::to_string(&document) {
+                        let _ = state
+                            .db
+                            .update_track_mime(track.id, track.tg_user_id, &mime);
+                        let _ = state
+                            .db
+                            .update_track_document(track.id, track.tg_user_id, &json);
+                    }
+                }
+            }
         }
     }
 
@@ -101,23 +105,27 @@ impl TrackStream {
         let _ = tokio::fs::remove_file(&self.partial_metadata).await;
         let _ = tokio::fs::remove_file(partial_metadata_temp_path(&self.partial)).await;
         let state = self.app.state::<AppState>();
-        let _ = state.db.mark_audio_cache_automatic(self.track.id);
-
-        let state = self.state.lock().await;
-        let _ = self.app.emit(
-            "download:progress",
-            progress_from_state(self.track.id, self.total, &state),
-        );
-        drop(state);
+        let tracks = self.participant_tracks().await;
+        for track in &tracks {
+            let _ = state.db.mark_audio_cache_automatic(track.id);
+        }
+        self.emit_progress().await;
         let _ = self.app.emit(
             "cache:changed",
             crate::cache::CacheChanged {
-                track_ids: vec![self.track.id],
+                track_ids: tracks.iter().map(|track| track.id).collect(),
                 cached: true,
                 cleared: false,
             },
         );
         self.completion.notify_waiters();
+        let app = self.app.clone();
+        tauri::async_runtime::spawn(async move {
+            let state = app.state::<AppState>();
+            if let Err(error) = crate::cache::evict_for_room(&state, &app, 0).await {
+                tracing::warn!(%error,"Cache maintenance after completion failed");
+            }
+        });
         Ok(())
     }
 

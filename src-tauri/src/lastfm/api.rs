@@ -179,11 +179,11 @@ impl LastFmClient {
             params.insert("duration".into(), duration.to_string());
         }
         let value = self.call("track.updateNowPlaying", params).await?;
-        Ok(ignored_code(
+        ignored_code(
             value
                 .get("nowplaying")
                 .and_then(|item| item.get("ignoredMessage")),
-        ))
+        )
     }
 
     pub async fn scrobble(
@@ -213,12 +213,14 @@ impl LastFmClient {
         if items.len() != rows.len() {
             return Err(LastFmError::Malformed);
         }
-        Ok(items
+        items
             .into_iter()
-            .map(|item| LastFmScrobbleResult {
-                ignored_code: ignored_code(item.get("ignoredMessage")),
+            .map(|item| {
+                Ok(LastFmScrobbleResult {
+                    ignored_code: ignored_code(item.get("ignoredMessage"))?,
+                })
             })
-            .collect())
+            .collect()
     }
 
     pub fn authorization_url(&self, token: &str) -> Result<String, LastFmError> {
@@ -244,14 +246,15 @@ pub fn sign_params(params: &BTreeMap<String, String>, secret: &str) -> String {
     format!("{:x}", md5::compute(material.as_bytes()))
 }
 
-fn ignored_code(value: Option<&Value>) -> i64 {
+fn ignored_code(value: Option<&Value>) -> Result<i64, LastFmError> {
     value
         .and_then(|value| value.get("code"))
         .and_then(|code| {
             code.as_i64()
                 .or_else(|| code.as_str().and_then(|raw| raw.parse().ok()))
         })
-        .unwrap_or(0)
+        .filter(|code| *code >= 0)
+        .ok_or(LastFmError::Malformed)
 }
 
 #[cfg(test)]
@@ -368,5 +371,38 @@ mod tests {
                 .collect::<Vec<_>>(),
             vec![0, 2, 5]
         );
+    }
+    #[tokio::test]
+    async fn malformed_item_responses_are_not_acceptance() {
+        for item in [
+            serde_json::json!({}),
+            serde_json::json!({"ignoredMessage":{}}),
+            serde_json::json!({"ignoredMessage":{"code":"bad"}}),
+        ] {
+            let client = LastFmClient::with_transport(
+                LastFmCredentials {
+                    api_key: "test".into(),
+                    api_secret: "test".into(),
+                },
+                Box::new(MockTransport {
+                    response: serde_json::json!({"scrobbles":{"scrobble": item}}),
+                    seen: Arc::new(Mutex::new(Vec::new())),
+                }),
+            );
+            assert_eq!(
+                client
+                    .scrobble(
+                        "session",
+                        &[LastFmScrobble {
+                            artist: "A".into(),
+                            track: "T".into(),
+                            duration: Some(60),
+                            timestamp: 1
+                        }]
+                    )
+                    .await,
+                Err(LastFmError::Malformed)
+            );
+        }
     }
 }

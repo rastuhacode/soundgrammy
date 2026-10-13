@@ -10,7 +10,9 @@ use super::{
 use crate::error::{AppError, AppResult};
 
 // Display reads deliberately avoid loading Telegram document JSON.
-const DISPLAY_COLUMNS: &str = "id, tg_user_id, file_id, file_unique_id, title, title_source, performer, duration, source, mime_type, file_size, created_at, NULL, track_position";
+fn display_columns() -> String {
+    format!("{}, track_position", super::tracks::projection("", false))
+}
 
 fn positioned(row: &rusqlite::Row<'_>) -> rusqlite::Result<PositionedTrack> {
     Ok(PositionedTrack {
@@ -128,8 +130,9 @@ impl Db {
             });
         }
         let mut stmt = conn.prepare(&format!(
-            "SELECT {DISPLAY_COLUMNS} FROM tracks WHERE tg_user_id = ?1 \
-             ORDER BY track_position ASC, created_at DESC, id DESC LIMIT ?2 OFFSET ?3"
+            "SELECT {} FROM tracks WHERE tg_user_id = ?1 \
+             ORDER BY track_position ASC, created_at DESC, id DESC LIMIT ?2 OFFSET ?3",
+            display_columns()
         ))?;
         // Fetch one extra row to avoid a trailing empty IPC request.
         let mut tracks = stmt
@@ -290,7 +293,14 @@ impl Db {
                 continue;
             }
             upsert_on(&tx, track)?;
-            display.push(tx.query_row(&format!("SELECT {DISPLAY_COLUMNS} FROM tracks WHERE tg_user_id = ?1 AND file_unique_id = ?2"), params![uid, track.file_unique_id], positioned)?);
+            display.push(tx.query_row(
+                &format!(
+                    "SELECT {} FROM tracks WHERE tg_user_id = ?1 AND file_unique_id = ?2",
+                    display_columns()
+                ),
+                params![uid, track.file_unique_id],
+                positioned,
+            )?);
         }
         tx.execute(
             "UPDATE library_sync_state SET revision = revision + 1 WHERE tg_user_id = ?1",
@@ -389,7 +399,10 @@ impl Db {
         let mut display = vec![];
         {
             let mut seen = tx.prepare("INSERT INTO library_sync_entries VALUES (?1, ?2, ?3)")?;
-            let mut select = tx.prepare(&format!("SELECT {DISPLAY_COLUMNS} FROM tracks WHERE tg_user_id = ?1 AND file_unique_id = ?2"))?;
+            let mut select = tx.prepare(&format!(
+                "SELECT {} FROM tracks WHERE tg_user_id = ?1 AND file_unique_id = ?2",
+                display_columns()
+            ))?;
             for (index, track) in tracks.iter().enumerate() {
                 if track.tg_user_id != uid
                     || track.track_position != i64::from(offset) + index as i64
