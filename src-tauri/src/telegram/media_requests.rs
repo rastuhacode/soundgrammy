@@ -60,18 +60,11 @@ impl MediaRequestCoordinator {
 
             let background = match priority {
                 MediaPriority::Playback => None,
-                MediaPriority::Background => Some(
-                    self.background_requests
-                        .acquire()
-                        .await
-                        .map_err(|_| InvocationError::Dropped)?,
-                ),
+                MediaPriority::Background => {
+                    Some(acquire_cancellable(&self.background_requests, active).await?)
+                }
             };
-            let request = self
-                .requests
-                .acquire()
-                .await
-                .map_err(|_| InvocationError::Dropped)?;
+            let request = acquire_cancellable(&self.requests, active).await?;
             require_active(active)?;
 
             // A concurrent request may have established a cooldown while this
@@ -129,6 +122,21 @@ impl MediaRequestCoordinator {
             None
         } else {
             Some(deadline - now)
+        }
+    }
+}
+
+pub(crate) async fn acquire_cancellable<'a>(
+    slots: &'a Semaphore,
+    active: Option<&AtomicBool>,
+) -> Result<SemaphorePermit<'a>, InvocationError> {
+    let acquiring = slots.acquire();
+    tokio::pin!(acquiring);
+    loop {
+        require_active(active)?;
+        tokio::select! {
+            result = &mut acquiring => return result.map_err(|_| InvocationError::Dropped),
+            _ = tokio::time::sleep(CANCELLATION_POLL), if active.is_some() => {},
         }
     }
 }
@@ -340,5 +348,76 @@ mod tests {
         drop(playback);
         drop(first_background);
         assert!(second_background.await.unwrap());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn artwork_cancels_while_queued_without_consuming_playback_capacity() {
+        let coordinator = Arc::new(MediaRequestCoordinator::default());
+        let first = coordinator
+            .acquire(2, MediaPriority::Background, None)
+            .await
+            .unwrap();
+        let active = Arc::new(AtomicBool::new(true));
+        let queued = {
+            let coordinator = coordinator.clone();
+            let active = active.clone();
+            tokio::spawn(async move {
+                matches!(
+                    coordinator
+                        .acquire(2, MediaPriority::Background, Some(&active))
+                        .await,
+                    Err(InvocationError::Dropped)
+                )
+            })
+        };
+        tokio::task::yield_now().await;
+        assert!(!queued.is_finished());
+        let playback = coordinator
+            .acquire(2, MediaPriority::Playback, None)
+            .await
+            .unwrap();
+        active.store(false, Ordering::Release);
+        tokio::time::advance(CANCELLATION_POLL).await;
+        assert!(queued.await.unwrap());
+        drop(playback);
+        drop(first);
+        assert!(coordinator
+            .acquire(2, MediaPriority::Background, None)
+            .await
+            .is_ok());
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn cancellation_releases_background_slot_when_aggregate_slots_are_busy() {
+        let coordinator = Arc::new(MediaRequestCoordinator::default());
+        let first = coordinator
+            .acquire(2, MediaPriority::Playback, None)
+            .await
+            .unwrap();
+        let second = coordinator
+            .acquire(2, MediaPriority::Playback, None)
+            .await
+            .unwrap();
+        let active = Arc::new(AtomicBool::new(true));
+        let queued = {
+            let coordinator = coordinator.clone();
+            let active = active.clone();
+            tokio::spawn(async move {
+                matches!(
+                    coordinator
+                        .acquire(2, MediaPriority::Background, Some(&active))
+                        .await,
+                    Err(InvocationError::Dropped)
+                )
+            })
+        };
+        tokio::task::yield_now().await;
+        assert_eq!(coordinator.background_requests.available_permits(), 0);
+        active.store(false, Ordering::Release);
+        tokio::time::advance(CANCELLATION_POLL).await;
+        assert!(queued.await.unwrap());
+        assert_eq!(coordinator.background_requests.available_permits(), 1);
+        drop(first);
+        drop(second);
     }
 }

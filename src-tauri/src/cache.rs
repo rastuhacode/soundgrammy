@@ -28,7 +28,7 @@ mod eviction;
 mod media_art;
 
 pub use eviction::{available_after_eviction, enforce_ttl, evict_for_room};
-pub use media_art::{ensure_avatar, ensure_thumbnail};
+pub use media_art::{ensure_avatar, ensure_thumbnail, schedule_embedded_artwork};
 
 use eviction::{path_is_protected, protected_path_set};
 

@@ -12,6 +12,7 @@ use tokio::sync::Notify;
 use crate::error::{AppError, AppResult};
 use crate::state::AppState;
 use crate::telegram::download;
+use crate::telegram::media_requests::{acquire_cancellable, MediaPriority};
 
 use super::progress::{progress_from_state, ChunkStatus};
 use super::{TrackStream, CHUNK_SIZE, FOREGROUND_CONCURRENCY};
@@ -45,7 +46,10 @@ impl TrackStream {
         let make_request = |index| {
             let stream = Arc::clone(self);
             let request_active = active.clone();
-            async move { stream.ensure_chunk(index, request_active).await }
+            async move {
+                let priority = range_priority(request_active.is_some());
+                stream.ensure_chunk(index, request_active, priority).await
+            }
         };
         while next_index < chunk_count && requests.len() < FOREGROUND_CONCURRENCY {
             requests.push(make_request(next_index));
@@ -87,7 +91,10 @@ impl TrackStream {
         for index in first..=last {
             let stream = Arc::clone(self);
             let active = active.clone();
-            requests.push(async move { stream.ensure_chunk(index, active).await });
+            requests.push(async move {
+                let priority = range_priority(active.is_some());
+                stream.ensure_chunk(index, active, priority).await
+            });
         }
         while let Some(result) = requests.next().await {
             result?;
@@ -95,10 +102,33 @@ impl TrackStream {
         Ok(())
     }
 
+    /// Artwork shares the ledger but fetches missing chunks sequentially at
+    /// background priority, independently of its cancellation token.
+    pub(super) async fn ensure_artwork_range(
+        self: &Arc<Self>,
+        start: u64,
+        end: u64,
+        active: Arc<AtomicBool>,
+    ) -> AppResult<()> {
+        if start > end || end >= self.total {
+            return Err(AppError::msg("requested artwork range is invalid"));
+        }
+        Self::require_active(Some(&active))?;
+        if self.destination.exists() {
+            return Ok(());
+        }
+        for index in (start / CHUNK_SIZE) as usize..=(end / CHUNK_SIZE) as usize {
+            self.ensure_chunk(index, Some(active.clone()), MediaPriority::Background)
+                .await?;
+        }
+        Self::require_active(Some(&active))
+    }
+
     async fn ensure_chunk(
         self: &Arc<Self>,
         index: usize,
         active: Option<Arc<AtomicBool>>,
+        priority: MediaPriority,
     ) -> AppResult<()> {
         loop {
             Self::require_active(active.as_deref())?;
@@ -129,8 +159,8 @@ impl TrackStream {
                 }
             }
 
-            Self::require_active(active.as_deref())?;
-            let result = self.fetch_and_store(index, active.clone()).await;
+            // Once marked Loading, always settle the slot, including cancellation.
+            let result = self.fetch_and_store(index, active.clone(), priority).await;
             let mut state = self.state.lock().await;
             let notify = Arc::clone(&state.chunks[index].notify);
             if let Ok(bytes_written) = &result {
@@ -194,7 +224,10 @@ impl TrackStream {
                     return Ok(outcome);
                 }
             }
-            notified.as_mut().await;
+            tokio::select! {
+                _ = notified.as_mut() => {},
+                _ = tokio::time::sleep(std::time::Duration::from_millis(100)) => {},
+            }
             notified.set(notify.notified());
         }
     }
@@ -203,12 +236,10 @@ impl TrackStream {
         &self,
         index: usize,
         active: Option<Arc<AtomicBool>>,
+        priority: MediaPriority,
     ) -> AppResult<u64> {
-        let _permit = self
-            .request_slots
-            .acquire()
-            .await
-            .map_err(|_| AppError::msg("audio downloader stopped"))?;
+        let _permit = acquire_cancellable(&self.request_slots, active.as_deref()).await?;
+        Self::require_active(active.as_deref())?;
 
         let document = self.document.lock().await.clone();
         let state = self.app.state::<AppState>();
@@ -219,6 +250,7 @@ impl TrackStream {
             &document,
             index,
             active.as_deref(),
+            priority,
         )
         .await;
         let bytes = match first_attempt {
@@ -233,6 +265,7 @@ impl TrackStream {
                     &latest,
                     index,
                     active.as_deref(),
+                    priority,
                 )
                 .await
                 {
@@ -250,6 +283,7 @@ impl TrackStream {
                             &refreshed,
                             index,
                             active.as_deref(),
+                            priority,
                         )
                         .await?
                     }
@@ -278,5 +312,13 @@ impl TrackStream {
         file.flush().await?;
         file.sync_data().await?;
         Ok(bytes.len() as u64)
+    }
+}
+
+fn range_priority(cancellable: bool) -> MediaPriority {
+    if cancellable {
+        MediaPriority::Playback
+    } else {
+        MediaPriority::Background
     }
 }

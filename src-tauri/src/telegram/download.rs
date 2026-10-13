@@ -44,6 +44,7 @@ pub(crate) async fn download_chunk(
     document: &StoredDocument,
     chunk_index: usize,
     active: Option<&AtomicBool>,
+    priority: MediaPriority,
 ) -> Result<Vec<u8>, InvocationError> {
     let chunk_index = i64::try_from(chunk_index).map_err(|_| {
         InvocationError::Io(std::io::Error::new(
@@ -57,11 +58,7 @@ pub(crate) async fn download_chunk(
             client,
             MediaRequestContext {
                 coordinator,
-                priority: if active.is_some() {
-                    MediaPriority::Playback
-                } else {
-                    MediaPriority::Background
-                },
+                priority,
                 active,
             },
             document.dc_id,

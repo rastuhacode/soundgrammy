@@ -264,9 +264,13 @@ pub async fn download_playlist(
 #[tauri::command]
 pub async fn get_track_thumbnail(
     state: State<'_, AppState>,
+    app: AppHandle,
     track_id: i64,
     high_quality: Option<bool>,
 ) -> AppResult<Option<String>> {
+    if high_quality.unwrap_or(false) {
+        cache::schedule_embedded_artwork(&state, &app, track_id).await?;
+    }
     let path = cache::ensure_thumbnail(&state, track_id, high_quality.unwrap_or(false)).await?;
     Ok(path.map(|p| p.to_string_lossy().into_owned()))
 }

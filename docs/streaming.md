@@ -17,4 +17,10 @@ Seeks reuse the native source, demuxer, decoder worker, and output stream. A lat
 
 A storage-only observer maps downloaded packets to actual timestamps for the buffer display. It does not decode PCM or request downloads. Unmapped data stays unpainted, and cached files show full coverage.
 
+## Fullscreen artwork
+
+High-quality thumbnail requests return the available Telegram or cached embedded image and schedule a separate leading-ID3v2 artwork probe for uncached audio. The probe reads the tag header, then only the verified ranges containing the tag (up to 8 MiB, with a 15-second cancellation deadline). Missing chunks are requested sequentially at background priority; chunks already downloaded or in flight for playback are shared. Cancellation settles claimed chunk slots so playback can retry them.
+
+Extracted front-cover artwork is cached independently of audio and published through `artwork:changed`. Visible high-quality consumers preload the image before replacing the fallback, ignore stale track/account responses, and also revalidate on audio cache completion. Successful probes without leading ID3 artwork are remembered; network, parse, and size-limit failures remain retryable. Other container/tag layouts use whole-file extraction when audio finishes caching.
+
 See [native audio](native-audio.md) for implementation details, supported fixtures, and device verification limitations.

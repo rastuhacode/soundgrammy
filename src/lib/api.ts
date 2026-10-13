@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { trackSchema, libraryPageSchema, libraryBatchSchema, playlistsBundleSchema, likedPlaylistSchema, customPlaylistSchema, trackListenStatsSchema, cacheSettingsSchema, cacheUsageSchema } from '@/types'
+import { trackSchema, artworkChangedSchema, libraryPageSchema, libraryBatchSchema, playlistsBundleSchema, likedPlaylistSchema, customPlaylistSchema, trackListenStatsSchema, cacheSettingsSchema, cacheUsageSchema } from '@/types'
 import type { PlayerCommand } from '@/types/playback'
 import type { AudioTrackRequest } from '@/types/audio'
 import { invoke as tauriInvoke, convertFileSrc } from '@tauri-apps/api/core'
@@ -10,6 +10,7 @@ import type {
   AuthOutcome,
   AuthStatus,
   AuthUser,
+  ArtworkChanged,
   BounceProfileResponse,
   PhoneSendCodeOutcome,
   CacheChanged,
@@ -341,6 +342,13 @@ export function onCacheChanged(
   cb: (p: CacheChanged) => void,
 ): Promise<UnlistenFn> {
   return listen<CacheChanged>('cache:changed', e => cb(e.payload))
+}
+
+export function onArtworkChanged(cb: (artwork: ArtworkChanged) => void): Promise<UnlistenFn> {
+  return listen<unknown>('artwork:changed', (event) => {
+    const parsed = artworkChangedSchema.safeParse(event.payload)
+    if (parsed.success) cb(parsed.data)
+  })
 }
 
 export function onAuthRevoked(cb: () => void): Promise<UnlistenFn> {

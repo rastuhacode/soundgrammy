@@ -170,6 +170,20 @@ impl TrackStream {
         active: Option<Arc<AtomicBool>>,
     ) -> AppResult<Vec<u8>> {
         self.ensure_range(start, end, active).await?;
+        self.read_ready_range(start, end).await
+    }
+
+    pub async fn read_artwork_range(
+        self: &Arc<Self>,
+        start: u64,
+        end: u64,
+        active: Arc<AtomicBool>,
+    ) -> AppResult<Vec<u8>> {
+        self.ensure_artwork_range(start, end, active).await?;
+        self.read_ready_range(start, end).await
+    }
+
+    async fn read_ready_range(&self, start: u64, end: u64) -> AppResult<Vec<u8>> {
         // Snapshot the path under the finalize lock so we do not start a read
         // against a path that try_finalize is about to rename. If finalize
         // still races the IO (rename between snapshot and open), retry once

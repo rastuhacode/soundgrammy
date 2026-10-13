@@ -9,6 +9,11 @@ export const trackSchema = z.object({
 })
 export type Track = z.infer<typeof trackSchema>
 
+export const artworkChangedSchema = z.object({
+  trackId: z.number().int(), tgUserId: z.number().int(), path: z.string(),
+})
+export type ArtworkChanged = z.infer<typeof artworkChangedSchema>
+
 export const positionedTrackSchema = z.object({ track: trackSchema, position: z.number().int().nullable() })
 export type PositionedTrack = z.infer<typeof positionedTrackSchema>
 export const libraryStatusSchema = z.object({
