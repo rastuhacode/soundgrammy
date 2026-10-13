@@ -1,7 +1,9 @@
 package com.soundgrammy.app
 
 import android.content.Context
+import android.graphics.Bitmap
 import android.graphics.BitmapFactory
+import android.graphics.Canvas
 import android.media.MediaMetadata
 import android.media.session.MediaSession
 import android.media.session.PlaybackState
@@ -17,12 +19,20 @@ class NativeMediaSession private constructor(context: Context) {
     private val handler = Handler(Looper.getMainLooper())
     private val artworkWorker = Executors.newSingleThreadExecutor()
     private val session = MediaSession(context.applicationContext, "SoundGrammy")
+    private val fallbackArtwork by lazy {
+        // Draw the application icon so adaptive/vector launchers work too.
+        val icon = application.packageManager.getApplicationIcon(application.applicationInfo)
+        Bitmap.createBitmap(256, 256, Bitmap.Config.ARGB_8888).also { bitmap ->
+            icon.setBounds(0, 0, bitmap.width, bitmap.height)
+            icon.draw(Canvas(bitmap))
+        }
+    }
     private var released = false
     private var dismissed = false
     private var revision = -1L
     private var identity: String? = null
     private var artworkPath: String? = null
-    private var artwork: android.graphics.Bitmap? = null
+    private var artwork: Bitmap? = null
     private var current: JSONObject? = null
     private var publishedMetadata: MetadataContent? = null
 
@@ -31,7 +41,7 @@ class NativeMediaSession private constructor(context: Context) {
         val title: String,
         val artist: String,
         val duration: Long,
-        val artwork: android.graphics.Bitmap?,
+        val artwork: Bitmap,
     )
 
     // The foreground service reuses this token.
@@ -117,7 +127,7 @@ class NativeMediaSession private constructor(context: Context) {
         val content = identity?.let { id ->
             p?.let {
                 MetadataContent(id, it.getString("title"), it.getString("artist"),
-                    (it.getDouble("duration") * 1000).toLong(), artwork)
+                    (it.getDouble("duration") * 1000).toLong(), artwork ?: fallbackArtwork)
             }
         }
         // Position ticks must not make System UI rebuild unchanged track content.
@@ -132,7 +142,9 @@ class NativeMediaSession private constructor(context: Context) {
             .putString(MediaMetadata.METADATA_KEY_TITLE, content.title)
             .putString(MediaMetadata.METADATA_KEY_ARTIST, content.artist)
             .putLong(MediaMetadata.METADATA_KEY_DURATION, content.duration)
-        content.artwork?.let { metadata.putBitmap(MediaMetadata.METADATA_KEY_ART, it) }
+        // Always supply an image: some System UI implementations retain the
+        // previous cover when the new track simply omits the artwork key.
+        metadata.putBitmap(MediaMetadata.METADATA_KEY_ART, content.artwork)
         session.setMetadata(metadata.build())
         publishedMetadata = content
     }

@@ -18,7 +18,7 @@ Presentation includes revision, track and attempt identity, title, artist, nativ
 | iOS | Shared Apple MediaPlayer adapter plus AVAudioSession interruption observer | Cached file → UIImage → MPMediaItemArtwork | Playback audio session and background-audio mode; build/device verification outstanding |
 | Windows | SMTC bound to the main Tauri HWND; event tokens removed on teardown | Cached bytes → native memory stream (file URLs are not supported by CreateFromUri) | Buffering maps to Changing; seek range controls timeline availability |
 | Linux | zbus MPRIS session-bus service, unique process name | Local file URL; attempt-specific MPRIS track path | MPRIS has no Buffering/Error states: buffering maps to Paused and errors to Stopped; rate is fixed at 1, volume writes are unsupported |
-| Android | Application-owned framework MediaSession; callbacks cross JNI directly into Rust | Cached file decoded off the main thread, identity checked on completion | Native buffering/error states and per-session action mask |
+| Android | Application-owned framework MediaSession; callbacks cross JNI directly into Rust | Cached file decoded off the main thread, identity checked on completion; app icon while artwork is missing, pending, or unreadable | Native buffering/error states and per-session action mask |
 
 Each adapter implements `new`, `update`, and `Drop`. macOS and iOS share the Apple
 adapter behind platform-specific image and lifecycle APIs. Android's foreground
@@ -39,7 +39,7 @@ On each OS, run the app and verify:
 1. Title, artist, cover, duration and progress; pause/resume and buffering clock behavior.
 2. Media keyboard/headset play, pause, stop, next and previous; each event executes once.
 3. Seek, duplicate queue entries, repeat one/all and shuffle; previous restarts after five seconds.
-4. Rapid A → B → A selection while cover downloads are pending; an old attempt's cover never wins.
+4. Rapid A → B → A selection while cover downloads are pending; an old attempt's cover never wins. On Android, switch from a covered track to one without artwork: lock-screen controls show the app icon, then show real artwork again on the next covered track.
 5. Clear queue and logout remove metadata; app exit removes the media control owner.
 6. Suspend JavaScript in the inspector or reload/detach the UI while playing. Native controls and queue advancement continue; reattachment shows the same native session.
 7. On Android, recreate the Activity and confirm a single session/token remains. Run the foreground-service/background scenarios in [mobile background playback](mobile-background-playback.md).

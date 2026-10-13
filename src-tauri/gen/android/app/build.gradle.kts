@@ -22,6 +22,7 @@ android {
         applicationId = "com.soundgrammy.app"
         minSdk = 26 // CPAL uses AAudio (Android 8.0+).
         targetSdk = 36
+        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         versionCode = tauriProperties.getProperty("tauri.android.versionCode", "1").toInt()
         versionName = tauriProperties.getProperty("tauri.android.versionName", "1.0")
     }
