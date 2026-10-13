@@ -63,32 +63,10 @@ impl Db {
         Ok(map)
     }
 
+    #[cfg(test)]
     pub fn upsert_track(&self, t: &UpsertTrack) -> AppResult<()> {
         let conn = self.conn.lock().unwrap();
-        conn.execute(
-            "INSERT INTO tracks (tg_user_id, file_id, file_unique_id, title, title_source, performer, duration, \
-             source, mime_type, file_size, track_position, mtproto_document) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'mtproto', ?8, ?9, ?10, ?11) \
-             ON CONFLICT (file_unique_id) DO UPDATE SET \
-               file_id = excluded.file_id, title = excluded.title, title_source = excluded.title_source, performer = excluded.performer, \
-               duration = excluded.duration, mime_type = excluded.mime_type, \
-               file_size = excluded.file_size, track_position = excluded.track_position, \
-               mtproto_document = excluded.mtproto_document",
-            params![
-                t.tg_user_id,
-                t.file_id,
-                t.file_unique_id,
-                t.title,
-                t.title_source,
-                t.performer,
-                t.duration,
-                t.mime_type,
-                t.file_size,
-                t.track_position,
-                t.mtproto_document,
-            ],
-        )?;
-        Ok(())
+        upsert_on(&conn, t)
     }
 
     /// Updates the stored document JSON after a file-reference refresh.
@@ -110,35 +88,39 @@ impl Db {
         )?;
         Ok(())
     }
+}
 
-    /// Removes mtproto tracks whose `file_unique_id` isn't in `keep`, returning
-    /// the number of removed rows.
-    pub fn delete_tracks_not_in(&self, tg_user_id: i64, keep: &[String]) -> AppResult<usize> {
-        let mut conn = self.conn.lock().unwrap();
-        let tx = conn.transaction()?;
-        let removed = if keep.is_empty() {
-            tx.execute(
-                "DELETE FROM tracks WHERE tg_user_id = ?1 AND source = 'mtproto'",
-                params![tg_user_id],
-            )?
-        } else {
-            let placeholders = std::iter::repeat_n("?", keep.len())
-                .collect::<Vec<_>>()
-                .join(", ");
-            let sql = format!(
-                "DELETE FROM tracks WHERE tg_user_id = ?1 AND source = 'mtproto' \
-                 AND file_unique_id NOT IN ({placeholders})"
-            );
-            let mut bind: Vec<&dyn rusqlite::ToSql> = Vec::with_capacity(keep.len() + 1);
-            bind.push(&tg_user_id);
-            for k in keep {
-                bind.push(k);
-            }
-            tx.execute(&sql, bind.as_slice())?
-        };
-        tx.commit()?;
-        Ok(removed)
+pub(super) fn upsert_on(conn: &rusqlite::Connection, t: &UpsertTrack) -> AppResult<()> {
+    let affected = conn.execute(
+            "INSERT INTO tracks (tg_user_id, file_id, file_unique_id, title, title_source, performer, duration, \
+             source, mime_type, file_size, track_position, mtproto_document) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'mtproto', ?8, ?9, ?10, ?11) \
+             ON CONFLICT (file_unique_id) DO UPDATE SET \
+               file_id = excluded.file_id, title = excluded.title, title_source = excluded.title_source, performer = excluded.performer, \
+               duration = excluded.duration, mime_type = excluded.mime_type, \
+               file_size = excluded.file_size, track_position = excluded.track_position, \
+               mtproto_document = excluded.mtproto_document \
+             WHERE tracks.tg_user_id = excluded.tg_user_id",
+            params![
+                t.tg_user_id,
+                t.file_id,
+                t.file_unique_id,
+                t.title,
+                t.title_source,
+                t.performer,
+                t.duration,
+                t.mime_type,
+                t.file_size,
+                t.track_position,
+                t.mtproto_document,
+            ],
+        )?;
+    if affected == 0 {
+        return Err(crate::error::AppError::msg(
+            "Track belongs to another account",
+        ));
     }
+    Ok(())
 }
 
 pub(super) fn map_track(row: &rusqlite::Row<'_>) -> rusqlite::Result<Track> {

@@ -6,13 +6,41 @@ use super::*;
 
 /// Isolated DB per test. File-backed temp paths keyed only by pid+nanos
 /// collided under the parallel test harness (`database is locked`).
-fn test_db() -> AppResult<Db> {
+pub(crate) fn test_db() -> AppResult<Db> {
     let conn = Connection::open_in_memory()?;
     conn.pragma_update(None, "foreign_keys", "ON")?;
     schema::apply(&conn)?;
     Ok(Db {
         conn: Mutex::new(conn),
     })
+}
+
+#[test]
+fn library_mode_migration_keeps_initial_progress_hidden_and_completed_cache_visible(
+) -> AppResult<()> {
+    let db = test_db()?;
+    db.save_profile(42, "Test", None, None, None)?;
+    upsert_test_track(&db, 42, "1", 0)?;
+    {
+        let conn = db.conn.lock().unwrap();
+        conn.execute_batch("DROP TABLE library_sync_state;
+            CREATE TABLE library_sync_state (tg_user_id INTEGER PRIMARY KEY, manifest_hash TEXT NOT NULL,
+                next_offset INTEGER NOT NULL DEFAULT 0, complete INTEGER NOT NULL DEFAULT 0,
+                verified_at INTEGER, revision INTEGER NOT NULL DEFAULT 0);
+            INSERT INTO library_sync_state (tg_user_id, manifest_hash, next_offset) VALUES (42, '1', 1);")?;
+        schema::apply(&conn)?;
+    }
+    assert!(db.library_status(42)?.blocking);
+    assert_eq!(db.library_status(42)?.processed, 1);
+    assert!(db.tracks_page(42, 0, 500, None)?.tracks.is_empty());
+    db.conn.lock().unwrap().execute(
+        "UPDATE library_sync_state SET complete = 1 WHERE tg_user_id = 42",
+        [],
+    )?;
+    db.mark_synced(42)?;
+    assert!(!db.library_status(42)?.blocking);
+    assert_eq!(db.tracks_page(42, 0, 500, None)?.tracks.len(), 1);
+    Ok(())
 }
 
 #[test]
@@ -25,6 +53,25 @@ fn load_profile_includes_phone() -> AppResult<()> {
     assert_eq!(profile.last_name.as_deref(), Some("Lovelace"));
     assert_eq!(profile.username.as_deref(), Some("ada"));
     assert_eq!(profile.phone.as_deref(), Some("+1555"));
+    Ok(())
+}
+
+#[test]
+fn sync_profile_refresh_does_not_restore_a_logged_out_account() -> AppResult<()> {
+    let db = test_db()?;
+    db.save_profile(42, "Old", None, None, None)?;
+    db.refresh_active_profile(42, "New", Some("Name"), Some("new"), None)?;
+    assert_eq!(db.load_profile()?.unwrap().first_name, "New");
+    db.clear_active_profile(42)?;
+    assert!(db
+        .refresh_active_profile(42, "Stale", None, None, None)
+        .is_err());
+    assert!(db.load_profile()?.is_none());
+    db.save_profile(99, "Other", None, None, None)?;
+    assert!(db
+        .refresh_active_profile(42, "Stale", None, None, None)
+        .is_err());
+    assert_eq!(db.load_profile()?.unwrap().tg_user_id, 99);
     Ok(())
 }
 

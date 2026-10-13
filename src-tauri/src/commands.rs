@@ -4,11 +4,11 @@ use serde::Serialize;
 use tauri::{AppHandle, State};
 
 use crate::cache;
-use crate::db::{Profile, Track};
+use crate::db::{LibraryBatch, LibraryPage, Profile, Track};
 use crate::display_wake::DisplayWakeState;
 use crate::error::AppResult;
 use crate::state::AppState;
-use crate::telegram::saved_music::{self, SyncResult};
+use crate::telegram::saved_music::{self, SyncMode, SyncResult};
 
 pub(crate) mod auth;
 pub(crate) mod lastfm;
@@ -18,14 +18,30 @@ pub(crate) mod playlists;
 // ---- library -------------------------------------------------------------
 
 #[tauri::command]
-pub async fn sync_saved_music(state: State<'_, AppState>, app: AppHandle) -> AppResult<SyncResult> {
-    saved_music::sync(&state, &app).await
+pub async fn sync_saved_music(
+    state: State<'_, AppState>,
+    app: AppHandle,
+    mode: Option<SyncMode>,
+) -> AppResult<SyncResult> {
+    saved_music::sync(&state, &app, mode.unwrap_or_default()).await
+}
+
+#[tauri::command]
+pub async fn prepare_full_reindex(state: State<'_, AppState>) -> AppResult<LibraryBatch> {
+    let _guard = state.sync_lock.lock().await;
+    let uid = state
+        .db
+        .load_profile()?
+        .ok_or(crate::error::AppError::NotAuthorized)?
+        .tg_user_id;
+    state.db.request_full_reindex(uid)
 }
 
 #[tauri::command]
 pub async fn list_tracks(state: State<'_, AppState>) -> AppResult<Vec<Track>> {
     let profile = state.db.load_profile()?;
     match profile {
+        Some(p) if state.db.library_status(p.tg_user_id)?.blocking => Ok(Vec::new()),
         Some(p) => state.db.tracks_by_user(p.tg_user_id),
         None => Ok(Vec::new()),
     }
@@ -34,6 +50,21 @@ pub async fn list_tracks(state: State<'_, AppState>) -> AppResult<Vec<Track>> {
 #[tauri::command]
 pub async fn get_profile(state: State<'_, AppState>) -> AppResult<Option<Profile>> {
     state.db.load_profile()
+}
+
+#[tauri::command]
+pub async fn list_tracks_page(
+    state: State<'_, AppState>,
+    offset: i64,
+    limit: i64,
+    revision: Option<i64>,
+) -> AppResult<LibraryPage> {
+    let uid = state
+        .db
+        .load_profile()?
+        .ok_or(crate::error::AppError::NotAuthorized)?
+        .tg_user_id;
+    state.db.tracks_page(uid, offset, limit, revision)
 }
 
 #[tauri::command]

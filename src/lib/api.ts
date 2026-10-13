@@ -1,5 +1,5 @@
 import { z } from 'zod'
-import { trackSchema, playlistsBundleSchema, likedPlaylistSchema, customPlaylistSchema, trackListenStatsSchema, cacheSettingsSchema, cacheUsageSchema } from '@/types'
+import { trackSchema, libraryPageSchema, libraryBatchSchema, playlistsBundleSchema, likedPlaylistSchema, customPlaylistSchema, trackListenStatsSchema, cacheSettingsSchema, cacheUsageSchema } from '@/types'
 import type { PlayerCommand } from '@/types/playback'
 import type { AudioTrackRequest } from '@/types/audio'
 import { invoke as tauriInvoke, convertFileSrc } from '@tauri-apps/api/core'
@@ -18,6 +18,7 @@ import type {
   ListenEndResult,
   LastFmPendingAction,
   LastFmStatus,
+  LibraryBatch,
   PlaylistDownloadProgress,
   PlaylistDownloadResult,
   PlaylistImportPreview,
@@ -27,6 +28,7 @@ import type {
   ProxySettingsView,
   QrOutcome,
   SyncResult,
+  SyncMode,
   TrackListenStats,
   TrackMetadata,
 } from '@/types'
@@ -95,8 +97,11 @@ export const api = {
   logout: () => invoke<void>('logout'),
 
   // ---- library ----------------------------------------------------------
-  syncSavedMusic: () => invoke<SyncResult>('sync_saved_music'),
+  syncSavedMusic: (mode: SyncMode = 'soft') => invoke<SyncResult>('sync_saved_music', { mode }),
+  prepareFullReindex: () => invokeParsed(libraryBatchSchema, 'prepare_full_reindex'),
   listTracks: () => invokeParsed(z.array(trackSchema), 'list_tracks'),
+  listTracksPage: (offset = 0, revision?: number) =>
+    invokeParsed(libraryPageSchema, 'list_tracks_page', { offset, limit: 500, revision: revision ?? null }),
   getProfile: () => invoke<Profile | null>('get_profile'),
   syncStatus: () => invoke<string | null>('sync_status'),
   setFullscreenDisplayAwake: (enabled: boolean) =>
@@ -275,6 +280,17 @@ export interface DownloadProgress {
 
 export function onSyncStart(cb: () => void): Promise<UnlistenFn> {
   return listen('sync:start', () => cb())
+}
+
+export function onLibraryBatch(cb: (batch: LibraryBatch) => void): Promise<UnlistenFn> {
+  return listen<unknown>('library:batch', (event) => {
+    const parsed = libraryBatchSchema.safeParse(event.payload)
+    if (parsed.success) cb(parsed.data)
+    else appLogger.error({
+      source: 'backend', title: 'Invalid backend event',
+      context: { event: 'library:batch', issues: contractIssues(parsed.error.issues) },
+    })
+  })
 }
 
 export function onSyncProgress(

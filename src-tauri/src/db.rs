@@ -12,6 +12,7 @@ use rusqlite::Connection;
 mod bounce_profiles;
 mod cache_entries;
 mod lastfm;
+mod library;
 mod listen_stats;
 mod models;
 mod playlists;
@@ -20,6 +21,8 @@ mod schema;
 mod settings;
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+pub(crate) use tests::test_db;
 mod tracks;
 
 pub use cache_entries::*;

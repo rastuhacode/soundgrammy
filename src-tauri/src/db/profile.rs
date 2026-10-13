@@ -44,6 +44,27 @@ impl Db {
         Ok(profile)
     }
 
+    /// Refresh display fields without recreating a profile cleared by logout.
+    pub fn refresh_active_profile(
+        &self,
+        tg_user_id: i64,
+        first_name: &str,
+        last_name: Option<&str>,
+        username: Option<&str>,
+        phone: Option<&str>,
+    ) -> AppResult<()> {
+        let conn = self.conn.lock().unwrap();
+        let updated = conn.execute(
+            "UPDATE profile SET first_name = ?2, last_name = ?3, username = ?4, phone = ?5 \
+             WHERE tg_user_id = ?1 AND tg_user_id = (SELECT tg_user_id FROM profile LIMIT 1)",
+            params![tg_user_id, first_name, last_name, username, phone],
+        )?;
+        if updated == 0 {
+            return Err(crate::error::AppError::NotAuthorized);
+        }
+        Ok(())
+    }
+
     pub fn clear_active_profile(&self, tg_user_id: i64) -> AppResult<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(
@@ -51,19 +72,6 @@ impl Db {
             params![tg_user_id],
         )?;
         Ok(())
-    }
-
-    pub fn saved_music_hash(&self, tg_user_id: i64) -> AppResult<Option<String>> {
-        let conn = self.conn.lock().unwrap();
-        let hash = conn
-            .query_row(
-                "SELECT saved_music_hash FROM app_meta WHERE tg_user_id = ?1",
-                params![tg_user_id],
-                |row| row.get::<_, Option<String>>(0),
-            )
-            .optional()?
-            .flatten();
-        Ok(hash)
     }
 
     pub fn last_sync_at(&self, tg_user_id: i64) -> AppResult<Option<String>> {
@@ -77,16 +85,6 @@ impl Db {
             .optional()?
             .flatten();
         Ok(value)
-    }
-
-    pub fn set_saved_music_hash(&self, tg_user_id: i64, hash: &str) -> AppResult<()> {
-        let conn = self.conn.lock().unwrap();
-        conn.execute(
-            "INSERT INTO app_meta (tg_user_id, saved_music_hash) VALUES (?1, ?2) \
-             ON CONFLICT (tg_user_id) DO UPDATE SET saved_music_hash = excluded.saved_music_hash",
-            params![tg_user_id, hash],
-        )?;
-        Ok(())
     }
 
     pub fn mark_synced(&self, tg_user_id: i64) -> AppResult<()> {

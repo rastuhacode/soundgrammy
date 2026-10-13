@@ -23,17 +23,52 @@ flowchart LR
 ## Bootstrap
 
 1. `auth_status` — **local only** (`session.enc` + SQLite profile). No MTProto. Unauthorized → login UI.
-2. On authorized: `useAppSession` hydrates the session and independently loads tracks, playlists, listen statistics, and cache status → UI **ready**. Optional statistics/cache failures do not block library hydration; track/playlist failures expose a retry.
-3. Automatic reconnect and manual sync share the `connectivity-store` coordinator and one response-driven library reload. Background reconnect loop: `refresh_auth` with exponential backoff (and immediate retry on browser `online`); on success, `sync_saved_music`. On sync `changed`, reload library into stores.
-4. Network timeouts / unreachable leave the cached library and local session as-is; sync-dot shows offline / connecting and keeps retrying.
+2. On authorized: `useAppSession` hydrates the session and independently loads tracks, playlists, listen statistics, and cache status → UI **ready**. Display metadata loads from SQLite in pages of at most 500 rows, all at one library revision. Optional statistics/cache failures do not block library hydration; track/playlist failures expose a retry.
+3. Automatic reconnect and tower sync share the `connectivity-store` coordinator and use soft sync. First indexing and confirmed full reindexing replace the library with a progress loader until metadata indexing and final local hydration complete. Soft-sync additions publish `library:batch` events while the existing library stays visible. A response-driven reload repairs missed events on sync `changed`, or after a failed scan that may have committed partial progress.
+4. Network timeouts / unreachable preserve cached tracks and the local session; sync-dot shows offline / connecting and keeps retrying.
 5. Logout or account change invalidates account-scoped responses with a session generation and clears playback mirrors, job presentation, statistics, cache mirrors, and thumbnail memory. Server-proven session death (`AUTH_KEY_*` / `SESSION_REVOKED`, etc.) clears local session, emits `auth:revoked`, UI returns to login.
-6. Sync errors leave the cached library as-is; reconnect will retry sync after auth succeeds again.
+6. Sync errors retain the previous cached tracks and successfully committed new pages. Reconnect retries from a durable checkpoint after validating an overlapping page. Removals wait for a verified complete scan.
 
 Optional **MTProto proxy** (tg-ws-proxy compatible: server / port / secret or `tg://proxy?…`) is stored in SQLite `app_settings` and applied when building the ferogram client. Changing proxy settings rebuilds the client in-process. If a configured proxy fails at startup, the app falls back to a direct connection so the login UI can still load and the user can disable the proxy.
 
 The UI reconnect loop refreshes library/auth presentation. Playback-critical downloads have native retry and connection recovery; background playback does not depend on browser connectivity events. See [streaming](streaming.md).
 
 ## Data ownership
+
+Saved music sync first checks `account.getSavedMusicIds` using Telegram's ordered
+64-bit list hash. The manifest hash and metadata completeness are separate durable
+state: an unchanged manifest never skips an interrupted scan. A complete unchanged
+catalogue skips metadata requests when unchanged. Soft sync compares that manifest
+with local tracks, requests pages likely to contain missing IDs, and stores only
+new metadata. Manifest ordinals are hints: unmatched IDs trigger a search of the
+remaining pages. Cached relative order is retained, and additions are inserted at
+their observed page positions. Soft sync does not refresh existing metadata or
+schedule full scans based on elapsed time. Settings → Music library → Fully reindex
+tracks explicitly refetches all metadata and Telegram order after confirmation.
+Initial/full indexing scans `users.getSavedMusic` in batches of 100. Each page and
+its cursor commit together. A final manifest check and exact SQL membership
+validation precede pruning, without a bind parameter per track.
+Flood waits exceeding ferogram's automatic sleep threshold persist a per-account
+retry deadline; subsequent syncs and process restarts respect that cooldown.
+Full-reindex intent is persisted by `prepare_full_reindex` before network/auth
+refresh, so offline failures and restarts retain the loading state. Track IDs are
+reused to preserve playlist memberships, likes, statistics and cache ownership for
+tracks still saved on Telegram. Existing completed catalogues remain visible;
+legacy partial initial indexes are hidden. The legacy XOR hash is not reused.
+
+The frontend retains the complete **local display metadata** index. Search keeps
+its existing locale-aware substring semantics; playlist resolution, sorting,
+selection, whole-playlist jobs, and native queue construction include every locally
+indexed track, independent of the virtual viewport. Local IPC reads are paged and
+omit stored MTProto document JSON. This avoids coupling feature completeness to
+scrolling without replacing these operations with different SQL search semantics.
+Initial/full indexing never exposes a partial catalogue through display pages or
+batch events. The app's progress loader remains until the final local snapshot
+loads, and keeps Settings/connection controls available. Soft-sync status and
+progress appear in the tower menu, with no loader or track-view indexing banner.
+Batch revisions discard stale events, and snapshot repairs retry rather than
+letting late completion events cancel them. Failed full scans remain hidden and
+resume after a retry/reconnect; soft scans resume by recomputing missing IDs.
 
 | Data | Source of truth | Local store |
 |------|-----------------|-------------|
@@ -71,6 +106,7 @@ Selection uses the exact ordered membership snapshot and clears if that snapshot
 | Event | Meaning |
 |-------|---------|
 | `sync:start` / `sync:progress` / `sync:done` | Saved-music sync lifecycle |
+| `library:batch` | Revisioned committed display metadata, explicit removals, and indexing completeness |
 | `auth:revoked` | Local session cleared after server-proven auth death |
 | `download:progress` | Per-track download bytes / ranges |
 | `download_playlist:progress` | Playlist download slot progress (`jobId` / `current` / `total` / `trackId`) |

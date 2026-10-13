@@ -5,11 +5,11 @@ import { useLibraryStore } from '@/stores/library-store'
 import { usePlaylistsStore } from '@/stores/playlists-store'
 import { useListenStatsStore } from '@/stores/listen-stats-store'
 import { useSessionStore } from '@/stores/session-store'
-import { deferred, playlists, track } from '@/test-support/fixtures'
-import type { Track, TrackListenStats } from '@/types'
+import { deferred, libraryPage, playlists, track } from '@/test-support/fixtures'
+import type { LibraryPage, TrackListenStats } from '@/types'
 
 vi.mock('@/lib/api', () => ({ api: {
-  listTracks: vi.fn(), listPlaylists: vi.fn(), getListenStatisticsEnabled: vi.fn(), listListenStats: vi.fn(),
+  listTracksPage: vi.fn(), listPlaylists: vi.fn(), getListenStatisticsEnabled: vi.fn(), listListenStats: vi.fn(),
   getCacheStatus: vi.fn(), nativePlayerCommand: vi.fn(), nativeAudioSnapshot: vi.fn(),
 } }))
 beforeEach(() => {
@@ -18,7 +18,7 @@ beforeEach(() => {
   useLibraryStore.getState().setLibrary([])
   usePlaylistsStore.getState().reset()
   useListenStatsStore.getState().reset()
-  vi.mocked(api.listTracks).mockResolvedValue([track(1)])
+  vi.mocked(api.listTracksPage).mockResolvedValue(libraryPage([track(1)]))
   vi.mocked(api.listPlaylists).mockResolvedValue(playlists())
   vi.mocked(api.getCacheStatus).mockResolvedValue([])
   vi.mocked(api.getListenStatisticsEnabled).mockResolvedValue(true)
@@ -35,22 +35,22 @@ describe('independent library hydration', () => {
     expect(usePlaylistsStore.getState().data?.custom[0]?.id).toBe(20)
   })
   it('does not restore old library data after logout', async () => {
-    const pending = deferred<Track[]>()
-    vi.mocked(api.listTracks).mockReturnValue(pending.promise)
+    const pending = deferred<LibraryPage>()
+    vi.mocked(api.listTracksPage).mockReturnValue(pending.promise)
     const request = useLibraryStore.getState().refresh()
     useSessionStore.getState().clearSession()
     useLibraryStore.getState().setLibrary([])
-    pending.resolve([track(1)])
+    pending.resolve(libraryPage([track(1)]))
     await request
     expect(useLibraryStore.getState().library).toEqual([])
     expect(api.nativePlayerCommand).not.toHaveBeenCalled()
   })
   it('a newer library response wins when reads finish out of order', async () => {
-    const first = deferred<Track[]>()
-    vi.mocked(api.listTracks).mockReturnValueOnce(first.promise).mockResolvedValueOnce([track(2)])
+    const first = deferred<LibraryPage>()
+    vi.mocked(api.listTracksPage).mockReturnValueOnce(first.promise).mockResolvedValueOnce(libraryPage([track(2)]))
     const request = useLibraryStore.getState().refresh()
     await useLibraryStore.getState().refresh()
-    first.resolve([track(1)])
+    first.resolve(libraryPage([track(1)]))
     await request
     expect(useLibraryStore.getState().library[0]?.id).toBe(2)
   })

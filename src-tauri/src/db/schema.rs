@@ -24,6 +24,37 @@ pub(super) fn apply(conn: &Connection) -> AppResult<()> {
         );
 
         CREATE INDEX IF NOT EXISTS idx_tracks_tg_user_id ON tracks (tg_user_id);
+        CREATE INDEX IF NOT EXISTS idx_tracks_user_position
+          ON tracks (tg_user_id, track_position, created_at DESC, id DESC);
+
+        -- Separate from the legacy XOR hash. A manifest can be current while
+        -- metadata/order indexing is incomplete after a failed request.
+        CREATE TABLE IF NOT EXISTS library_sync_state (
+          tg_user_id INTEGER PRIMARY KEY,
+          manifest_hash TEXT NOT NULL,
+          next_offset INTEGER NOT NULL DEFAULT 0,
+          complete INTEGER NOT NULL DEFAULT 0,
+          blocking INTEGER NOT NULL DEFAULT 0,
+          verified_at INTEGER,
+          revision INTEGER NOT NULL DEFAULT 0
+        );
+        CREATE TABLE IF NOT EXISTS library_sync_manifest (
+          tg_user_id INTEGER NOT NULL,
+          document_id TEXT NOT NULL,
+          ordinal INTEGER NOT NULL,
+          PRIMARY KEY (tg_user_id, document_id)
+        );
+        CREATE TABLE IF NOT EXISTS library_sync_entries (
+          tg_user_id INTEGER NOT NULL,
+          document_id TEXT NOT NULL,
+          position INTEGER NOT NULL,
+          PRIMARY KEY (tg_user_id, document_id),
+          UNIQUE (tg_user_id, position)
+        );
+        CREATE TABLE IF NOT EXISTS library_sync_backoff (
+          tg_user_id INTEGER PRIMARY KEY,
+          retry_at INTEGER NOT NULL
+        );
 
         CREATE TABLE IF NOT EXISTS playlists (
           id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -135,6 +166,21 @@ pub(super) fn apply(conn: &Connection) -> AppResult<()> {
         "#,
     )?;
     ensure_title_source(conn)?;
+    ensure_library_sync_mode(conn)?;
+    Ok(())
+}
+
+fn ensure_library_sync_mode(conn: &Connection) -> AppResult<()> {
+    let mut stmt = conn.prepare("PRAGMA table_info(library_sync_state)")?;
+    let columns = stmt
+        .query_map([], |row| row.get::<_, String>(1))?
+        .collect::<Result<Vec<_>, _>>()?;
+    if !columns.iter().any(|column| column == "blocking") {
+        conn.execute(
+            "ALTER TABLE library_sync_state ADD COLUMN blocking INTEGER NOT NULL DEFAULT 0",
+            [],
+        )?;
+    }
     Ok(())
 }
 
