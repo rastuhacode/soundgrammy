@@ -1,5 +1,18 @@
 # Changelog
 
+## [3.6.0](https://github.com/rastuhacode/soundgrammy/compare/v3.5.0...v3.6.0) (2026-11-05)
+
+
+### Features
+
+* enhance artwork handling and caching in thumbnail hooks ([ab16c4a](https://github.com/rastuhacode/soundgrammy/commit/ab16c4a8d20ea53b051e370dc18664d77fffb121))
+* implement soft sync functionality and related tests ([f4814cb](https://github.com/rastuhacode/soundgrammy/commit/f4814cb8533dcbf9d93497a113f76a5e1ccd3af6))
+
+
+### Bug Fixes
+
+* make stream cache more aggressive ([bca2565](https://github.com/rastuhacode/soundgrammy/commit/bca25654b7a0a4d7235c3bd63aa3592e9053dad8))
+
 ## [3.5.0](https://github.com/rastuhacode/soundgrammy/compare/v3.4.3...v3.5.0) (2026-10-10)
 
 
