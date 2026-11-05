@@ -8,6 +8,9 @@ impl LastFmService {
         }
         loop {
             let state = app.state::<AppState>();
+            if let Err(error) = state.lastfm.deliver_now_playing(&state.db, &app).await {
+                tracing::warn!(%error,"Last.fm Now Playing delivery failed");
+            }
             if let Err(error) = state.lastfm.flush_once(&state.db, &app).await {
                 tracing::warn!("Last.fm queue pass failed: {error}");
             }
@@ -23,9 +26,9 @@ impl LastFmService {
         }
     }
 
-    pub async fn flush_once(&self, db: &Db, app: &AppHandle) -> AppResult<()> {
+    pub async fn flush_once(&self, db: &Db, app: &dyn LastFmHost) -> AppResult<()> {
         let _worker = self.worker_lock.lock().await;
-        let (account_key, session_key) = {
+        let (account_key, session_key, generation) = {
             let runtime = self.runtime.lock().await;
             if !runtime.enabled || runtime.auth_state != LastFmAuthState::Connected {
                 return Ok(());
@@ -35,7 +38,7 @@ impl LastFmService {
             else {
                 return Ok(());
             };
-            (account_key, session_key)
+            (account_key, session_key, runtime.generation)
         };
         let rows = db.due_lastfm_scrobbles(&account_key, now_ms(), 50)?;
         if rows.is_empty() {
@@ -51,7 +54,34 @@ impl LastFmService {
             })
             .collect::<Vec<_>>();
         let client = self.client()?;
-        match client.scrobble(&session_key, &payload).await {
+        let result = client.scrobble(&session_key, &payload).await;
+        let mut runtime = self.runtime.lock().await;
+        if runtime.generation != generation {
+            // A receipt belongs to the submitted durable rows even after disconnect.
+            // Settle accepted/permanent results without mutating the replacement runtime.
+            if let Ok(results) = result {
+                let mut delete = Vec::new();
+                let mut daily = Vec::new();
+                for (row, result) in rows.iter().zip(results) {
+                    if result.ignored_code == 5 {
+                        daily.push(row.id);
+                    } else {
+                        delete.push(row.id);
+                    }
+                }
+                db.delete_lastfm_queue_rows(&delete)?;
+                if !daily.is_empty() {
+                    db.retry_lastfm_queue_rows(
+                        &daily,
+                        now_ms() + 24 * 60 * 60 * 1000,
+                        Some(5),
+                        "Daily scrobble limit exceeded",
+                    )?;
+                }
+            }
+            return Ok(());
+        }
+        match result {
             Ok(results) => {
                 let mut delete_ids = Vec::new();
                 let mut daily_ids = Vec::new();
@@ -65,7 +95,6 @@ impl LastFmService {
                         5 => daily_ids.push(row.id),
                         code => {
                             delete_ids.push(row.id);
-                            let mut runtime = self.runtime.lock().await;
                             runtime.last_metadata_warning = Some(issue(
                                 "filtered",
                                 Some(code),
@@ -85,28 +114,27 @@ impl LastFmService {
                 }
                 if accepted {
                     db.set_setting(SETTING_LASTFM_LAST_SCROBBLE_AT_MS, &now_ms().to_string())?;
-                    self.runtime.lock().await.last_error = None;
+                    runtime.last_error = None;
                 }
             }
-            Err(LastFmError::Api(9)) => self.mark_needs_reauth(db).await?,
+            Err(LastFmError::Api(9)) => mark_runtime_needs_reauth(&mut runtime, db)?,
             Err(error @ (LastFmError::Transport | LastFmError::Malformed))
             | Err(error @ LastFmError::Api(11 | 16)) => {
                 retry_all(db, &rows, &error, 30_000, 3_600_000)?;
-                self.runtime.lock().await.last_error =
+                runtime.last_error =
                     Some(issue("transport", api_code(&error), error.safe_message()));
             }
             Err(error @ LastFmError::Api(29)) => {
                 retry_all(db, &rows, &error, 300_000, 21_600_000)?;
-                self.runtime.lock().await.last_error =
-                    Some(issue("rate_limit", Some(29), error.safe_message()));
+                runtime.last_error = Some(issue("rate_limit", Some(29), error.safe_message()));
             }
             Err(error) => {
-                let mut runtime = self.runtime.lock().await;
                 runtime.auth_state = LastFmAuthState::Error;
                 runtime.active_attempts.clear();
                 runtime.last_error = Some(issue("api", api_code(&error), error.safe_message()));
             }
         }
+        drop(runtime);
         self.emit_status(db, app).await;
         Ok(())
     }

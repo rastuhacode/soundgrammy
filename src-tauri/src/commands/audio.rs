@@ -23,6 +23,7 @@ pub async fn native_audio_capabilities(
             .await
             .is_ok(),
         streaming: true,
+        codecs: vec!["mp3", "aac", "alac", "flac", "vorbis", "pcm"],
     })
 }
 #[tauri::command]

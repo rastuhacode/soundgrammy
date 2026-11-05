@@ -77,9 +77,9 @@ fn unique_dir_appends_numeric_suffix_on_collision() {
     let _ = fs::remove_dir_all(&parent);
     fs::create_dir_all(&parent).unwrap();
 
-    let first = unique_dir(&parent, "Export 2026-07-22");
+    let first = unique_dir(&parent, "Export 2026-07-22").unwrap();
     fs::create_dir_all(&first).unwrap();
-    let second = unique_dir(&parent, "Export 2026-07-22");
+    let second = unique_dir(&parent, "Export 2026-07-22").unwrap();
     assert_eq!(second.file_name().unwrap(), "Export 2026-07-22 (2)");
 
     let _ = fs::remove_dir_all(&parent);
@@ -87,7 +87,7 @@ fn unique_dir_appends_numeric_suffix_on_collision() {
 
 #[test]
 fn local_date_ymd_is_iso_shaped() {
-    let value = local_date_ymd();
+    let value = utc_date_ymd();
     assert!(regex_is_ymd(&value), "expected YYYY-MM-DD, got {value}");
 }
 
@@ -149,4 +149,80 @@ fn track_display_label_prefers_artist_title() {
     assert_eq!(track_display_label(&solo), "Solo");
     let empty = sample_track(3, None, None);
     assert_eq!(track_display_label(&empty), "Unknown title");
+}
+
+#[test]
+fn export_uses_finalized_container_instead_of_stale_telegram_mime() {
+    let track = sample_track(1, Some("Mislabeled"), None);
+    assert_eq!(
+        finalized_format(Path::new("/cache/u1.webm"), &track).unwrap(),
+        ("webm".into(), "audio/webm".into())
+    );
+}
+
+#[tokio::test]
+async fn concurrent_exports_publish_distinct_complete_files_without_temp_leaks() {
+    let dir =
+        std::env::temp_dir().join(format!("soundgrammy-export-{:016x}", rand::random::<u64>()));
+    fs::create_dir_all(&dir).unwrap();
+    let source = dir.join("source");
+    fs::write(&source, b"complete audio").unwrap();
+    let (a, b) = tokio::join!(
+        copy_complete_file(&source, &dir, "Same song", "mp3"),
+        copy_complete_file(&source, &dir, "Same song", "mp3")
+    );
+    let (a, b) = (a.unwrap(), b.unwrap());
+    assert_ne!(a, b);
+    assert_eq!(fs::read(a).unwrap(), b"complete audio");
+    assert_eq!(fs::read(b).unwrap(), b"complete audio");
+    assert_eq!(fs::read_dir(&dir).unwrap().count(), 3);
+    assert!(
+        copy_complete_file(&dir.join("missing"), &dir, "Failed", "mp3")
+            .await
+            .is_err()
+    );
+    assert_eq!(fs::read_dir(&dir).unwrap().count(), 3);
+    fs::remove_dir_all(dir).unwrap();
+}
+
+#[tokio::test]
+async fn ancillary_playlist_failure_retains_the_partial_export_receipt_and_audio() {
+    let dir = std::env::temp_dir().join(format!(
+        "soundgrammy-export-result-{:016x}",
+        rand::random::<u64>()
+    ));
+    tokio::fs::create_dir_all(&dir).await.unwrap();
+    tokio::fs::write(dir.join("Song.mp3"), b"complete audio")
+        .await
+        .unwrap();
+    let result = finish_export(
+        dir.clone(),
+        "List".into(),
+        vec![PlaylistDownloadSucceeded {
+            track_id: 1,
+            title: Some("Song".into()),
+            performer: None,
+            file_name: "Song.mp3".into(),
+        }],
+        vec![PlaylistDownloadFailed {
+            track_id: 2,
+            title: None,
+            performer: None,
+            error: "download failed".into(),
+        }],
+        vec![],
+        true,
+        |_, _| async { Err(AppError::msg("injected disk failure")) },
+    )
+    .await
+    .unwrap();
+    assert_eq!(result.folder_path.as_deref(), dir.to_str());
+    assert_eq!(result.succeeded[0].track_id, 1);
+    assert_eq!(result.failed[0].track_id, 2);
+    assert_eq!(result.warnings.len(), 1);
+    assert_eq!(
+        tokio::fs::read(dir.join("Song.mp3")).await.unwrap(),
+        b"complete audio"
+    );
+    tokio::fs::remove_dir_all(dir).await.unwrap();
 }

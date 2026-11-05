@@ -121,37 +121,43 @@ fn extract_secret_param(url: &str) -> Option<String> {
 }
 
 pub fn load(db: &Db) -> AppResult<ProxySettings> {
-    let enabled = matches!(
-        db.get_setting(SETTING_PROXY_ENABLED)?
-            .as_deref()
-            .map(str::trim),
-        Some("1") | Some("true") | Some("TRUE") | Some("yes")
-    );
-    let server = db.get_setting(SETTING_PROXY_SERVER)?.unwrap_or_default();
-    let port = db
-        .get_setting(SETTING_PROXY_PORT)?
-        .and_then(|p| p.parse::<u16>().ok())
-        .unwrap_or(1443);
-    let secret = db.get_setting(SETTING_PROXY_SECRET)?.unwrap_or_default();
-
+    let values = db.settings_snapshot(&[
+        SETTING_PROXY_ENABLED,
+        SETTING_PROXY_SERVER,
+        SETTING_PROXY_PORT,
+        SETTING_PROXY_SECRET,
+    ])?;
     Ok(ProxySettings {
-        enabled,
-        server,
-        port,
-        secret,
+        enabled: matches!(
+            values.get(SETTING_PROXY_ENABLED).map(|s| s.trim()),
+            Some("1" | "true" | "TRUE" | "yes")
+        ),
+        server: values
+            .get(SETTING_PROXY_SERVER)
+            .cloned()
+            .unwrap_or_default(),
+        port: values
+            .get(SETTING_PROXY_PORT)
+            .and_then(|s| s.parse().ok())
+            .unwrap_or(1443),
+        secret: values
+            .get(SETTING_PROXY_SECRET)
+            .cloned()
+            .unwrap_or_default(),
     })
 }
 
 pub fn save(db: &Db, settings: &ProxySettings) -> AppResult<()> {
     settings.validate()?;
-    db.set_setting(
-        SETTING_PROXY_ENABLED,
-        if settings.enabled { "true" } else { "false" },
-    )?;
-    db.set_setting(SETTING_PROXY_SERVER, settings.server.trim())?;
-    db.set_setting(SETTING_PROXY_PORT, &settings.port.to_string())?;
-    db.set_setting(SETTING_PROXY_SECRET, settings.secret.trim())?;
-    Ok(())
+    db.update_settings(&[
+        (
+            SETTING_PROXY_ENABLED,
+            Some(if settings.enabled { "true" } else { "false" }),
+        ),
+        (SETTING_PROXY_SERVER, Some(settings.server.trim())),
+        (SETTING_PROXY_PORT, Some(&settings.port.to_string())),
+        (SETTING_PROXY_SECRET, Some(settings.secret.trim())),
+    ])
 }
 
 /// Payload returned to the UI (settings + live connection hints).

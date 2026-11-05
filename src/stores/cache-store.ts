@@ -64,11 +64,13 @@ export const useCacheStore = create<CacheState>((set, get) => ({
     return { settings: next, usage }
   }),
   clearAudio: () => mutate(async (generation) => {
-    await api.clearAudioCache()
+    const result = await api.clearAudioCache()
     assertSession(generation)
-    get().clearAll()
+    await get().hydrate()
+    assertSession(generation)
     const usage = await api.getCacheUsage()
     assertSession(generation)
+    if (result.failedFiles > 0) throw new Error(`Cache cleared partially: ${result.failedFiles} file(s) could not be removed`)
     return usage
   }),
 

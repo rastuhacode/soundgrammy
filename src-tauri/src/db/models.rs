@@ -5,21 +5,69 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Track {
     pub id: i64,
+    #[serde(default)]
     pub tg_user_id: i64,
+    #[serde(default)]
     pub file_id: String,
+    #[serde(default)]
     pub file_unique_id: String,
     pub title: Option<String>,
     #[serde(skip)]
     pub title_source: String,
     pub performer: Option<String>,
     pub duration: Option<i64>,
+    #[serde(default)]
     pub source: String,
     pub mime_type: Option<String>,
     pub file_size: Option<i64>,
+    #[serde(default)]
     pub created_at: String,
     /// The serialized Telegram document JSON stays server-side only.
     #[serde(skip)]
     pub mtproto_document: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LibraryStatus {
+    pub tg_user_id: i64,
+    pub revision: i64,
+    pub indexed: i64,
+    pub total: i64,
+    pub complete: bool,
+    pub blocking: bool,
+    pub processed: i64,
+    pub last_sync_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct PositionedTrack {
+    pub track: Track,
+    pub position: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LibraryPage {
+    pub tracks: Vec<PositionedTrack>,
+    pub status: LibraryStatus,
+    pub next_offset: Option<i64>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LibraryBatch {
+    pub tracks: Vec<PositionedTrack>,
+    pub removed_track_ids: Vec<i64>,
+    pub status: LibraryStatus,
+}
+
+pub struct SavedMusicCheckpoint {
+    pub manifest: Vec<i64>,
+    pub hash: i64,
+    pub next_offset: i32,
+    pub complete: bool,
+    pub blocking: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]

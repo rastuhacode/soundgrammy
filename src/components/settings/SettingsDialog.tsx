@@ -3,6 +3,7 @@ import { DiagnosticsSection } from './sections/DiagnosticsSection'
 import { FullscreenPlayerSection } from './sections/FullscreenPlayerSection'
 import { IntegrationsSection } from './sections/IntegrationsSection'
 import { ListeningStatisticsSection } from './sections/ListeningStatisticsSection'
+import { LibrarySection } from './sections/LibrarySection'
 import {
   Dialog,
   DialogContent,
@@ -25,6 +26,7 @@ export function SettingsDialog({ open, onOpenChange }: SettingsDialogProps) {
 
         <div className="min-h-0 grow overflow-x-hidden overflow-y-auto px-4 py-4">
           <div className="flex min-w-0 flex-col gap-2">
+            <LibrarySection />
             <AudioCacheSection />
             <ListeningStatisticsSection />
             <IntegrationsSection />

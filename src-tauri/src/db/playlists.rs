@@ -3,6 +3,28 @@ use rusqlite::{params, Connection, OptionalExtension};
 use super::{CustomPlaylistSummary, Db, LikedPlaylist, PlaylistsBundle, Track};
 use crate::error::AppResult;
 
+fn require_owned_track(conn: &Connection, track_id: i64, uid: i64) -> AppResult<()> {
+    let owned: bool = conn.query_row(
+        "SELECT EXISTS(SELECT 1 FROM tracks WHERE id=?1 AND tg_user_id=?2)",
+        params![track_id, uid],
+        |row| row.get(0),
+    )?;
+    if !owned {
+        return Err(crate::error::AppError::msg("Track not found"));
+    }
+    Ok(())
+}
+
+fn validated_name(name: &str) -> AppResult<&str> {
+    let name = name.trim();
+    if name.is_empty() || name.chars().count() > 100 {
+        return Err(crate::error::AppError::msg(
+            "Playlist name must contain 1 to 100 characters",
+        ));
+    }
+    Ok(name)
+}
+
 impl Db {
     fn playlist_updated_at(conn: &Connection, playlist_id: i64) -> AppResult<String> {
         Ok(conn.query_row(
@@ -37,14 +59,11 @@ impl Db {
         if exists.is_none() {
             return Err(crate::error::AppError::msg("Playlist not found"));
         }
-        let mut stmt = conn.prepare(
-            "SELECT t.id, t.tg_user_id, t.file_id, t.file_unique_id, t.title, t.title_source, t.performer, \
-             t.duration, t.source, t.mime_type, t.file_size, t.created_at, t.mtproto_document \
-             FROM playlist_tracks pt \
-             JOIN tracks t ON t.id = pt.track_id \
-             WHERE pt.playlist_id = ?1 \
-             ORDER BY pt.position ASC, pt.added_at ASC, pt.id ASC",
-        )?;
+        let mut stmt = conn.prepare(&format!(
+            "SELECT {} FROM playlist_tracks pt JOIN tracks t ON t.id=pt.track_id \
+             WHERE pt.playlist_id=?1 ORDER BY pt.position,pt.added_at,pt.id",
+            super::tracks::projection("t.", true)
+        ))?;
         let tracks = stmt
             .query_map(params![playlist_id], super::tracks::map_track)?
             .collect::<Result<Vec<_>, _>>()?;
@@ -138,6 +157,7 @@ impl Db {
         Ok(PlaylistsBundle { liked, custom })
     }
 
+    #[cfg(test)]
     pub fn create_playlist(&self, tg_user_id: i64, name: &str) -> AppResult<CustomPlaylistSummary> {
         self.create_playlist_with_tracks(tg_user_id, name, &[])
     }
@@ -149,12 +169,7 @@ impl Db {
         name: &str,
         track_ids: &[i64],
     ) -> AppResult<CustomPlaylistSummary> {
-        let trimmed = name.trim();
-        if trimmed.is_empty() || trimmed.chars().count() > 100 {
-            return Err(crate::error::AppError::msg(
-                "Playlist name must contain 1 to 100 characters",
-            ));
-        }
+        let trimmed = validated_name(name)?;
         let mut conn = self.conn.lock().unwrap();
         let tx = conn.transaction()?;
         tx.execute(
@@ -163,14 +178,7 @@ impl Db {
         )?;
         let id = tx.last_insert_rowid();
         for (position, track_id) in track_ids.iter().enumerate() {
-            let owned: bool = tx.query_row(
-                "SELECT EXISTS(SELECT 1 FROM tracks WHERE id = ?1 AND tg_user_id = ?2)",
-                params![track_id, tg_user_id],
-                |row| row.get(0),
-            )?;
-            if !owned {
-                return Err(crate::error::AppError::msg("Track not found"));
-            }
+            require_owned_track(&tx, *track_id, tg_user_id)?;
             tx.execute(
                 "INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (?1, ?2, ?3)",
                 params![id, track_id, position as i64],
@@ -255,13 +263,7 @@ impl Db {
         }
 
         let next_name = match name {
-            Some(n) => {
-                let trimmed = n.trim();
-                if trimmed.is_empty() {
-                    return Err(crate::error::AppError::msg("Playlist name is required"));
-                }
-                trimmed.to_string()
-            }
+            Some(n) => validated_name(n)?.to_string(),
             None => existing.0,
         };
 
@@ -330,6 +332,7 @@ impl Db {
                 "Use toggle_like for the Liked playlist",
             ));
         }
+        require_owned_track(&conn, track_id, tg_user_id)?;
         let position = Self::next_position(&conn, playlist_id)?;
         conn.execute(
             "INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (?1, ?2, ?3)",
@@ -366,6 +369,7 @@ impl Db {
         let tx = conn.transaction()?;
         let positions = Self::next_position(&tx, playlist_id)?..;
         for (position, track_id) in positions.zip(track_ids.iter()) {
+            require_owned_track(&tx, *track_id, tg_user_id)?;
             tx.execute(
                 "INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (?1, ?2, ?3)",
                 params![playlist_id, track_id, position],
@@ -376,52 +380,25 @@ impl Db {
         Ok(updated_at)
     }
 
-    /// Removes the membership entry at `position` (0-based order in the playlist).
-    pub fn remove_track_from_playlist(
-        &self,
-        playlist_id: i64,
-        position: i64,
-        tg_user_id: i64,
-    ) -> AppResult<String> {
-        let conn = self.conn.lock().unwrap();
-        let exists = conn
-            .query_row(
-                "SELECT 1 FROM playlists WHERE id = ?1 AND tg_user_id = ?2",
-                params![playlist_id, tg_user_id],
-                |_| Ok(()),
-            )
-            .optional()?;
-        if exists.is_none() {
-            return Err(crate::error::AppError::msg("Playlist not found"));
-        }
-        if position < 0 {
-            return Err(crate::error::AppError::msg("Invalid playlist position"));
-        }
-        let entry_id: Option<i64> = conn
-            .query_row(
-                "SELECT id FROM playlist_tracks WHERE playlist_id = ?1 \
-                 ORDER BY position ASC, added_at ASC, id ASC \
-                 LIMIT 1 OFFSET ?2",
-                params![playlist_id, position],
-                |row| row.get(0),
-            )
-            .optional()?;
-        let Some(entry_id) = entry_id else {
-            return Self::playlist_updated_at(&conn, playlist_id);
-        };
-        conn.execute(
-            "DELETE FROM playlist_tracks WHERE id = ?1",
-            params![entry_id],
-        )?;
-        Self::touch_playlist_updated_at(&conn, playlist_id)
-    }
-
     /// Rewrites membership to match `track_ids` order (duplicates allowed).
     /// `track_ids` must be a multiset-equal permutation of the playlist's current membership.
+    #[cfg(test)]
     pub fn reorder_playlist_tracks(
         &self,
         playlist_id: i64,
         track_ids: &[i64],
+        tg_user_id: i64,
+    ) -> AppResult<String> {
+        let current = Self::playlist_track_ids(&self.conn.lock().unwrap(), playlist_id)?;
+        self.reorder_playlist_tracks_guarded(playlist_id, track_ids, &current, None, tg_user_id)
+    }
+
+    pub fn reorder_playlist_tracks_guarded(
+        &self,
+        playlist_id: i64,
+        track_ids: &[i64],
+        expected: &[i64],
+        move_indices: Option<[i64; 2]>,
         tg_user_id: i64,
     ) -> AppResult<String> {
         let mut conn = self.conn.lock().unwrap();
@@ -437,6 +414,11 @@ impl Db {
         }
 
         let current = Self::playlist_track_ids(&conn, playlist_id)?;
+        if current != expected {
+            return Err(crate::error::AppError::msg(
+                "The playlist changed. Reload its tracks before reordering.",
+            ));
+        }
         if !Self::track_id_multisets_equal(&current, track_ids) {
             return Err(crate::error::AppError::msg(
                 "Track list does not match playlist membership",
@@ -444,14 +426,38 @@ impl Db {
         }
 
         let tx = conn.transaction()?;
-        tx.execute(
-            "DELETE FROM playlist_tracks WHERE playlist_id = ?1",
-            params![playlist_id],
-        )?;
-        for (position, track_id) in track_ids.iter().enumerate() {
+        let mut stmt=tx.prepare("SELECT id,track_id FROM playlist_tracks WHERE playlist_id=?1 ORDER BY position,added_at,id")?;
+        let mut rows = stmt
+            .query_map([playlist_id], |r| {
+                Ok((r.get::<_, i64>(0)?, r.get::<_, i64>(1)?))
+            })?
+            .collect::<Result<Vec<_>, _>>()?;
+        drop(stmt);
+        let ordered = if let Some([from, to]) = move_indices {
+            let len = rows.len() as i64;
+            if from < 0 || to < 0 || from >= len || to >= len {
+                return Err(crate::error::AppError::msg("Invalid playlist position"));
+            }
+            let row = rows.remove(from as usize);
+            rows.insert(to as usize, row);
+            if rows.iter().map(|(_, track)| *track).collect::<Vec<_>>() != track_ids {
+                return Err(crate::error::AppError::msg(
+                    "Reorder does not match the requested move",
+                ));
+            }
+            rows
+        } else {
+            let mut ordered = Vec::new();
+            for track in track_ids {
+                let index = rows.iter().position(|(_, id)| id == track).unwrap();
+                ordered.push(rows.remove(index));
+            }
+            ordered
+        };
+        for (position, (id, _)) in ordered.into_iter().enumerate() {
             tx.execute(
-                "INSERT INTO playlist_tracks (playlist_id, track_id, position) VALUES (?1, ?2, ?3)",
-                params![playlist_id, track_id, position as i64],
+                "UPDATE playlist_tracks SET position=?1 WHERE id=?2",
+                params![position as i64, id],
             )?;
         }
         let updated_at = Self::touch_playlist_updated_at(&tx, playlist_id)?;
@@ -473,6 +479,7 @@ impl Db {
     /// Toggles the liked state of a track; returns the updated liked playlist.
     pub fn toggle_like(&self, track_id: i64, tg_user_id: i64) -> AppResult<LikedPlaylist> {
         let conn = self.conn.lock().unwrap();
+        require_owned_track(&conn, track_id, tg_user_id)?;
         let liked_id = self.ensure_liked(&conn, tg_user_id)?;
         let already: Option<()> = conn
             .query_row(

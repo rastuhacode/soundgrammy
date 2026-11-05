@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { api, onAuthRevoked, onSyncStart, onSyncProgress } from '@/lib/api'
+import { api, onAuthRevoked, onLibraryBatch, onSyncStart, onSyncProgress } from '@/lib/api'
 import { ownEventListeners } from '@/lib/events'
 import { hydrateLibrary } from '@/lib/library-hydration'
 import { authUserToSession, type AuthUser } from '@/types'
@@ -88,6 +88,16 @@ export function useAppSession() {
     const unlisten = ownEventListeners([
       onSyncStart(() => { if (current()) useConnectivityStore.setState({ progress: null }) }),
       onSyncProgress((progress) => { if (current()) useConnectivityStore.setState({ progress }) }),
+      onLibraryBatch((batch) => {
+        if (!current()) return
+        if (!useLibraryStore.getState().applyBatch(batch)) return
+        const connectivity = useConnectivityStore.getState()
+        if (batch.status.blocking) useConnectivityStore.setState({ blockingIndex: true })
+        else if (batch.status.complete && connectivity.blockingIndex && !connectivity.syncing) {
+          // A WebView can reattach while a native indexing command is finishing.
+          void connectivity.requestSync('soft').catch(() => {})
+        }
+      }),
       startCacheStatusListener(), startDownloadProgressListener(), startPlaylistJobsListeners(),
     ])
     return () => {

@@ -4,7 +4,7 @@ React 19 + Zustand + Vite + Tailwind. Import alias: `@/` → `src/`.
 
 ## Bootstrap
 
-[use-app-session.ts](hooks/use-app-session.ts) owns auth, hydration, and subscriptions; [App.tsx](App.tsx) owns layout. Local `auth_status` (`session.enc` + SQLite profile) → login or hydrate session → `listTracks` / `listPlaylists` → UI ready → background reconnect loop (`useTelegramReconnect`: `refresh_auth` + backoff + browser `online`/`offline`) then `sync_saved_music`. Network failures leave the cached library intact; `auth:revoked` forces login.
+[use-app-session.ts](hooks/use-app-session.ts) owns auth, hydration, and subscriptions; [App.tsx](App.tsx) owns layout. Local `auth_status` (`session.enc` + SQLite profile) → login or hydrate session → revision-checked `listTracksPage` / `listPlaylists` → UI ready → background reconnect loop (`useTelegramReconnect`: `refresh_auth` + backoff + browser `online`/`offline`) then soft `sync_saved_music`. Initial/full reindexing hides all tracks behind a progress loader through final hydration; confirmed full intent persists before network work. Soft sync keeps the library visible, adds missing metadata through `library:batch`, and shows progress only in the tower menu. `auth:revoked` forces login.
 
 ## Boundaries
 
@@ -21,7 +21,7 @@ Zustand stores under `stores/`:
 |-------|------|
 | `session-store` | Logged-in user display fields |
 | `connectivity-store` | Telegram reachability and one shared automatic/manual sync coordinator |
-| `library-store` | Track list |
+| `library-store` | Complete local display metadata index, library positions and indexing status |
 | `playlists-store` | Liked + custom playlists, selection, serialized mutations and refreshes |
 | `listen-stats-store` | Per-track listen aggregates (smart playlists) |
 | `player-store` | Native queue/current-track/intent mirror; actions send native commands |

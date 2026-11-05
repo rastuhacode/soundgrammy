@@ -6,14 +6,77 @@ import { usePlaylistView } from './use-playlist-view'
 import { useLibraryStore } from '@/stores/library-store'
 import { usePlaylistsStore } from '@/stores/playlists-store'
 import { useListenStatsStore } from '@/stores/listen-stats-store'
+import { usePlaylistJobsStore } from '@/stores/playlist-jobs-store'
 import { sendPlayerCommand } from '@/stores/player-store'
 import { useSessionStore } from '@/stores/session-store'
 import { api } from '@/lib/api'
-import { playlists, track } from '@/test-support/fixtures'
+import { libraryPage, playlists, track } from '@/test-support/fixtures'
 
-vi.mock('@/lib/api', () => ({ api: { nativePlayerCommand: vi.fn(async () => undefined), nativeAudioSnapshot: vi.fn(async () => undefined) } }))
+vi.mock('@/lib/api', () => ({ api: { listTracksPage: vi.fn(), nativePlayerCommand: vi.fn(async () => undefined), nativeAudioSnapshot: vi.fn(async () => undefined) } }))
 Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true })
 describe('membership-scoped selection', () => {
+  it('keeps search, duplicate playlist memberships, smart playlists and whole-library playback beyond page boundaries', async () => {
+    vi.clearAllMocks()
+    useSessionStore.getState().clearSession()
+    useListenStatsStore.getState().reset()
+    const tracks = Array.from({ length: 10_037 }, (_, index) => track(index + 1))
+    vi.mocked(api.listTracksPage).mockImplementation(async (offset = 0) =>
+      libraryPage(tracks.slice(offset, offset + 500), offset, offset + 500 < tracks.length ? offset + 500 : null, 7))
+    await useLibraryStore.getState().refresh()
+    usePlaylistsStore.getState().hydrate(playlists([1, 10_037, 10_037]))
+    usePlaylistsStore.getState().setSelectedPlaylist(20)
+    let view!: ReturnType<typeof usePlaylistView>
+    function Probe() {
+      view = usePlaylistView()
+      return null
+    }
+    const root = createRoot(document.createElement('div'))
+    const download = vi.spyOn(usePlaylistJobsStore.getState(), 'runDownloadPlaylist').mockResolvedValue(undefined)
+    const cache = vi.spyOn(usePlaylistJobsStore.getState(), 'runCachePlaylist').mockResolvedValue(undefined)
+    try {
+      await act(async () => root.render(createElement(Probe)))
+      await act(async () => view.search.setValue('Track 10037'))
+      expect(view.table.entries.map(entry => entry.sourceIndex)).toEqual([1, 2])
+      await act(async () => {
+        view.playbackActions.onPlay()
+        await sendPlayerCommand({ type: 'attach' })
+      })
+      expect(api.nativePlayerCommand).toHaveBeenCalledWith(expect.objectContaining({
+        type: 'playPlaylist', queue: expect.objectContaining({ tracks: [track(1), track(10_037), track(10_037)] }),
+      }))
+      await act(async () => {
+        view.search.setValue('')
+        usePlaylistsStore.getState().setSelectedPlaylist('all')
+      })
+      await act(async () => {
+        view.playbackActions.onShuffle()
+        await sendPlayerCommand({ type: 'attach' })
+      })
+      const command = vi.mocked(api.nativePlayerCommand).mock.calls.map(([command]) => command)
+        .reverse().find(command => command.type === 'playPlaylist')
+      expect(command?.type === 'playPlaylist' && command.queue.tracks.length).toBe(10_037)
+      expect(command?.type === 'playPlaylist' && command.queue.tracks.at(-1)?.id).toBe(10_037)
+      await act(async () => {
+        await view.playbackActions.onDownloadPlaylist()
+        await view.playbackActions.onCachePlaylist()
+      })
+      const allIds = tracks.map(track => track.id)
+      expect(download).toHaveBeenCalledExactlyOnceWith({ playlistId: 'all', name: 'All tracks', trackIds: allIds })
+      expect(cache).toHaveBeenCalledExactlyOnceWith({ playlistId: 'all', name: 'All tracks', trackIds: allIds })
+      await act(async () => {
+        useListenStatsStore.getState().upsert({ track_id: 10_037, starts: 1, qualified_plays: 1,
+          completes: 1, early_skips: 0, total_listened_ms: 120000,
+          first_played_at_ms: 1, last_played_at_ms: 2, likeness: 1 })
+        usePlaylistsStore.getState().setSelectedPlaylist('popular')
+      })
+      expect(view.table.entries.map(entry => entry.track.id)).toEqual([10_037])
+    }
+    finally {
+      await act(async () => root.unmount())
+      download.mockRestore()
+      cache.mockRestore()
+    }
+  })
   it('shares multi-column order between displayed memberships and playback, including search', async () => {
     vi.clearAllMocks()
     const first = { ...track(1), title: 'Same', performer: 'Zed' }

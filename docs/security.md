@@ -12,10 +12,11 @@ Agent-facing constraints for credentials and Telegram session material.
 ## Session at rest
 
 - ferogram session (`PersistedSession`) is sealed with AES-256-GCM via a custom `SessionBackend` and written as `session.enc` under the app data dir (`session.rs`).
-- The 256-bit key lives in the OS credential store, service `com.soundgrammy.app`. Desktop uses `keyring`; Android uses encrypted SharedPreferences backed by Android Keystore, initialized from `MainActivity` before sign-in.
+- The 256-bit key lives in the OS credential store, service matching the effective application ID (`com.soundgrammy.app` for release, separate development IDs including Android’s debug suffix). Desktop uses `keyring`; Android uses encrypted SharedPreferences backed by Android Keystore, initialized from `MainActivity` before sign-in.
 - Android backup excludes the keyring SharedPreferences file and `session.enc`: Keystore keys do not survive uninstall or device transfer. A previously restored, unreadable session is cleared on startup without deleting the SQLite library.
+- Session writes use a serialized, synced temporary file and atomic replacement. Local auth verifies ciphertext without contacting Telegram. Temporary keychain/read failures preserve the ciphertext; a requested new login quarantines confirmed corruption. Reads never create a missing encryption key. Development namespace migration copies legacy keys without changing release credentials.
 - Never log session ciphertext, plaintext session snapshots, auth keys, or keyring secrets.
-- Last.fm session keys use the same OS credential store under service `com.soundgrammy.app.lastfm`, keyed by canonical Last.fm username. Temporary authorization tokens remain in backend memory.
+- Last.fm session keys use the same OS credential store under service `<effective application ID>.lastfm` (`com.soundgrammy.app.lastfm` for release), keyed by canonical Last.fm username. Temporary authorization tokens remain in backend memory.
 - Treat edits to `session.rs`, `config.rs`, and `telegram/auth.rs` as high-risk: smallest possible diff, no drive-by refactors.
 
 ## Frontend surface

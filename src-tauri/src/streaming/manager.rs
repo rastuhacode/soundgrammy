@@ -3,7 +3,7 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Weak};
 
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 use tokio::sync::Mutex;
 
 use super::TrackStream;
@@ -26,7 +26,7 @@ struct PlaybackSessionState {
 
 #[derive(Default)]
 pub struct StreamingManager {
-    streams: Mutex<HashMap<i64, Weak<TrackStream>>>,
+    streams: Mutex<HashMap<String, Weak<TrackStream>>>,
     playback: Mutex<PlaybackSessionState>,
 }
 
@@ -37,15 +37,29 @@ impl StreamingManager {
         track: Track,
         destination: PathBuf,
     ) -> AppResult<Arc<TrackStream>> {
+        let state = app.state::<crate::state::AppState>();
+        let _lifecycle = state.cache_lifecycle.lock().await;
         let mut streams = self.streams.lock().await;
         streams.retain(|_, stream| stream.strong_count() > 0);
-        if let Some(stream) = streams.get(&track.id).and_then(Weak::upgrade) {
+        let generation = state.db.account_generation()?;
+        if state.db.active_uid()? != track.tg_user_id {
+            return Err(AppError::NotAuthorized);
+        }
+        if let Some(stream) = streams.get(&track.file_unique_id).and_then(Weak::upgrade) {
+            stream.adopt(track, generation).await?;
             return Ok(stream);
         }
 
         let document = download::stored_document(&track)?;
-        let stream = TrackStream::create(app, track.clone(), document, destination).await?;
-        streams.insert(track.id, Arc::downgrade(&stream));
+        let stream = TrackStream::create(
+            app.clone(),
+            track.clone(),
+            document,
+            destination,
+            generation,
+        )
+        .await?;
+        streams.insert(track.file_unique_id.clone(), Arc::downgrade(&stream));
         Ok(stream)
     }
 

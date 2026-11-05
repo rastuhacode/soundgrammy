@@ -160,6 +160,7 @@ impl Db {
         Ok(())
     }
 
+    #[cfg(test)]
     pub fn delete_lastfm_queue_for(&self, account_key: &str) -> AppResult<()> {
         let conn = self.conn.lock().unwrap();
         conn.execute(

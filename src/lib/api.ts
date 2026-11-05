@@ -1,23 +1,17 @@
-import { z } from 'zod'
-import { trackSchema, playlistsBundleSchema, likedPlaylistSchema, customPlaylistSchema, trackListenStatsSchema, cacheSettingsSchema, cacheUsageSchema } from '@/types'
-import type { PlayerCommand } from '@/types/playback'
-import type { AudioTrackRequest } from '@/types/audio'
-import { invoke as tauriInvoke, convertFileSrc } from '@tauri-apps/api/core'
-import { listen, type UnlistenFn } from '@tauri-apps/api/event'
-import { appLogger } from '@/lib/app-logger'
-import { contractIssues } from '@/lib/errors'
 import type {
+  CacheJobResult,
+  CacheClearResult,
   AuthOutcome,
   AuthStatus,
   AuthUser,
+  ArtworkChanged,
   BounceProfileResponse,
   PhoneSendCodeOutcome,
   CacheChanged,
   CacheTracksProgress,
-  ListenEndReason,
-  ListenEndResult,
   LastFmPendingAction,
   LastFmStatus,
+  LibraryBatch,
   PlaylistDownloadProgress,
   PlaylistDownloadResult,
   PlaylistImportPreview,
@@ -27,9 +21,18 @@ import type {
   ProxySettingsView,
   QrOutcome,
   SyncResult,
+  SyncMode,
   TrackListenStats,
   TrackMetadata,
 } from '@/types'
+import { z } from 'zod'
+import { trackSchema, artworkChangedSchema, libraryPageSchema, libraryBatchSchema, playlistsBundleSchema, likedPlaylistSchema, customPlaylistSchema, trackListenStatsSchema, cacheSettingsSchema, cacheUsageSchema } from '@/types'
+import type { PlayerCommand } from '@/types/playback'
+import type { AudioTrackRequest } from '@/types/audio'
+import { invoke as tauriInvoke, convertFileSrc } from '@tauri-apps/api/core'
+import { listen, type UnlistenFn } from '@tauri-apps/api/event'
+import { appLogger } from '@/lib/app-logger'
+import { contractIssues } from '@/lib/errors'
 
 export interface Profile {
   tgUserId: number
@@ -70,9 +73,29 @@ async function invokeParsed<S extends z.ZodType>(schema: S, command: string, arg
 
 // ---- auth ----------------------------------------------------------------
 
+/** Only membership IDs cross the command boundary; Rust supplies playback metadata. */
+function playerIntent(command: PlayerCommand): unknown {
+  if (command.type === 'setQueue' || command.type === 'playPlaylist') {
+    const queue = command.queue
+    return {
+      ...command,
+      queue: {
+        ...queue,
+        tracks: queue.tracks.map(({ id }) => ({ id })),
+        baseEntries: queue.baseEntries?.map(entry => ({ ...entry, track: { id: entry.track.id } })) ?? null,
+      },
+    }
+  }
+  if (command.type === 'playTrack') return { ...command, track: { id: command.track.id } }
+  if (command.type === 'insert' || command.type === 'realign' || command.type === 'refresh') {
+    return { ...command, tracks: command.tracks.map(({ id }) => ({ id })) }
+  }
+  return command
+}
+
 export const api = {
-  nativePlayerCommand: (command: PlayerCommand) => invoke<unknown>('native_player_command', { command }),
-  nativeAudioCapabilities: () => invoke<{ available: boolean, streaming: boolean }>('native_audio_capabilities'),
+  nativePlayerCommand: (command: PlayerCommand) => invoke<unknown>('native_player_command', { command: playerIntent(command) }),
+  nativeAudioCapabilities: () => invoke<{ available: boolean, streaming: boolean, codecs: string[] }>('native_audio_capabilities'),
   nativeAudioSnapshot: () => invoke<unknown>('native_audio_snapshot'),
   nativeAudioLoad: (request: AudioTrackRequest) => invoke<unknown>('native_audio_load', { request }),
   nativeAudioUnload: () => invoke<unknown>('native_audio_unload'),
@@ -95,8 +118,11 @@ export const api = {
   logout: () => invoke<void>('logout'),
 
   // ---- library ----------------------------------------------------------
-  syncSavedMusic: () => invoke<SyncResult>('sync_saved_music'),
+  syncSavedMusic: (mode: SyncMode = 'soft') => invoke<SyncResult>('sync_saved_music', { mode }),
+  prepareFullReindex: () => invokeParsed(libraryBatchSchema, 'prepare_full_reindex'),
   listTracks: () => invokeParsed(z.array(trackSchema), 'list_tracks'),
+  listTracksPage: (offset = 0, revision?: number) =>
+    invokeParsed(libraryPageSchema, 'list_tracks_page', { offset, limit: 500, revision: revision ?? null }),
   getProfile: () => invoke<Profile | null>('get_profile'),
   syncStatus: () => invoke<string | null>('sync_status'),
   setFullscreenDisplayAwake: (enabled: boolean) =>
@@ -110,13 +136,13 @@ export const api = {
   cacheTrack: (trackId: number) =>
     invoke<void>('cache_track', { trackId }),
   cacheTracks: (trackIds: number[], jobId?: string | null) =>
-    invoke<number[]>('cache_tracks', {
+    invoke<CacheJobResult>('cache_tracks', {
       trackIds,
       jobId: jobId ?? null,
     }),
   removeTrackFromCache: (trackId: number) =>
     invoke<void>('remove_track_from_cache', { trackId }),
-  clearAudioCache: () => invoke<void>('clear_audio_cache'),
+  clearAudioCache: () => invoke<CacheClearResult>('clear_audio_cache'),
   getCacheStatus: () => invoke<number[]>('get_cache_status'),
   getCacheSettings: () => invokeParsed(cacheSettingsSchema, 'get_cache_settings'),
   setCacheSettings: (input: {
@@ -146,7 +172,7 @@ export const api = {
   exportTrack: (trackId: number) =>
     invoke<string>('export_track', { trackId }),
   exportTracks: (trackIds: number[]) =>
-    invoke<string>('export_tracks', { trackIds }),
+    invoke<PlaylistDownloadResult>('export_tracks', { trackIds }),
   downloadPlaylist: (name: string, trackIds: number[], jobId: string) =>
     invoke<PlaylistDownloadResult>('download_playlist', {
       name,
@@ -184,10 +210,8 @@ export const api = {
     invoke<string>('add_tracks_to_playlist', { playlistId, trackIds }),
   removeTracksFromPlaylist: (playlistId: number, positions: number[], expectedTrackIds: number[]) =>
     invoke<string>('remove_tracks_from_playlist', { playlistId, positions, expectedTrackIds }),
-  removeTrackFromPlaylist: (playlistId: number, position: number) =>
-    invoke<string>('remove_track_from_playlist', { playlistId, position }),
-  reorderPlaylistTracks: (playlistId: number, trackIds: number[]) =>
-    invoke<string>('reorder_playlist_tracks', { playlistId, trackIds }),
+  reorderPlaylistTracks: (playlistId: number, trackIds: number[], expectedTrackIds: number[], moveIndices?: [number, number]) =>
+    invoke<string>('reorder_playlist_tracks', { playlistId, trackIds, expectedTrackIds, moveIndices: moveIndices ?? null }),
   toggleLike: (trackId: number) => invokeParsed(likedPlaylistSchema, 'toggle_like', { trackId }),
   exportPlaylistJson: (source: PlaylistRecipeSource, path: string) =>
     invoke<void>('export_playlist_json', { source, path }),
@@ -200,20 +224,6 @@ export const api = {
     }),
 
   // ---- listen statistics ----------------------------------------------
-  recordListenStart: (trackId: number) =>
-    invoke<void>('record_listen_start', { trackId }),
-  recordListenEnd: (input: {
-    trackId: number
-    listenedMs: number
-    durationMs?: number | null
-    endReason: ListenEndReason
-  }) =>
-    invoke<ListenEndResult | null>('record_listen_end', {
-      trackId: input.trackId,
-      listenedMs: input.listenedMs,
-      durationMs: input.durationMs ?? null,
-      endReason: input.endReason,
-    }),
   getListenStatisticsEnabled: () =>
     invoke<boolean>('get_listen_statistics_enabled'),
   setListenStatisticsEnabled: (enabled: boolean) =>
@@ -237,12 +247,6 @@ export const api = {
     }),
   openLastFmProfile: () => invoke<void>('open_lastfm_profile'),
   flushLastFmQueue: () => invoke<void>('flush_lastfm_queue'),
-  lastFmAttemptStarted: (attemptId: string, trackId: number) =>
-    invoke<void>('lastfm_attempt_started', { attemptId, trackId }),
-  lastFmAttemptQualified: (attemptId: string, listenedMs: number) =>
-    invoke<void>('lastfm_attempt_qualified', { attemptId, listenedMs }),
-  lastFmAttemptEnded: (attemptId: string) =>
-    invoke<void>('lastfm_attempt_ended', { attemptId }),
 }
 
 /** Turns an absolute cache path into an `asset:` URL for images. */
@@ -275,6 +279,17 @@ export interface DownloadProgress {
 
 export function onSyncStart(cb: () => void): Promise<UnlistenFn> {
   return listen('sync:start', () => cb())
+}
+
+export function onLibraryBatch(cb: (batch: LibraryBatch) => void): Promise<UnlistenFn> {
+  return listen<unknown>('library:batch', (event) => {
+    const parsed = libraryBatchSchema.safeParse(event.payload)
+    if (parsed.success) cb(parsed.data)
+    else appLogger.error({
+      source: 'backend', title: 'Invalid backend event',
+      context: { event: 'library:batch', issues: contractIssues(parsed.error.issues) },
+    })
+  })
 }
 
 export function onSyncProgress(
@@ -325,6 +340,13 @@ export function onCacheChanged(
   cb: (p: CacheChanged) => void,
 ): Promise<UnlistenFn> {
   return listen<CacheChanged>('cache:changed', e => cb(e.payload))
+}
+
+export function onArtworkChanged(cb: (artwork: ArtworkChanged) => void): Promise<UnlistenFn> {
+  return listen<unknown>('artwork:changed', (event) => {
+    const parsed = artworkChangedSchema.safeParse(event.payload)
+    if (parsed.success) cb(parsed.data)
+  })
 }
 
 export function onAuthRevoked(cb: () => void): Promise<UnlistenFn> {

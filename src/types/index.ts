@@ -9,6 +9,29 @@ export const trackSchema = z.object({
 })
 export type Track = z.infer<typeof trackSchema>
 
+export const artworkChangedSchema = z.object({
+  trackId: z.number().int(), tgUserId: z.number().int(), path: z.string(),
+})
+export type ArtworkChanged = z.infer<typeof artworkChangedSchema>
+
+export const positionedTrackSchema = z.object({ track: trackSchema, position: z.number().int().nullable() })
+export type PositionedTrack = z.infer<typeof positionedTrackSchema>
+export const libraryStatusSchema = z.object({
+  tgUserId: z.number().int(), revision: z.number().int().nonnegative(),
+  indexed: z.number().int().nonnegative(), total: z.number().int().nonnegative(),
+  complete: z.boolean(), blocking: z.boolean(), processed: z.number().int().nonnegative(), lastSyncAt: z.string().nullable(),
+})
+export type LibraryStatus = z.infer<typeof libraryStatusSchema>
+export const libraryPageSchema = z.object({
+  tracks: z.array(positionedTrackSchema), status: libraryStatusSchema,
+  nextOffset: z.number().int().nonnegative().nullable(),
+})
+export type LibraryPage = z.infer<typeof libraryPageSchema>
+export const libraryBatchSchema = z.object({
+  tracks: z.array(positionedTrackSchema), removedTrackIds: z.array(z.number().int()), status: libraryStatusSchema,
+})
+export type LibraryBatch = z.infer<typeof libraryBatchSchema>
+
 export const likedPlaylistSchema = z.object({ id: z.number().int(), trackIds: z.array(z.number().int()), updatedAt: z.string() })
 export type LikedPlaylist = z.infer<typeof likedPlaylistSchema>
 export const customPlaylistSchema = likedPlaylistSchema.extend({ name: z.string() })
@@ -53,6 +76,7 @@ export interface SyncResult {
   total: number
   lastSyncAt: string | null
 }
+export type SyncMode = 'soft' | 'full'
 
 export type AuthOutcome
   = | { status: 'authorized', user: AuthUser }
@@ -204,6 +228,7 @@ export interface PlaylistDownloadResult {
   folderPath: string | null
   succeeded: PlaylistDownloadSucceeded[]
   failed: PlaylistDownloadFailed[]
+  warnings?: string[]
 }
 
 export interface PlaylistDownloadProgress {
@@ -249,3 +274,7 @@ export interface PlaylistImportResult {
   succeeded: PlaylistImportSucceeded[]
   failed: PlaylistImportFailed[]
 }
+
+export interface CacheJobResult { succeeded: number[], failed: Array<{ trackId: number, error: string }> }
+
+export interface CacheClearResult { removedTrackIds: number[], protectedTrackIds: number[], failedFiles: number }

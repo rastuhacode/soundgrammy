@@ -35,6 +35,8 @@ use progress::StreamState;
 pub struct TrackStream {
     track: Track,
     document: Mutex<StoredDocument>,
+    owner: Mutex<(Track, i64)>,
+    participants: Mutex<std::collections::HashMap<i64, Track>>,
     /// Container MIME after header sniff (Telegram metadata is sometimes wrong).
     mime_type: RwLock<String>,
     destination: PathBuf,
@@ -44,7 +46,7 @@ pub struct TrackStream {
     partial_metadata: PathBuf,
     total: u64,
     app: AppHandle,
-    state: Mutex<StreamState>,
+    state: std::sync::Arc<Mutex<StreamState>>,
     request_slots: Semaphore,
     write_lock: Mutex<()>,
     refresh_lock: Mutex<()>,
@@ -54,6 +56,30 @@ pub struct TrackStream {
 }
 
 impl TrackStream {
+    pub(super) async fn adopt(&self, track: Track, generation: i64) -> crate::error::AppResult<()> {
+        let mut document = crate::telegram::download::stored_document(&track)?;
+        if document.size_bytes() as u64 != self.total {
+            return Err(crate::error::AppError::msg(
+                "Document size changed; reindex its metadata",
+            ));
+        }
+        let mut owner = self.owner.lock().await;
+        document.mime_type = self.mime_type();
+        *self.document.lock().await = document;
+        *owner = (track.clone(), generation);
+        self.participants.lock().await.insert(track.id, track);
+        drop(owner);
+        if self.final_path.lock().await.is_some() {
+            self.persist_current_document_mime().await;
+        }
+        Ok(())
+    }
+    pub(super) async fn participant_tracks(&self) -> Vec<Track> {
+        self.participants.lock().await.values().cloned().collect()
+    }
+    pub fn cache_key(&self) -> String {
+        self.track.file_unique_id.clone()
+    }
     pub fn total(&self) -> u64 {
         self.total
     }

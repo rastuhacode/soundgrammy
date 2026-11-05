@@ -5,7 +5,7 @@ import { beforeEach, expect, it, vi } from 'vitest'
 import { PlaylistView } from './PlaylistView'
 import { useLibraryStore } from '@/stores/library-store'
 import { usePlaylistsStore } from '@/stores/playlists-store'
-import { playlists, track } from '@/test-support/fixtures'
+import { libraryPage, playlists, track } from '@/test-support/fixtures'
 
 const layout = vi.hoisted(() => ({ isCompact: true }))
 vi.mock('@/hooks/use-compact-display', () => ({ useCompactDisplay: () => layout }))
@@ -51,6 +51,25 @@ it('opens compact search, filters results, and clears the query when closed', as
     expect(dialog.textContent).toContain('Track 2')
     await click(dialog.querySelector('button[aria-label="Close track search"]'))
     expect(host.querySelectorAll('[role="row"][aria-selected]')).toHaveLength(3)
+  }
+  finally {
+    await act(async () => root.unmount())
+    host.remove()
+  }
+})
+
+it('keeps soft-sync updates confined to the tower menu', async () => {
+  useLibraryStore.setState({ status: { ...libraryPage([]).status, indexed: 3, total: 10000, complete: false } })
+  const host = document.createElement('div')
+  document.body.append(host)
+  const root = createRoot(host)
+  try {
+    await act(async () => root.render(createElement(PlaylistView)))
+    expect(host.querySelector('p[role="status"]')).toBeNull()
+    expect(host.querySelectorAll('[role="row"][aria-selected]')).toHaveLength(3)
+    await click(host.querySelector('button[aria-label="Search tracks"]'))
+    expect(document.body.querySelector('[role="dialog"] p[role="status"]')).toBeNull()
+    expect(document.body.querySelectorAll('[role="dialog"] [role="row"][aria-selected]')).toHaveLength(3)
   }
   finally {
     await act(async () => root.unmount())

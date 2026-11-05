@@ -192,7 +192,7 @@ export function SidebarDrawer({ onLogout }: SidebarDrawerProps) {
                     phase === 'error' && 'text-destructive',
                   )}
                 >
-                  {statusLabel}
+                  {isSyncing ? statusDetail : statusLabel}
                 </span>
                 {phase === 'error' && (
                   <span className="text-xs text-muted-foreground">

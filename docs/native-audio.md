@@ -43,6 +43,9 @@ same process, but are not persisted across process termination.
   verified range cache. Missing blocks use the existing `TrackStream` downloader;
   blocking decoders wait on bounded replies, checking cancellation every 25 ms.
   Sparse holes are never treated as downloaded bytes. There is no audio-byte IPC.
+  A separate playback-owned demux cursor targets 32 seconds of media ahead,
+  with eight 128 KiB parts of rolling byte speculation. It shares the existing
+  transfer ledger and cancels obsolete work on seek or pipeline teardown.
 - `audio/decode.rs`: Symphonia byte probing, packet decoding, coarse demuxer
   seeks and preroll discard, conversion and bounded producer backpressure.
 - `audio/convert.rs`: mono/stereo mapping and persistent Rubato resampling.
@@ -57,6 +60,8 @@ same process, but are not persisted across process termination.
   The callback performs no allocation, mutex locking, decoding, I/O, logging,
   network requests, or event emission. CPAL timestamps account for device delay;
   natural completion waits for the final queued frames to be presented.
+  After an actual underrun, playback waits for three seconds of contiguous
+  verified packet coverage, or the remaining EOF tail, before resuming PCM.
 - `native-engine.ts`: command serialization, payload validation, identity and
   revision filtering, startup/resume snapshot reconciliation, and scrubbing.
 - `engine-factory.tsx`: creates the native adapter for each provider lifetime.

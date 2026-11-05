@@ -2,16 +2,48 @@
 //! This is independent of decoded PCM and never estimates time from byte ratios.
 use super::Range;
 use std::sync::{
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicU64, Ordering},
     Arc, Mutex,
 };
 #[derive(Default)]
 pub struct Availability {
     pub complete: AtomicBool,
     pub scan_seek: Arc<super::seek::SeekControl>,
+    pub prefetch_seek: Arc<super::seek::SeekControl>,
+    position: AtomicU64,
+    media_end: AtomicU64,
     ranges: Mutex<Vec<Range>>,
 }
 impl Availability {
+    pub fn set_position(&self, seconds: f64) {
+        self.position.store(seconds.to_bits(), Ordering::Release);
+    }
+
+    pub fn position(&self) -> f64 {
+        f64::from_bits(self.position.load(Ordering::Acquire))
+    }
+
+    pub fn request_seek(&self, seconds: f64) {
+        self.set_position(seconds);
+        self.scan_seek.request(seconds);
+        self.prefetch_seek.request(seconds);
+    }
+
+    pub fn has_headroom(&self, position: f64, seconds: f64, duration: f64) -> bool {
+        let media_end = f64::from_bits(self.media_end.load(Ordering::Acquire));
+        let duration = if media_end > 0.0 { media_end } else { duration };
+        let target = if duration > 0.0 {
+            (position + seconds).min(duration)
+        } else {
+            position + seconds
+        };
+        self.complete.load(Ordering::Acquire)
+            || self
+                .ranges(duration)
+                .iter()
+                .any(|range| range.start <= position + 0.002 && range.end + 0.002 >= target)
+    }
+
     pub fn record(&self, start: f64, end: f64) {
         if !start.is_finite() || !end.is_finite() || end <= start {
             return;
@@ -67,6 +99,29 @@ pub fn scan(
     active: &AtomicBool,
     coverage: &Availability,
 ) {
+    scan_inner(source, active, coverage, &coverage.scan_seek, false);
+}
+
+/// Separate playback-owned demux cursor: fetch ahead by actual packet time.
+/// The passive display scanner above retains its storage-only lifetime.
+pub fn prefetch(
+    source: Box<dyn symphonia::core::io::MediaSource>,
+    active: &AtomicBool,
+    coverage: &Availability,
+) {
+    scan_inner(source, active, coverage, &coverage.prefetch_seek, true);
+}
+
+pub const REMOTE_LOAD_AHEAD_SECONDS: f64 = 32.0;
+pub const RECOVERY_SECONDS: f64 = 3.0;
+
+fn scan_inner(
+    source: Box<dyn symphonia::core::io::MediaSource>,
+    active: &AtomicBool,
+    coverage: &Availability,
+    seek: &super::seek::SeekControl,
+    prefetch: bool,
+) {
     use symphonia::core::{
         common::Limit,
         formats::{probe::Hint, FormatOptions, SeekMode, SeekTo, TrackType},
@@ -100,20 +155,16 @@ pub fn scan(
     let Some(tb) = track.time_base else {
         return;
     };
-    coverage
-        .scan_seek
-        .interruptible
-        .store(true, Ordering::Release);
+    seek.interruptible.store(true, Ordering::Release);
     let mut revision = 0;
     let mut eof = false;
+    let mut received_till = 0.0;
     while active.load(Ordering::Acquire) {
-        if let Some((next, target)) = coverage.scan_seek.take() {
+        if let Some((next, target)) = seek.take() {
             eof = false;
+            received_till = target;
             revision = next;
-            coverage
-                .scan_seek
-                .decoder_revision
-                .store(next, Ordering::Release);
+            seek.decoder_revision.store(next, Ordering::Release);
             let Some(time) = Time::try_new(
                 target.trunc() as i64,
                 (target.fract() * 1_000_000_000.0) as u32,
@@ -130,21 +181,25 @@ pub fn scan(
                 )
                 .is_err()
             {
-                if coverage.scan_seek.revision.load(Ordering::Acquire) != revision {
+                if seek.revision.load(Ordering::Acquire) != revision {
                     continue;
                 }
                 break;
             }
         }
-        if eof {
+        let position = coverage.position();
+        if eof || (prefetch && received_till >= position + REMOTE_LOAD_AHEAD_SECONDS) {
             std::thread::sleep(std::time::Duration::from_millis(25));
             continue;
         }
         let packet = match format.next_packet() {
             Ok(Some(packet)) => packet,
-            Err(_) if coverage.scan_seek.revision.load(Ordering::Acquire) != revision => continue,
+            Err(_) if seek.revision.load(Ordering::Acquire) != revision => continue,
             Ok(None) => {
                 eof = true;
+                coverage
+                    .media_end
+                    .store(received_till.to_bits(), Ordering::Release);
                 continue;
             }
             Err(_) => break,
@@ -158,15 +213,70 @@ pub fn scan(
         let Some(end) = tb.calc_time(packet.pts.saturating_add(packet.dur)) else {
             continue;
         };
-        coverage.record(start.as_secs_f64(), end.as_secs_f64());
+        received_till = end.as_secs_f64();
+        coverage.record(start.as_secs_f64(), received_till);
         // Preserve the last MP4 atom so a later seek can reuse this demuxer.
         eof = indexed_end.is_some_and(|end| packet.pts.saturating_add(packet.dur) >= end);
+        if eof {
+            coverage
+                .media_end
+                .store(received_till.to_bits(), Ordering::Release);
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn recovery_requires_three_contiguous_seconds_or_the_remaining_tail() {
+        let coverage = Availability::default();
+        coverage.record(0.0, 11.0);
+        coverage.record(12.0, 20.0);
+        assert!(!coverage.has_headroom(10.0, RECOVERY_SECONDS, 60.0));
+        coverage.record(11.0, 12.0);
+        assert!(coverage.has_headroom(10.0, RECOVERY_SECONDS, 60.0));
+        assert!(coverage.has_headroom(19.0, RECOVERY_SECONDS, 20.0));
+        assert!(!coverage.has_headroom(30.0, RECOVERY_SECONDS, 60.0));
+        coverage.complete.store(true, Ordering::Release);
+        assert!(coverage.has_headroom(30.0, RECOVERY_SECONDS, 60.0));
+    }
+
+    #[test]
+    fn observed_media_end_allows_recovery_with_unknown_or_rounded_duration() {
+        let coverage = Availability::default();
+        coverage.record(90.0, 100.0);
+        coverage
+            .media_end
+            .store(100.0f64.to_bits(), Ordering::Release);
+        assert!(coverage.has_headroom(99.0, RECOVERY_SECONDS, 0.0));
+        assert!(coverage.has_headroom(99.0, RECOVERY_SECONDS, 101.0));
+        assert!(!coverage.has_headroom(50.0, RECOVERY_SECONDS, 101.0));
+    }
+
+    #[test]
+    fn playback_seek_cancels_both_observers_and_updates_load_ahead_origin() {
+        let coverage = Availability::default();
+        coverage
+            .scan_seek
+            .interruptible
+            .store(true, Ordering::Release);
+        coverage
+            .prefetch_seek
+            .interruptible
+            .store(true, Ordering::Release);
+        let passive = coverage.scan_seek.begin_read();
+        let prefetch = coverage.prefetch_seek.begin_read();
+        coverage.request_seek(90.0);
+        assert!(!passive.load(Ordering::Acquire));
+        assert!(!prefetch.load(Ordering::Acquire));
+        assert_eq!(coverage.prefetch_seek.take(), Some((1, 90.0)));
+        assert_eq!(
+            f64::from_bits(coverage.position.load(Ordering::Acquire)),
+            90.0
+        );
+    }
+
     #[test]
     fn complete_files_and_downloaded_islands_outlive_the_pcm_queue() {
         let coverage = Availability::default();

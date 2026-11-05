@@ -8,8 +8,16 @@ use crate::telegram::auth::{
 
 #[tauri::command]
 pub async fn auth_status(state: State<'_, AppState>) -> AppResult<AuthStatus> {
-    // Local-only: never touch the network. Offline UI hydrates from SQLite + session.enc.
-    if !crate::session::exists(&state.data_dir) {
+    // Local-only: keychain/disk verification runs on a blocking worker, never Telegram.
+    let directory = state.data_dir.clone();
+    let local = state
+        .db
+        .blocking(move |_| Ok(crate::session::local_state(&directory)))
+        .await?;
+    if matches!(
+        local,
+        crate::session::LocalSessionState::Missing | crate::session::LocalSessionState::Corrupt
+    ) {
         return Ok(AuthStatus {
             authorized: false,
             user: None,
@@ -43,6 +51,11 @@ pub async fn phone_send_code(
     state: State<'_, AppState>,
     phone: String,
 ) -> AppResult<PhoneSendCodeOutcome> {
+    let directory = state.data_dir.clone();
+    state
+        .db
+        .blocking(move |_| crate::session::prepare_new_login(&directory))
+        .await?;
     state.ensure_client().await?;
     telegram_auth::phone_send_code(&state, phone.trim()).await
 }
@@ -62,6 +75,11 @@ pub async fn phone_check_password(
 
 #[tauri::command]
 pub async fn qr_start(state: State<'_, AppState>) -> AppResult<QrOutcome> {
+    let directory = state.data_dir.clone();
+    state
+        .db
+        .blocking(move |_| crate::session::prepare_new_login(&directory))
+        .await?;
     state.ensure_client().await?;
     telegram_auth::qr_export(&state).await
 }

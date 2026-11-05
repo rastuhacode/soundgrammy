@@ -18,6 +18,60 @@ pub const SETTING_LASTFM_LAST_SCROBBLE_AT_MS: &str = "lastfm_last_scrobble_at_ms
 pub const SETTING_LASTFM_NEEDS_REAUTH: &str = "lastfm_needs_reauth";
 
 impl Db {
+    /// Read related settings from one connection snapshot.
+    pub fn settings_snapshot(
+        &self,
+        keys: &[&str],
+    ) -> AppResult<std::collections::HashMap<String, String>> {
+        let conn = self.conn.lock().unwrap();
+        let mut stmt = conn.prepare("SELECT value FROM app_settings WHERE key=?1")?;
+        let mut result = std::collections::HashMap::new();
+        for key in keys {
+            if let Some(value) = stmt
+                .query_row([key], |row| row.get::<_, String>(0))
+                .optional()?
+            {
+                result.insert((*key).into(), value);
+            }
+        }
+        Ok(result)
+    }
+
+    /// Persist a configuration as a unit; None removes a setting.
+    pub fn update_settings(&self, changes: &[(&str, Option<&str>)]) -> AppResult<()> {
+        self.update_settings_and_queue(changes, None)
+    }
+    pub fn update_settings_and_queue(
+        &self,
+        changes: &[(&str, Option<&str>)],
+        delete_account: Option<&str>,
+    ) -> AppResult<()> {
+        let conn = self.conn.lock().unwrap();
+        let tx = conn.unchecked_transaction()?;
+        for (key, value) in changes {
+            match value {
+                Some(value) => {
+                    tx.execute(
+                        "INSERT INTO app_settings(key,value) VALUES(?1,?2) \
+                    ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+                        params![key, value],
+                    )?;
+                }
+                None => {
+                    tx.execute("DELETE FROM app_settings WHERE key=?1", [key])?;
+                }
+            }
+        }
+        if let Some(account) = delete_account {
+            tx.execute(
+                "DELETE FROM lastfm_scrobble_queue WHERE lastfm_account_key=?1",
+                [account],
+            )?;
+        }
+        tx.commit()?;
+        Ok(())
+    }
+
     pub fn get_setting(&self, key: &str) -> AppResult<Option<String>> {
         let conn = self.conn.lock().unwrap();
         let value = conn
@@ -37,12 +91,6 @@ impl Db {
              ON CONFLICT (key) DO UPDATE SET value = excluded.value",
             params![key, value],
         )?;
-        Ok(())
-    }
-
-    pub fn delete_setting(&self, key: &str) -> AppResult<()> {
-        let conn = self.conn.lock().unwrap();
-        conn.execute("DELETE FROM app_settings WHERE key = ?1", params![key])?;
         Ok(())
     }
 

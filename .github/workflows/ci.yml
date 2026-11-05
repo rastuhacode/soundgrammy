@@ -57,6 +57,9 @@ jobs:
       - name: Install frontend dependencies
         run: bun install --frozen-lockfile
 
+      - name: Verify application versions
+        run: bun run check:versions
+
       - name: Lint frontend
         run: bun run lint:frontend
 

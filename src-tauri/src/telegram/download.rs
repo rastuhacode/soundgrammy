@@ -44,6 +44,7 @@ pub(crate) async fn download_chunk(
     document: &StoredDocument,
     chunk_index: usize,
     active: Option<&AtomicBool>,
+    priority: MediaPriority,
 ) -> Result<Vec<u8>, InvocationError> {
     let chunk_index = i64::try_from(chunk_index).map_err(|_| {
         InvocationError::Io(std::io::Error::new(
@@ -57,11 +58,7 @@ pub(crate) async fn download_chunk(
             client,
             MediaRequestContext {
                 coordinator,
-                priority: if active.is_some() {
-                    MediaPriority::Playback
-                } else {
-                    MediaPriority::Background
-                },
+                priority,
                 active,
             },
             document.dc_id,
@@ -142,6 +139,10 @@ pub(crate) async fn refresh_file_reference(
     state: &AppState,
     track: &Track,
 ) -> AppResult<StoredDocument> {
+    let generation = state.db.account_generation()?;
+    if state.db.active_uid()? != track.tg_user_id {
+        return Err(AppError::NotAuthorized);
+    }
     let doc = stored_document(track)?;
     let client = state.client().await?;
     let result = client
@@ -151,6 +152,9 @@ pub(crate) async fn refresh_file_reference(
         })
         .await?;
 
+    if state.db.active_uid()? != track.tg_user_id || state.db.account_generation()? != generation {
+        return Err(AppError::NotAuthorized);
+    }
     let documents = match result {
         tl::enums::users::SavedMusic::SavedMusic(m) => m.documents,
         tl::enums::users::SavedMusic::NotModified(_) => Vec::new(),

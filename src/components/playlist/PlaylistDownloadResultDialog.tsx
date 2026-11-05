@@ -109,6 +109,7 @@ export function PlaylistDownloadResultDialog({
         {result
           ? (
               <div className="flex flex-col gap-2">
+                {result.warnings?.map(warning => <p key={warning} role="status" className="text-sm text-muted-foreground">{warning}</p>)}
                 <ResultList label="Downloaded" count={succeeded}>
                   {result.succeeded.map(item => (
                     <li key={`ok-${item.trackId}-${item.fileName}`}>

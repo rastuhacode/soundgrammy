@@ -65,6 +65,7 @@ impl TrackStream {
         track: Track,
         document: StoredDocument,
         destination: PathBuf,
+        generation: i64,
     ) -> AppResult<Arc<Self>> {
         let total = u64::try_from(document.size_bytes())
             .map_err(|_| AppError::msg("track has an invalid file size"))?;
@@ -109,6 +110,8 @@ impl TrackStream {
         }
         let mime_type = document.mime_type.clone();
         let stream = Arc::new(Self {
+            owner: Mutex::new((track.clone(), generation)),
+            participants: Mutex::new(std::collections::HashMap::from([(track.id, track.clone())])),
             track,
             document: Mutex::new(document),
             mime_type: RwLock::new(mime_type),
@@ -118,11 +121,11 @@ impl TrackStream {
             partial_metadata,
             total,
             app,
-            state: Mutex::new(StreamState {
+            state: Arc::new(Mutex::new(StreamState {
                 chunks,
                 received,
                 terminal_error: None,
-            }),
+            })),
             request_slots: Semaphore::new(FOREGROUND_CONCURRENCY),
             write_lock: Mutex::new(()),
             refresh_lock: Mutex::new(()),
@@ -155,7 +158,6 @@ impl TrackStream {
         let bytes = tokio::fs::read(metadata_path).await.ok()?;
         let metadata: PartialMetadata = serde_json::from_slice(&bytes).ok()?;
         if metadata.version != PARTIAL_METADATA_VERSION
-            || metadata.track_id != track.id
             || metadata.file_unique_id != track.file_unique_id
             || metadata.total != total
             || metadata.chunk_size != CHUNK_SIZE
@@ -210,10 +212,13 @@ impl TrackStream {
     }
 
     pub async fn emit_progress(&self) {
-        let progress = {
-            let state = self.state.lock().await;
-            progress_from_state(self.track.id, self.total, &state)
-        };
-        let _ = self.app.emit("download:progress", progress);
+        let tracks = self.participant_tracks().await;
+        let state = self.state.lock().await;
+        for track in tracks {
+            let _ = self.app.emit(
+                "download:progress",
+                progress_from_state(track.id, self.total, &state),
+            );
+        }
     }
 }

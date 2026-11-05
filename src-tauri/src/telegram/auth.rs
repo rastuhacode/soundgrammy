@@ -10,22 +10,11 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter};
 
 use crate::error::{AppError, AppResult};
-use crate::state::AppState;
+use crate::state::{AppState, PendingAuth};
 use crate::telegram::client;
 
 /// How long background online auth refresh may wait before treating Telegram as unreachable.
 const REFRESH_AUTH_TIMEOUT: Duration = Duration::from_secs(8);
-
-/// RPC / error fragments that mean the local session is dead on the server.
-const AUTH_REVOKED_MARKERS: &[&str] = &[
-    "AUTH_KEY_DUPLICATED",
-    "AUTH_KEY_UNREGISTERED",
-    "AUTH_KEY_INVALID",
-    "SESSION_REVOKED",
-    "SESSION_EXPIRED",
-    "USER_DEACTIVATED",
-    "USER_DEACTIVATED_BAN",
-];
 
 /// The logged-in user, as surfaced to the frontend.
 #[derive(Debug, Clone, Serialize)]
@@ -89,10 +78,10 @@ pub async fn fetch_self(client: &Client) -> AppResult<AuthUser> {
 }
 
 /// Persists the session and profile after any successful login.
-async fn finalize(state: &AppState) -> AppResult<AuthUser> {
-    let client = state.client().await?;
-    let user = fetch_self(&client).await?;
-    state.persist_session().await?;
+async fn finalize(state: &AppState, client: &Client, epoch: u64) -> AppResult<AuthUser> {
+    let user = fetch_self(client).await?;
+    let _guard = state.guard_client(epoch).await?;
+    client.save_session().await?;
     state.db.save_profile(
         user.id,
         &user.first_name,
@@ -100,17 +89,8 @@ async fn finalize(state: &AppState) -> AppResult<AuthUser> {
         user.username.as_deref(),
         user.phone.as_deref(),
     )?;
-
-    let mut pending = state.pending.lock().await;
-    *pending = Default::default();
+    *state.pending.lock().await = PendingAuth::Idle;
     Ok(user)
-}
-
-pub(crate) fn is_auth_revoked_message(message: &str) -> bool {
-    let upper = message.to_ascii_uppercase();
-    AUTH_REVOKED_MARKERS
-        .iter()
-        .any(|marker| upper.contains(marker))
 }
 
 fn clear_local_session(state: &AppState) -> AppResult<()> {
@@ -123,11 +103,16 @@ fn clear_local_session(state: &AppState) -> AppResult<()> {
 }
 
 async fn clear_local_session_and_pending(state: &AppState) -> AppResult<()> {
-    state.disconnect_client().await;
-    clear_local_session(state)?;
-    let mut pending = state.pending.lock().await;
-    *pending = Default::default();
-    Ok(())
+    // Explicit logout/restart applies to the current client, including a rebuild
+    // that completed while this operation waited for the lifecycle lock.
+    let _guard = state.guard_lifecycle().await;
+    state.disconnect_client_locked().await;
+    clear_local_session(state)
+}
+async fn clear_local_session_at(state: &AppState, epoch: u64) -> AppResult<()> {
+    let _guard = state.guard_client(epoch).await?;
+    state.disconnect_client_locked().await;
+    clear_local_session(state)
 }
 
 fn emit_auth_revoked(app: &AppHandle) {
@@ -146,8 +131,21 @@ pub async fn refresh_auth(state: &AppState, app: &AppHandle) -> AppResult<AuthSt
         });
     }
 
+    let generation = state.db.account_generation()?;
+    let expected_uid = state
+        .db
+        .load_profile()?
+        .ok_or(AppError::NotAuthorized)?
+        .tg_user_id;
+    let client_epoch = std::sync::atomic::AtomicU64::new(
+        state
+            .client_generation
+            .load(std::sync::atomic::Ordering::Acquire),
+    );
     let result = tokio::time::timeout(REFRESH_AUTH_TIMEOUT, async {
-        let client = state.ensure_client().await?;
+        state.ensure_client().await?;
+        let (client, epoch) = state.auth_client().await?;
+        client_epoch.store(epoch, std::sync::atomic::Ordering::Release);
         let authorized = client::is_authorized(&client).await?;
         if !authorized {
             return Ok::<AuthStatus, AppError>(AuthStatus {
@@ -156,8 +154,12 @@ pub async fn refresh_auth(state: &AppState, app: &AppHandle) -> AppResult<AuthSt
             });
         }
         let user = fetch_self(&client).await?;
-        state.db.save_profile(
+        if user.id != expected_uid {
+            return Err(AppError::NotAuthorized);
+        }
+        state.db.refresh_profile_at_generation(
             user.id,
+            generation,
             &user.first_name,
             user.last_name.as_deref(),
             user.username.as_deref(),
@@ -170,19 +172,29 @@ pub async fn refresh_auth(state: &AppState, app: &AppHandle) -> AppResult<AuthSt
     })
     .await;
 
+    if state.db.account_generation()? != generation {
+        return Err(AppError::NotAuthorized);
+    }
     match result {
         Ok(Ok(status)) => {
             if !status.authorized {
                 // Session file present but client reports unauthorized — treat as revoked.
-                clear_local_session_and_pending(state).await?;
+                clear_local_session_at(
+                    state,
+                    client_epoch.load(std::sync::atomic::Ordering::Acquire),
+                )
+                .await?;
                 emit_auth_revoked(app);
             }
             Ok(status)
         }
         Ok(Err(err)) => {
-            let message = err.to_string();
-            if is_auth_revoked_message(&message) {
-                clear_local_session_and_pending(state).await?;
+            if err.is_auth_revoked() {
+                clear_local_session_at(
+                    state,
+                    client_epoch.load(std::sync::atomic::Ordering::Acquire),
+                )
+                .await?;
                 emit_auth_revoked(app);
                 return Ok(AuthStatus {
                     authorized: false,
@@ -190,197 +202,219 @@ pub async fn refresh_auth(state: &AppState, app: &AppHandle) -> AppResult<AuthSt
                 });
             }
             // Unreachable / transient — keep local session; surface as soft error for UI.
-            state.disconnect_client().await;
+            if let Ok(_guard) = state
+                .guard_client(client_epoch.load(std::sync::atomic::Ordering::Acquire))
+                .await
+            {
+                state.disconnect_client_locked().await;
+            }
             Err(AppError::msg("telegram unreachable"))
         }
         Err(_elapsed) => {
-            state.disconnect_client().await;
+            if let Ok(_guard) = state
+                .guard_client(client_epoch.load(std::sync::atomic::Ordering::Acquire))
+                .await
+            {
+                state.disconnect_client_locked().await;
+            }
             Err(AppError::msg("telegram unreachable"))
         }
     }
 }
 
-// ---- phone ---------------------------------------------------------------
+// ---- phone and QR flows --------------------------------------------------
+
+const AUTH_STEP_TIMEOUT: Duration = Duration::from_secs(15);
 
 pub async fn phone_send_code(state: &AppState, phone: &str) -> AppResult<PhoneSendCodeOutcome> {
-    // Drop leftover QR / prior phone / 2FA tokens so sendCode isn't fighting
-    // an interrupted auth attempt (common after leaving QR or the code step).
-    {
-        let mut pending = state.pending.lock().await;
-        *pending = Default::default();
-    }
-
-    let client = state.client().await?;
-    match client.request_login_code(phone).await? {
+    let _operation = state.auth_operations.lock().await;
+    let (client, epoch) = state.auth_client().await?;
+    *state.pending.lock().await = PendingAuth::Idle;
+    let outcome = tokio::time::timeout(AUTH_STEP_TIMEOUT, client.request_login_code(phone))
+        .await
+        .map_err(|_| AppError::msg("Telegram login timed out; retry"))??;
+    match outcome {
         SendCodeOutcome::CodeRequired(token) => {
-            let mut pending = state.pending.lock().await;
-            pending.phone_token = Some(token);
+            let _guard = state.guard_client(epoch).await?;
+            *state.pending.lock().await = PendingAuth::Phone(token);
             Ok(PhoneSendCodeOutcome::CodeSent)
         }
-        SendCodeOutcome::AlreadyAuthorized(_) => {
-            // Logout-token fast path: session is already signed in.
-            let user = finalize(state).await?;
-            Ok(PhoneSendCodeOutcome::Authorized { user })
-        }
+        SendCodeOutcome::AlreadyAuthorized(_) => Ok(PhoneSendCodeOutcome::Authorized {
+            user: finalize(state, &client, epoch).await?,
+        }),
     }
 }
 
 pub async fn phone_sign_in(state: &AppState, code: &str) -> AppResult<AuthOutcome> {
-    let token = {
-        let mut pending = state.pending.lock().await;
-        pending
-            .phone_token
-            .take()
-            .ok_or_else(|| AppError::msg("no login in progress; request a code first"))?
+    let _operation = state.auth_operations.lock().await;
+    let (client, epoch) = state.auth_client().await?;
+    let token = match &*state.pending.lock().await {
+        PendingAuth::Phone(token) => token.clone(),
+        _ => return Err(AppError::msg("no login in progress; request a code first")),
     };
-
-    let client = state.client().await?;
-    match client.sign_in(&token, code).await {
+    let result = tokio::time::timeout(AUTH_STEP_TIMEOUT, client.sign_in(&token, code))
+        .await
+        .map_err(|_| AppError::msg("Telegram login timed out; retry"))?;
+    match result {
         Ok(_) => Ok(AuthOutcome::Authorized {
-            user: finalize(state).await?,
+            user: finalize(state, &client, epoch).await?,
         }),
-        Err(SignInError::PasswordRequired(password_token)) => {
-            let hint = password_token.hint().map(str::to_owned);
-            let mut pending = state.pending.lock().await;
-            pending.password_token = Some(*password_token);
+        Err(SignInError::PasswordRequired(token)) => {
+            let _guard = state.guard_client(epoch).await?;
+            let hint = token.hint().map(str::to_owned);
+            *state.pending.lock().await = PendingAuth::Password(token);
             Ok(AuthOutcome::PasswordRequired { hint })
         }
-        Err(SignInError::InvalidCode) => {
-            let mut pending = state.pending.lock().await;
-            pending.phone_token = Some(token);
-            Err(AppError::msg("the code you entered is invalid"))
-        }
-        Err(e) => Err(AppError::Telegram(e.to_string())),
+        Err(SignInError::InvalidCode) => Err(AppError::msg("the code you entered is invalid")),
+        Err(error) => Err(InvocationError::from(error).into()),
     }
 }
 
 pub async fn check_password(state: &AppState, password: &str) -> AppResult<AuthUser> {
-    let token = {
-        let mut pending = state.pending.lock().await;
-        pending
-            .password_token
-            .take()
-            .ok_or_else(|| AppError::msg("no password step in progress"))?
+    let _operation = state.auth_operations.lock().await;
+    let (client, epoch) = state.auth_client().await?;
+    let token = match &*state.pending.lock().await {
+        PendingAuth::Password(token) => (**token).clone(),
+        _ => return Err(AppError::msg("no password step in progress")),
     };
-    let retry_token = token.clone();
-
-    let client = state.client().await?;
-    match client
-        .check_password(token, password.trim().as_bytes())
-        .await
-    {
-        Ok(_) => finalize(state).await,
-        Err(InvocationError::Rpc(e)) if e.name.contains("PASSWORD") => {
-            // A failed attempt consumes our local token. Refresh the SRP
-            // parameters so the user can retry without restarting login.
-            let retry_token = load_password_token(&client).await.unwrap_or(retry_token);
-            let mut pending = state.pending.lock().await;
-            pending.password_token = Some(retry_token);
+    let result = tokio::time::timeout(
+        AUTH_STEP_TIMEOUT,
+        client.check_password(token, password.as_bytes()),
+    )
+    .await
+    .map_err(|_| AppError::msg("Telegram login timed out; retry"))?;
+    match result {
+        Ok(_) => finalize(state, &client, epoch).await,
+        Err(InvocationError::Rpc(error)) if error.name == "PASSWORD_HASH_INVALID" => {
+            if let Ok(token) = load_password_token(&client).await {
+                let _guard = state.guard_client(epoch).await?;
+                *state.pending.lock().await = PendingAuth::Password(Box::new(token));
+            }
             Err(AppError::msg("incorrect password"))
         }
-        Err(e) => Err(AppError::Telegram(e.to_string())),
+        Err(error) => Err(error.into()),
     }
 }
 
-// ---- QR ------------------------------------------------------------------
-
-async fn qr_export_once(state: &AppState, client: &Client) -> AppResult<QrOutcome> {
-    match client.export_login_token().await {
-        Ok((token, _expires)) if token.is_empty() => Ok(QrOutcome::Authorized {
-            user: finalize(state).await?,
+async fn qr_export_once(state: &AppState, client: &Client, epoch: u64) -> AppResult<QrOutcome> {
+    let result = tokio::time::timeout(AUTH_STEP_TIMEOUT, client.export_login_token())
+        .await
+        .map_err(|_| AppError::msg("Telegram login timed out; retry"))?;
+    match result {
+        Ok((token, _)) if token.is_empty() => Ok(QrOutcome::Authorized {
+            user: finalize(state, client, epoch).await?,
         }),
         Ok((token, expires)) => {
-            let url = format!("tg://login?token={}", B64URL.encode(&token));
-            let mut pending = state.pending.lock().await;
-            pending.qr_token = Some(token);
-            Ok(QrOutcome::Waiting { url, expires })
+            let _guard = state.guard_client(epoch).await?;
+            *state.pending.lock().await = PendingAuth::Qr;
+            Ok(QrOutcome::Waiting {
+                url: format!("tg://login?token={}", B64URL.encode(token)),
+                expires,
+            })
         }
-        Err(InvocationError::Rpc(e)) if e.name.contains("SESSION_PASSWORD_NEEDED") => {
-            qr_password_required(state).await
+        Err(InvocationError::Rpc(error)) if error.name == "SESSION_PASSWORD_NEEDED" => {
+            let token = load_password_token(client).await?;
+            let hint = token.hint().map(str::to_owned);
+            let _guard = state.guard_client(epoch).await?;
+            *state.pending.lock().await = PendingAuth::Password(Box::new(token));
+            Ok(QrOutcome::PasswordRequired { hint })
         }
-        Err(e) => Err(e.into()),
+        Err(error) => Err(error.into()),
     }
 }
 
-/// Runs one QR login round. Used both to start the flow and to poll it.
+async fn qr_export_locked(state: &AppState) -> AppResult<QrOutcome> {
+    let (client, epoch) = state.auth_client().await?;
+    match qr_export_once(state, &client, epoch).await {
+        Err(error) if error.is_auth_revoked() => {
+            clear_local_session_at(state, epoch).await?;
+            state.ensure_client().await?;
+            let (client, epoch) = state.auth_client().await?;
+            qr_export_once(state, &client, epoch).await
+        }
+        result => result,
+    }
+}
 pub async fn qr_export(state: &AppState) -> AppResult<QrOutcome> {
-    let client = state.client().await?;
-    match qr_export_once(state, &client).await {
-        Err(err) if is_auth_revoked_message(&err.to_string()) => {
-            // Telegram has already invalidated this key. Discard both its
-            // in-memory connection and persisted snapshot, then retry once
-            // with a fresh unauthenticated client so QR login can recover.
-            clear_local_session_and_pending(state).await?;
-            let client = state.ensure_client().await?;
-            qr_export_once(state, &client).await
-        }
-        outcome => outcome,
-    }
+    let _operation = state.auth_operations.lock().await;
+    qr_export_locked(state).await
 }
-
-/// Abandons an accepted QR challenge and starts over with a fresh auth key.
 pub async fn qr_restart(state: &AppState) -> AppResult<QrOutcome> {
-    state.disconnect_client().await;
-    crate::session::clear(&state.data_dir)?;
+    let _operation = state.auth_operations.lock().await;
+    clear_local_session_and_pending(state).await?;
     state.ensure_client().await?;
-    qr_export(state).await
+    qr_export_locked(state).await
 }
-
-/// Submits the 2FA password for the QR flow.
 pub async fn qr_check_password(state: &AppState, password: &str) -> AppResult<AuthUser> {
     check_password(state, password).await
 }
-
 async fn load_password_token(client: &Client) -> AppResult<PasswordToken> {
-    let password = client
-        .invoke(&tl::functions::account::GetPassword {})
-        .await?;
-    let tl::enums::account::Password::Password(pw) = password;
-    Ok(PasswordToken { password: pw })
-}
-
-async fn qr_password_required(state: &AppState) -> AppResult<QrOutcome> {
-    let client = state.client().await?;
-    let token = load_password_token(&client).await?;
-    let hint = token.hint().map(str::to_owned);
-
-    let mut pending = state.pending.lock().await;
-    pending.password_token = Some(token);
-    Ok(QrOutcome::PasswordRequired { hint })
+    let password = tokio::time::timeout(
+        AUTH_STEP_TIMEOUT,
+        client.invoke(&tl::functions::account::GetPassword {}),
+    )
+    .await
+    .map_err(|_| AppError::msg("Telegram password challenge timed out; retry"))??;
+    let tl::enums::account::Password::Password(password) = password;
+    Ok(PasswordToken { password })
 }
 
 // ---- session lifecycle ---------------------------------------------------
 
 pub async fn logout(state: &AppState) -> AppResult<()> {
-    // Best-effort remote sign-out; local library data stays available for the
-    // same Telegram user on this device after they sign in again.
-    if let Ok(client) = state.client().await {
-        let _ = client.sign_out().await;
+    let _operation = state.auth_operations.lock().await;
+    let remote = state.auth_client().await.ok().map(|(client, _)| client);
+    // Clear locally first; remote availability cannot keep the native account alive.
+    clear_local_session_and_pending(state).await?;
+    if let Some(client) = remote {
+        let _ = tokio::time::timeout(Duration::from_secs(3), client.sign_out()).await;
     }
-    clear_local_session_and_pending(state).await
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
-    use super::is_auth_revoked_message;
-
-    #[test]
-    fn treats_duplicated_auth_key_as_revoked() {
-        assert!(is_auth_revoked_message(
-            "telegram error: RPC 406: AUTH_KEY_DUPLICATED"
-        ));
+    use super::*;
+    #[tokio::test]
+    async fn offline_code_submission_keeps_its_retry_token_and_logout_invalidates_it() {
+        let state = crate::cache::tests::test_state();
+        state.db.save_profile(1, "User", None, None, None).unwrap();
+        *state.pending.lock().await = PendingAuth::Phone(ferogram::LoginToken {
+            phone: "test".into(),
+            phone_code_hash: "test-hash".into(),
+        });
+        let generation = state.db.account_generation().unwrap();
+        assert!(phone_sign_in(&state, "123").await.is_err());
+        assert!(
+            matches!(&*state.pending.lock().await,PendingAuth::Phone(token) if token.phone_code_hash=="test-hash")
+        );
+        let old_client = state
+            .client_generation
+            .load(std::sync::atomic::Ordering::Acquire);
+        logout(&state).await.unwrap();
+        assert!(matches!(*state.pending.lock().await, PendingAuth::Idle));
+        assert!(state.guard_client(old_client).await.is_err());
+        assert!(state
+            .db
+            .refresh_profile_at_generation(1, generation, "Late", None, None, None)
+            .is_err());
+        assert!(state.db.load_profile().unwrap().is_none());
     }
-
-    #[test]
-    fn detects_revoked_auth_markers() {
-        assert!(is_auth_revoked_message(
-            "telegram error: AUTH_KEY_UNREGISTERED"
-        ));
-        assert!(is_auth_revoked_message(
-            "RpcError { name: SESSION_REVOKED }"
-        ));
-        assert!(is_auth_revoked_message("user_deactivated_ban"));
-        assert!(!is_auth_revoked_message("telegram unreachable"));
-        assert!(!is_auth_revoked_message("FLOOD_WAIT_30"));
+    #[tokio::test]
+    async fn explicit_logout_survives_a_reconnect_that_finishes_while_it_waits() {
+        let state = std::sync::Arc::new(crate::cache::tests::test_state());
+        state.db.save_profile(1, "User", None, None, None).unwrap();
+        let guard = state.guard_lifecycle().await;
+        let task = {
+            let state = state.clone();
+            tokio::spawn(async move { clear_local_session_and_pending(&state).await })
+        };
+        tokio::task::yield_now().await;
+        state
+            .client_generation
+            .fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+        drop(guard);
+        task.await.unwrap().unwrap();
+        assert!(state.db.load_profile().unwrap().is_none());
     }
 }

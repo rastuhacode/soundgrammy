@@ -2,7 +2,6 @@
 import { act, createElement, StrictMode, useEffect } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { api } from '@/lib/api'
 import { usePlayerStore } from '@/stores/player-store'
 import { useListenStatsStore } from '@/stores/listen-stats-store'
 import { useLastFmStore } from '@/stores/lastfm-store'
@@ -13,14 +12,17 @@ import { AudioEngineProvider } from './engine-factory'
 import { useAudioEngine } from './use-audio-engine'
 import { createFakeAudioEngine } from './fake-engine'
 vi.mock('@/hooks/use-cached-thumbnail', () => ({ useCachedThumbnail: () => ({ url: null }) }))
+const legacyAccounting = vi.hoisted(() => ({
+  recordListenStart: vi.fn(), recordListenEnd: vi.fn(), lastFmAttemptStarted: vi.fn(), lastFmAttemptEnded: vi.fn(),
+}))
 vi.mock('@/lib/api', () => ({
   api: {
     listListenStats: vi.fn(async () => []),
-    recordListenStart: vi.fn(async () => {}),
-    recordListenEnd: vi.fn(async () => null),
-    lastFmAttemptStarted: vi.fn(async () => {}),
+    recordListenStart: legacyAccounting.recordListenStart,
+    recordListenEnd: legacyAccounting.recordListenEnd,
+    lastFmAttemptStarted: legacyAccounting.lastFmAttemptStarted,
     lastFmAttemptQualified: vi.fn(async () => {}),
-    lastFmAttemptEnded: vi.fn(async () => {}),
+    lastFmAttemptEnded: legacyAccounting.lastFmAttemptEnded,
   },
   fileSrc: () => 'https://asset.invalid/test.mp3',
   onNativeListenStats: vi.fn(async () => () => {}),
@@ -159,13 +161,13 @@ describe('React engine composition', () => {
       await fake.engine.load({ trackId: 1, attemptId: 'native:3' })
       await fake.engine.play()
     })
-    expect(api.recordListenStart).not.toHaveBeenCalled()
-    expect(api.lastFmAttemptStarted).not.toHaveBeenCalled()
+    expect(legacyAccounting.recordListenStart).not.toHaveBeenCalled()
+    expect(legacyAccounting.lastFmAttemptStarted).not.toHaveBeenCalled()
     await act(async () => {
       root.unmount()
     })
-    expect(api.recordListenEnd).not.toHaveBeenCalled()
-    expect(api.lastFmAttemptEnded).not.toHaveBeenCalled()
+    expect(legacyAccounting.recordListenEnd).not.toHaveBeenCalled()
+    expect(legacyAccounting.lastFmAttemptEnded).not.toHaveBeenCalled()
   })
 
   it('waits for asynchronous destruction before creating a replacement engine', async () => {

@@ -93,7 +93,10 @@ async function runPlaylistJob(kind: PlaylistJob['kind'], { playlistId, name, tra
       }
       else {
         const cached = await api.cacheTracks(trackIds, jobId)
-        if (isSessionCurrent(generation)) useCacheStore.getState().markCached(cached)
+        if (isSessionCurrent(generation)) {
+          useCacheStore.getState().markCached(cached.succeeded)
+          if (cached.failed.length) store.getState().enqueueError(`Caching failed for ${cached.failed.length} track(s): ${cached.failed[0].error}`)
+        }
       }
     })
   }

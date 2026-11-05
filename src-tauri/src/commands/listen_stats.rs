@@ -1,8 +1,7 @@
 use tauri::State;
 
-use crate::db::{ListenEndResult, TrackListenStats, SETTING_LISTEN_STATS_ENABLED};
+use crate::db::{TrackListenStats, SETTING_LISTEN_STATS_ENABLED};
 use crate::error::{AppError, AppResult};
-use crate::listen_stats::EndReason;
 use crate::state::AppState;
 
 fn listen_statistics_enabled(state: &AppState) -> AppResult<bool> {
@@ -39,48 +38,28 @@ pub async fn set_listen_statistics_enabled(
 }
 
 #[tauri::command]
-pub async fn record_listen_start(state: State<'_, AppState>, track_id: i64) -> AppResult<()> {
-    if !listen_statistics_enabled(&state)? {
-        return Ok(());
-    }
-    state.db.record_attempt_start(track_id)
-}
-
-#[tauri::command]
-pub async fn record_listen_end(
-    state: State<'_, AppState>,
-    track_id: i64,
-    listened_ms: i64,
-    duration_ms: Option<i64>,
-    end_reason: String,
-) -> AppResult<Option<ListenEndResult>> {
-    if !listen_statistics_enabled(&state)? {
-        return Ok(None);
-    }
-    let reason = EndReason::parse(&end_reason)
-        .ok_or_else(|| AppError::msg(format!("invalid end_reason: {end_reason}")))?;
-    state
-        .db
-        .record_attempt_end(track_id, listened_ms, duration_ms, reason)
-        .map(Some)
-}
-
-#[tauri::command]
 pub async fn get_track_listen_stats(
     state: State<'_, AppState>,
     track_id: i64,
 ) -> AppResult<Option<TrackListenStats>> {
+    let uid = super::require_uid(&state)?;
+    if state.db.track_by_id(track_id, uid)?.is_none() {
+        return Err(AppError::msg("Track not found"));
+    }
     state.db.track_listen_stats(track_id)
 }
 
 #[tauri::command]
 pub async fn list_listen_stats(state: State<'_, AppState>) -> AppResult<Vec<TrackListenStats>> {
-    state.db.all_listen_stats()
+    state
+        .db
+        .blocking(|db| db.listen_stats_for_user(db.active_uid()?))
+        .await
 }
 
 #[tauri::command]
 pub async fn rebuild_listen_stats(state: State<'_, AppState>) -> AppResult<()> {
-    state.db.rebuild_listen_stats()
+    state.db.blocking(|db| db.rebuild_listen_stats()).await
 }
 
 #[tauri::command]

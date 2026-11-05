@@ -3,32 +3,33 @@ use super::session::{Entry, Mode};
 use crate::db::{Db, TrackListenStats, SETTING_LISTEN_STATS_ENABLED};
 use std::collections::HashMap;
 
-pub fn shuffle(entries: Vec<Entry>, mode: Mode, db: &Db) -> Vec<Entry> {
-    let stats = db
-        .all_listen_stats()
-        .unwrap_or_default()
-        .into_iter()
-        .map(|s| (s.track_id, s))
-        .collect();
-    let enabled = db
-        .get_setting(SETTING_LISTEN_STATS_ENABLED)
-        .ok()
-        .flatten()
-        .as_deref()
-        != Some("false");
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .unwrap_or_default()
-        .as_millis() as f64;
-    permute(
-        entries,
-        mode,
-        &stats,
-        enabled,
-        now,
-        &mut rand::random::<f64>,
-    )
+#[derive(Default)]
+pub struct Context {
+    stats: HashMap<i64, TrackListenStats>,
+    enabled: bool,
 }
+impl Context {
+    pub fn load(db: &Db, uid: i64) -> crate::error::AppResult<Self> {
+        let stats = db
+            .listen_stats_for_user(uid)?
+            .into_iter()
+            .map(|s| (s.track_id, s))
+            .collect();
+        let enabled = db.get_setting(SETTING_LISTEN_STATS_ENABLED)?.as_deref() != Some("false");
+        Ok(Self { stats, enabled })
+    }
+    pub fn shuffle(&self, entries: Vec<Entry>, mode: Mode) -> Vec<Entry> {
+        permute(
+            entries,
+            mode,
+            &self.stats,
+            self.enabled,
+            crate::time::now_ms() as f64,
+            &mut rand::random::<f64>,
+        )
+    }
+}
+
 fn randomize(entries: &mut [Entry], random: &mut impl FnMut() -> f64) {
     for i in (1..entries.len()).rev() {
         let j = (random() * (i + 1) as f64) as usize;

@@ -273,9 +273,15 @@ fn serialize_attributes(attributes: &[tl::enums::DocumentAttribute]) -> Vec<serd
         .collect()
 }
 
-/// XOR-hash over document ids, matching Telegram's saved-music list hash.
+/// Telegram's ordered 64-bit list hash (unsigned shifts and wrapping addition).
+/// https://core.telegram.org/api/offsets#hash-generation
 pub fn compute_saved_music_hash(document_ids: &[i64]) -> i64 {
-    document_ids.iter().fold(0i64, |acc, id| acc ^ id)
+    document_ids.iter().fold(0u64, |mut hash, id| {
+        hash ^= hash >> 21;
+        hash ^= hash << 35;
+        hash ^= hash >> 4;
+        hash.wrapping_add(*id as u64)
+    }) as i64
 }
 
 /// Chooses a file extension for a cached audio document from its MIME type.
@@ -328,6 +334,17 @@ pub fn sniff_container_mime(header: &[u8]) -> Option<&'static str> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn saved_music_hash_matches_ordered_64_bit_reference_vectors() {
+        assert_eq!(compute_saved_music_hash(&[]), 0);
+        assert_eq!(compute_saved_music_hash(&[1, 2, 3]), 565_224_272_838_726);
+        assert_eq!(compute_saved_music_hash(&[3, 2, 1]), 1_695_664_228_581_574);
+        assert_eq!(
+            compute_saved_music_hash(&[i64::MAX, i64::MAX, -1]),
+            531_710_869_572_952_063
+        );
+    }
 
     #[test]
     fn picks_largest_thumbnail_by_dimensions_then_size() {

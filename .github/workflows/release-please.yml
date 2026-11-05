@@ -15,6 +15,10 @@ permissions:
   contents: write
   pull-requests: write
 
+concurrency:
+  group: release-please-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   release_please:
     runs-on: ubuntu-latest
@@ -44,6 +48,45 @@ jobs:
             --repo-url="$REPOSITORY" \
             --token="$GITHUB_TOKEN" \
             --release-as="$RELEASE_AS"
+
+      # The JSON updater replaces the whole version and cannot retain -develop.
+      # Persist the derived version on the release PR, rather than in a build checkout.
+      - name: Find release pull request to synchronize
+        id: release_pr
+        if: ${{ steps.release.outputs.prs_created == 'true' || (github.event_name == 'workflow_dispatch' && inputs.release_as != '') }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          branch=$(gh pr list --repo "$REPOSITORY" --base main \
+            --label 'autorelease: pending' --json headRefName,isCrossRepository \
+            --jq '[.[] | select(.isCrossRepository == false and (.headRefName | startswith("release-please--")))][0].headRefName // empty')
+          echo "branch=$branch" >> "$GITHUB_OUTPUT"
+
+      - name: Checkout release pull request
+        if: ${{ steps.release_pr.outputs.branch != '' }}
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ steps.release_pr.outputs.branch }}
+
+      - name: Setup Bun
+        if: ${{ steps.release_pr.outputs.branch != '' }}
+        uses: oven-sh/setup-bun@v2
+
+      - name: Synchronize development version in release pull request
+        if: ${{ steps.release_pr.outputs.branch != '' }}
+        env:
+          RELEASE_BRANCH: ${{ steps.release_pr.outputs.branch }}
+        run: |
+          bun run check:versions --fix
+          if git diff --quiet -- src-tauri/tauri.dev.conf.json; then
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src-tauri/tauri.dev.conf.json
+          git commit -m 'chore: synchronize development version'
+          git push origin "HEAD:$RELEASE_BRANCH"
 
   build_release:
     needs: release_please

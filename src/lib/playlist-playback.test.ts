@@ -26,8 +26,8 @@ describe('playlist and playback coordination', () => {
     saved.resolve('new')
     await pending
     expect(usePlaylistsStore.getState().data?.custom[0]?.trackIds).toEqual([1, 2, 1])
-    expect(api.nativePlayerCommand).toHaveBeenCalledWith({ type: 'realign', playlistId: 20,
-      tracks: [track(1), track(2), track(1)], moveIndices: [1, 2] })
+    expect(api.reorderPlaylistTracks).toHaveBeenCalledWith(20, [1, 2, 1], [1, 1, 2], [1, 2])
+    expect(api.nativePlayerCommand).not.toHaveBeenCalled()
   })
   it('never aligns the queue when persistence fails', async () => {
     vi.mocked(api.reorderPlaylistTracks).mockRejectedValueOnce(new Error('Database unavailable'))

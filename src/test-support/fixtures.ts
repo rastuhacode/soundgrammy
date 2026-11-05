@@ -1,9 +1,16 @@
-import type { PlaylistsBundle, Track } from '@/types'
+import type { LibraryPage, PlaylistsBundle, Track } from '@/types'
 
 export const track = (id: number): Track => ({
   id, tg_user_id: 1, file_id: `f${id}`, file_unique_id: `u${id}`, title: `Track ${id}`, performer: null,
   duration: 120, source: 'mtproto', mime_type: 'audio/mpeg', file_size: 100, created_at: '',
 })
+export function libraryPage(tracks: Track[], offset = 0, nextOffset: number | null = null, revision = 0): LibraryPage {
+  return {
+    tracks: tracks.map((track, index) => ({ track, position: offset + index })), nextOffset,
+    status: { tgUserId: 1, revision, indexed: offset + tracks.length, total: offset + tracks.length,
+      complete: true, blocking: false, processed: offset + tracks.length, lastSyncAt: '2026-10-13 00:00:00' },
+  }
+}
 export function playlists(trackIds = [1, 2, 3]): PlaylistsBundle {
   return { liked: { id: 10, trackIds: [...trackIds], updatedAt: '' },
     custom: [{ id: 20, name: 'Custom', trackIds: [...trackIds], updatedAt: '' }] }

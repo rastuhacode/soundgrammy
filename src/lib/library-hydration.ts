@@ -10,7 +10,7 @@ export async function hydrateLibrary(firstLoad = false): Promise<void> {
   const generation = captureSession()
   await Promise.allSettled([
     useLibraryStore.getState().refresh().then((tracks) => {
-      if (tracks && isSessionCurrent(generation) && useLibraryStore.getState().library === tracks) {
+      if (tracks && !useLibraryStore.getState().status?.blocking && isSessionCurrent(generation) && useLibraryStore.getState().library === tracks) {
         usePlayerStore.getState().refreshQueueTracks(tracks)
       }
     }),

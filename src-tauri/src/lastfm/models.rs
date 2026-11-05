@@ -55,6 +55,14 @@ pub struct LastFmScrobbleResult {
 }
 
 #[derive(Debug, Clone)]
+pub struct PlaybackStart {
+    pub attempt_id: String,
+    pub track_id: i64,
+    pub started_at_utc: i64,
+    pub duration_seconds: Option<i64>,
+}
+
+#[derive(Debug, Clone)]
 pub struct PlaybackSnapshot {
     pub attempt_id: String,
     pub username: String,

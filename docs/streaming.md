@@ -2,19 +2,62 @@
 
 Rust owns the complete playback path: `audio/source.rs` reads cached files or verified ranges from `TrackStream`, `audio/decode.rs` decodes packets with Symphonia, and `audio/output.rs` presents PCM through CPAL. The frontend sends transport commands and receives state; it does not fetch or append audio bytes.
 
+## Playback read-ahead
+
+Uncached playback follows Telegram Desktop's buffering policies: 128 KiB transfer
+parts, eight parts (1 MiB) of rolling byte read-ahead, a 32-second remote
+media-time load-ahead target, and three seconds of contiguous media coverage
+before resuming after an output underrun (or the remaining tail at EOF).
+Normal initial PCM readiness remains 50 ms. These targets come from Telegram's
+[reader](https://github.com/telegramdesktop/tdesktop/blob/dev/Telegram/SourceFiles/media/streaming/media_streaming_reader.cpp)
+and [player](https://github.com/telegramdesktop/tdesktop/blob/dev/Telegram/SourceFiles/media/streaming/media_streaming_player.cpp);
+the transport and decoder implementations remain SoundGrammy's.
+
+A playback-owned demux cursor reads verified cached ranges ahead of the decoder
+and uses actual packet timestamps to stop at the time target. It does not decode
+PCM. Its byte window fetches at most eight subsequent chunks, with one speculative
+claim at a time, through the shared background gate. Foreground demanded reads
+retain aggregate request capacity; existing in-flight shared chunk claims are
+reused. Normal sequential advance keeps the now-demanded claim alive. Seeks
+cancel obsolete windows and redirect both the prefetch cursor and passive display
+observer; skipped gaps are not filled. Speculative errors rebuild the demux cursor
+from verified data after a cancellation-aware 250 ms delay.
+
+The two-second PCM ring stays unchanged. Cached files open directly and do not
+start network prefetch. The separate storage-only display observer can outlive
+a released playback pipeline while explicit cache/export jobs finish, and never
+initiates downloads. Playback teardown cancels the prefetch cursor and its byte
+window; independent cache/export jobs retain their own lifetime. A retained,
+paused desktop pipeline can finish filling its bounded look-ahead target.
+
+The media-time target and extra byte window are separate limits: at low bitrates
+one MiB can represent more than 32 seconds. Container header/index probes may also
+read nonsequential ranges. Neither byte/time ratios nor total downloaded bytes
+are used as proof of contiguous playable headroom.
+
 ## Download lifecycle and partial cache
 
 - Each native source owns a playback session and cancellation token. Replacing or disposing the source closes the session and prevents new playback downloads. An already in-flight chunk can settle safely.
+- Shared streams are keyed by Telegram document identity across account-scoped track rows. Each account retains its own MTProto reference, and generation checks reject stale fetch/reference writes.
+- Chunk claims belong to downloader tasks; dropping a range waiter cannot leave an ownerless Loading slot.
 - Missing ranges use the shared downloader and bounded range cache. Sparse file holes are never treated as downloaded bytes.
 - Completed chunks are recorded in a sidecar manifest next to the sparse `.part` file. Reopening restores verified chunks.
 - Export and explicit cache operations retain independent download lifetimes.
 - Complete files are atomically finalized and subsequent playback opens the cached file directly.
-- Active sources protect their files from eviction. Partial playback data remains lowest-priority cache data; explicitly pinned complete files survive normal eviction and TTL cleanup.
+- Playback, exports, analysis, artwork extraction and explicit jobs hold document leases; lease acquisition and deletion eligibility share a lifecycle lock. Cache clear returns removed/protected IDs and failure counts while retaining records for files it keeps. Inactive-account pins also protect shared files. Partial playback data remains lowest-priority cache data; explicitly pinned complete files survive normal eviction and TTL cleanup.
+
+Explicit cache jobs reserve logical bytes and deduplicate repeated memberships. Automatic playback uses the limit as an eviction target while protecting active/pinned files. Invalid partials and orphan sidecars are accounted for and cleaned independently of TTL.
 
 ## Seeking and buffer display
 
 Seeks reuse the native source, demuxer, decoder worker, and output stream. A latest-wins mailbox cancels obsolete waits, flushes queued PCM, and resets decoding at the new position. Container indexes determine seek accuracy; MP3 landing can be approximate.
 
 A storage-only observer maps downloaded packets to actual timestamps for the buffer display. It does not decode PCM or request downloads. Unmapped data stays unpainted, and cached files show full coverage.
+
+## Fullscreen artwork
+
+High-quality thumbnail requests return the available Telegram or cached embedded image and schedule a separate leading-ID3v2 artwork probe for uncached audio. The probe reads the tag header, then only the verified ranges containing the tag (up to 8 MiB, with a 15-second cancellation deadline). Missing chunks are requested sequentially at background priority; chunks already downloaded or in flight for playback are shared. Cancellation settles claimed chunk slots so playback can retry them.
+
+Extracted front-cover artwork is cached independently of audio and published through `artwork:changed`. Visible high-quality consumers preload the image before replacing the fallback, ignore stale track/account responses, and also revalidate on audio cache completion. Successful probes without leading ID3 artwork are remembered; network, parse, and size-limit failures remain retryable. Other container/tag layouts use whole-file extraction when audio finishes caching.
 
 See [native audio](native-audio.md) for implementation details, supported fixtures, and device verification limitations.

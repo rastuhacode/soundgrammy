@@ -6,6 +6,8 @@ import { PlayerSidebar } from '@/components/PlayerSidebar'
 import { PlaylistJobResults } from '@/components/playlist/PlaylistJobResults'
 import { PlaylistView } from '@/components/playlist/PlaylistView'
 import { AudioPlayer } from '@/components/audio/AudioPlayer'
+import { LibraryIndexingLoader } from '@/components/LibraryIndexingLoader'
+import { useConnectivityStore } from '@/stores/connectivity-store'
 import { useAppSession } from '@/hooks/use-app-session'
 import { hydrateLibrary } from '@/lib/library-hydration'
 import { useLibraryStore } from '@/stores/library-store'
@@ -21,6 +23,8 @@ import {
 export default function App() {
   const { status, session, handleAuthenticated, resetToLogin } = useAppSession()
   const libraryError = useLibraryStore(state => state.error)
+  const libraryBlocking = useLibraryStore(state => state.status?.blocking ?? false)
+  const blockingIndex = useConnectivityStore(state => state.blockingIndex)
   const playlistsError = usePlaylistsStore(state => state.error)
   const { isCompact } = useCompactDisplay()
   const [compactPlaylistOpen, setCompactPlaylistOpen] = useState(false)
@@ -59,6 +63,8 @@ export default function App() {
   if (status === 'login' || !session) {
     return <MtprotoLogin onAuthenticated={handleAuthenticated} />
   }
+
+  if (blockingIndex || libraryBlocking) return <LibraryIndexingLoader onLogout={handleLogout} />
 
   return (
     <div className="hifi-bg flex h-dvh w-full flex-col overflow-hidden">

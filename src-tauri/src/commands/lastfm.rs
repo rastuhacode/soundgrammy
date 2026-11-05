@@ -64,35 +64,3 @@ pub async fn flush_lastfm_queue(state: State<'_, AppState>) -> AppResult<()> {
     state.lastfm.wake();
     Ok(())
 }
-
-#[tauri::command]
-pub async fn lastfm_attempt_started(
-    state: State<'_, AppState>,
-    app: AppHandle,
-    attempt_id: String,
-    track_id: i64,
-) -> AppResult<()> {
-    state
-        .lastfm
-        .attempt_started(&state.db, &app, attempt_id, track_id)
-        .await
-}
-
-#[tauri::command]
-pub async fn lastfm_attempt_qualified(
-    state: State<'_, AppState>,
-    app: AppHandle,
-    attempt_id: String,
-    listened_ms: i64,
-) -> AppResult<()> {
-    state
-        .lastfm
-        .attempt_qualified(&state.db, &app, &attempt_id, listened_ms)
-        .await
-}
-
-#[tauri::command]
-pub async fn lastfm_attempt_ended(state: State<'_, AppState>, attempt_id: String) -> AppResult<()> {
-    state.lastfm.attempt_ended(&attempt_id).await;
-    Ok(())
-}

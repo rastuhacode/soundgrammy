@@ -18,10 +18,11 @@ export function useProfileMusicSync() {
   const connectivity = useConnectivityStore(state => state.phase)
   const lastSyncAt = useConnectivityStore(state => state.lastSyncAt)
   const isSyncing = useConnectivityStore(state => state.syncing)
+  const blockingIndex = useConnectivityStore(state => state.blockingIndex)
   const syncError = useConnectivityStore(state => state.syncError)
   const progress = useConnectivityStore(state => state.progress)
   const sync = useConnectivityStore(state => state.requestSync)
-  const requestSync = () => sync().catch(() => {})
+  const requestSync = () => sync('soft').catch(() => {})
 
   const phase: SyncPhase
     = connectivity === 'offline'
@@ -60,8 +61,8 @@ export function useProfileMusicSync() {
         ? syncError ?? 'Waiting for network…'
         : phase === 'syncing'
           ? progress && progress.total > 0
-            ? `Pulling ${progress.done} of ${progress.total} tracks…`
-            : 'Pulling your library…'
+            ? `${blockingIndex ? 'Indexing' : 'Syncing'} ${progress.done} of ${progress.total} tracks…`
+            : 'Checking your library…'
           : phase === 'error'
             ? syncError ?? 'Could not sync with Telegram.'
             : lastSyncDetail

@@ -1,10 +1,8 @@
 import { assertSession, captureSession } from '@/stores/session-store'
 import { usePlaylistsStore } from '@/stores/playlists-store'
-import { useLibraryStore } from '@/stores/library-store'
-import { usePlayerStore } from '@/stores/player-store'
 import type { PlaylistId } from '@/lib/playlists'
 
-/** Persist membership first, then align its native playback mirror. */
+/** Rust commits membership and reconciles playback before acknowledging the change. */
 export async function reorderPlaylistAndQueue(
   id: PlaylistId,
   trackIds: number[],
@@ -12,9 +10,6 @@ export async function reorderPlaylistAndQueue(
   move: { fromIndex: number, toIndex: number },
 ) {
   const generation = captureSession()
-  await usePlaylistsStore.getState().reorderTracks(id, trackIds, expectedTrackIds)
+  await usePlaylistsStore.getState().reorderTracks(id, trackIds, expectedTrackIds, [move.fromIndex, move.toIndex])
   assertSession(generation)
-  const byId = new Map(useLibraryStore.getState().library.map(track => [track.id, track]))
-  const tracks = trackIds.flatMap(id => byId.has(id) ? [byId.get(id)!] : [])
-  await usePlayerStore.getState().realignQueueToPlaylist(id, tracks, move)
 }

@@ -2,10 +2,15 @@
 use crate::db::Track;
 use serde::{Deserialize, Serialize};
 
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum SourceType {
+    Playlist,
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Source {
-    pub r#type: String,
+    pub r#type: SourceType,
     pub playlist_id: serde_json::Value,
     pub name: String,
     pub track_ids: Vec<i64>,
@@ -172,9 +177,16 @@ pub enum Command {
         playlist_id: serde_json::Value,
         tracks: Vec<Track>,
         move_indices: Option<[i64; 2]>,
+        #[serde(default)]
+        membership_map: Option<Vec<Option<usize>>>,
     },
     Refresh {
         tracks: Vec<Track>,
+    },
+    #[serde(skip)]
+    SourceMetadata {
+        playlist_id: serde_json::Value,
+        name: Option<String>,
     },
     Playing {
         playing: bool,
@@ -197,6 +209,47 @@ pub enum Command {
     },
 }
 impl Command {
+    /// IPC provides membership intent; library metadata is always resolved in Rust.
+    pub fn canonicalize(&mut self, db: &crate::db::Db, uid: i64) -> crate::error::AppResult<()> {
+        let ids = match &*self {
+            Self::SetQueue { queue, .. } | Self::PlayPlaylist { queue, .. } => queue
+                .tracks
+                .iter()
+                .map(|t| t.id)
+                .chain(queue.base_entries.iter().flatten().map(|e| e.track.id))
+                .collect(),
+            Self::PlayTrack { track } => vec![track.id],
+            Self::Insert { tracks, .. }
+            | Self::Realign { tracks, .. }
+            | Self::Refresh { tracks } => tracks.iter().map(|t| t.id).collect(),
+            _ => Vec::new(),
+        };
+        let canonical = db.playback_tracks(uid, &ids)?;
+        let resolve = |track: &mut Track| {
+            *track = canonical[&track.id].clone();
+        };
+        match self {
+            Self::SetQueue { queue, .. } | Self::PlayPlaylist { queue, .. } => {
+                for track in &mut queue.tracks {
+                    resolve(track);
+                }
+                for entry in queue.base_entries.iter_mut().flatten() {
+                    resolve(&mut entry.track);
+                }
+            }
+            Self::PlayTrack { track } => resolve(track),
+            Self::Insert { tracks, .. }
+            | Self::Realign { tracks, .. }
+            | Self::Refresh { tracks } => {
+                for track in tracks {
+                    resolve(track);
+                }
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
     pub fn saves_preferences(&self) -> bool {
         matches!(
             self,
@@ -356,6 +409,36 @@ impl Session {
                 .is_some_and(|v| v.len() != queue.tracks.len())
             {
                 return Err("Invalid queue membership indexes".into());
+            }
+            if let Some(source) = &queue.source {
+                let valid_id = source.playlist_id.as_i64().is_some_and(|id| id > 0)
+                    || matches!(
+                        source.playlist_id.as_str(),
+                        Some("all" | "liked" | "popular" | "recent")
+                    );
+                if !valid_id {
+                    return Err("Invalid playlist identity".into());
+                }
+                let indices = queue
+                    .source_indices
+                    .as_ref()
+                    .ok_or("Missing queue membership indexes")?;
+                let mut seen = std::collections::HashSet::new();
+                for (track, index) in queue.tracks.iter().zip(indices) {
+                    if !seen.insert(*index) || source.track_ids.get(*index) != Some(&track.id) {
+                        return Err("Invalid queue membership indexes".into());
+                    }
+                }
+                if let Some(base) = &queue.base_entries {
+                    let mut seen = std::collections::HashSet::new();
+                    for entry in base {
+                        if !seen.insert(entry.source_index)
+                            || source.track_ids.get(entry.source_index) != Some(&entry.track.id)
+                        {
+                            return Err("Invalid base queue membership indexes".into());
+                        }
+                    }
+                }
             }
             if let Some(entries) = &queue.base_entries {
                 let mut ids: Vec<_> = entries.iter().map(|e| e.track.id).collect();
@@ -614,6 +697,7 @@ impl Session {
                 playlist_id,
                 tracks,
                 move_indices,
+                membership_map,
             } => {
                 let Some(source) = self
                     .queue
@@ -623,23 +707,106 @@ impl Session {
                 else {
                     return Ok(Effect::None);
                 };
+                let old_ids = source.track_ids.clone();
                 source.track_ids = tracks.iter().map(|t| t.id).collect();
+                let mut removed_current = false;
                 if self.preferences.shuffle == Shuffle::On {
-                    if let Some([from, to]) = move_indices {
-                        if let Some(indices) = self.queue.source_indices.as_mut() {
-                            for i in indices {
-                                *i = remap(*i as i64, from, to) as usize;
-                            }
-                        }
-                        if let Some(entries) = self.queue.base_entries.as_mut() {
-                            for e in entries {
-                                e.source_index = remap(e.source_index as i64, from, to) as usize;
-                            }
+                    let map = membership_map.unwrap_or_else(|| {
+                        old_ids
+                            .iter()
+                            .enumerate()
+                            .map(|(index, id)| {
+                                if let Some([from, to]) = move_indices {
+                                    return Some(remap(index as i64, from, to) as usize);
+                                }
+                                let occurrence =
+                                    old_ids[..index].iter().filter(|old| *old == id).count();
+                                tracks
+                                    .iter()
+                                    .enumerate()
+                                    .filter(|(_, track)| track.id == *id)
+                                    .nth(occurrence)
+                                    .map(|(i, _)| i)
+                            })
+                            .collect()
+                    });
+                    let old_cursor = self.queue.cursor.max(0) as usize;
+                    let entries = self.queue.entries();
+                    let mut mapped_cursor = None;
+                    let mut refreshed = entries
+                        .into_iter()
+                        .enumerate()
+                        .filter_map(|(index, mut entry)| {
+                            let new_index = map.get(entry.source_index).copied().flatten()?;
+                            let track = tracks.get(new_index)?;
+                            entry.track = track.clone();
+                            entry.source_index = new_index;
+                            Some((index, entry))
+                        })
+                        .collect::<Vec<_>>();
+                    for (index, (old_index, _)) in refreshed.iter().enumerate() {
+                        if *old_index == old_cursor {
+                            mapped_cursor = Some(index);
                         }
                     }
+                    removed_current = mapped_cursor.is_none() && previous.is_some();
+                    let seen: std::collections::HashSet<_> =
+                        refreshed.iter().map(|(_, e)| e.source_index).collect();
+                    // Preserve the current shuffle order; newly committed memberships enter its tail.
+                    refreshed.extend(
+                        tracks
+                            .iter()
+                            .enumerate()
+                            .filter(|(index, _)| !seen.contains(index))
+                            .map(|(index, track)| {
+                                (
+                                    usize::MAX,
+                                    Entry {
+                                        track: track.clone(),
+                                        source_index: index,
+                                    },
+                                )
+                            }),
+                    );
+                    self.queue.tracks = refreshed
+                        .iter()
+                        .map(|(_, entry)| entry.track.clone())
+                        .collect();
+                    self.queue.source_indices = Some(
+                        refreshed
+                            .iter()
+                            .map(|(_, entry)| entry.source_index)
+                            .collect(),
+                    );
+                    self.queue.cursor = mapped_cursor
+                        .unwrap_or(old_cursor)
+                        .min(self.queue.tracks.len().saturating_sub(1))
+                        as i64;
+                    self.queue.base_entries = Some(
+                        tracks
+                            .iter()
+                            .enumerate()
+                            .map(|(i, t)| Entry {
+                                track: t.clone(),
+                                source_index: i,
+                            })
+                            .collect(),
+                    );
+                    self.queue.normalize();
                 } else {
-                    let cursor = if let Some([from, to]) = move_indices {
-                        remap(self.queue.cursor, from, to)
+                    let source_index = self
+                        .queue
+                        .source_indices
+                        .as_ref()
+                        .and_then(|indices| indices.get(self.queue.cursor.max(0) as usize))
+                        .copied()
+                        .unwrap_or(self.queue.cursor.max(0) as usize);
+                    let cursor = if let Some(map) = membership_map {
+                        let mapped = map.get(source_index).copied().flatten();
+                        removed_current = mapped.is_none() && previous.is_some();
+                        mapped.unwrap_or(source_index) as i64
+                    } else if let Some([from, to]) = move_indices {
+                        remap(source_index as i64, from, to)
                     } else {
                         let occurrence = self
                             .queue
@@ -668,15 +835,49 @@ impl Session {
                     self.queue.source_indices = Some((0..self.queue.tracks.len()).collect());
                     self.queue.base_entries = Some(self.queue.entries());
                 }
-                if previous != self.queue.current().map(|t| t.id) {
+                if removed_current || previous != self.queue.current().map(|t| t.id) {
                     self.start("replaced")
                 } else {
                     Effect::None
                 }
             }
+            Command::SourceMetadata { playlist_id, name } => {
+                if self
+                    .queue
+                    .source
+                    .as_ref()
+                    .is_some_and(|s| s.playlist_id == playlist_id)
+                {
+                    if let Some(name) = name {
+                        self.queue.source.as_mut().unwrap().name = name;
+                    } else {
+                        // Deleting the container retains playback as an explicit queue.
+                        self.queue.edited();
+                    }
+                }
+                Effect::None
+            }
             Command::Refresh { tracks } => {
                 let by_id: std::collections::HashMap<_, _> =
                     tracks.into_iter().map(|t| (t.id, t)).collect();
+                let membership_map = self.queue.source.as_mut().map(|source| {
+                    let mut next = 0;
+                    let map = source
+                        .track_ids
+                        .iter()
+                        .map(|id| {
+                            if by_id.contains_key(id) {
+                                let index = next;
+                                next += 1;
+                                Some(index)
+                            } else {
+                                None
+                            }
+                        })
+                        .collect::<Vec<_>>();
+                    source.track_ids.retain(|id| by_id.contains_key(id));
+                    map
+                });
                 let old_cursor = self.queue.cursor.max(0) as usize;
                 let mut mapped = None;
                 let mut indices = vec![];
@@ -688,7 +889,15 @@ impl Session {
                         }
                         refreshed.push(t.clone());
                         if let Some(source) = self.queue.source_indices.as_ref() {
-                            indices.push(source[i]);
+                            let old = source[i];
+                            indices.push(
+                                membership_map
+                                    .as_ref()
+                                    .and_then(|map| map.get(old))
+                                    .copied()
+                                    .flatten()
+                                    .unwrap_or(old),
+                            );
                         }
                     }
                 }
@@ -702,14 +911,19 @@ impl Session {
                     entries.retain_mut(|e| {
                         if let Some(t) = by_id.get(&e.track.id) {
                             e.track = t.clone();
+                            if let Some(index) = membership_map
+                                .as_ref()
+                                .and_then(|map| map.get(e.source_index))
+                                .copied()
+                                .flatten()
+                            {
+                                e.source_index = index;
+                            }
                             true
                         } else {
                             false
                         }
                     });
-                }
-                if let Some(source) = self.queue.source.as_mut() {
-                    source.track_ids.retain(|id| by_id.contains_key(id));
                 }
                 if previous != self.queue.current().map(|t| t.id) {
                     self.start("replaced")
@@ -1014,7 +1228,7 @@ mod tests {
         let indices = vec![2, 1, 0];
         Queue {
             source: Some(Source {
-                r#type: "playlist".into(),
+                r#type: SourceType::Playlist,
                 playlist_id: 1.into(),
                 name: "List".into(),
                 track_ids: vec![1, 1, 2],
@@ -1111,6 +1325,7 @@ mod tests {
                 playlist_id: 1.into(),
                 tracks: vec![track(1), track(2), track(1)],
                 move_indices: Some([1, 2]),
+                membership_map: None,
             },
         );
         assert_eq!(
@@ -1396,5 +1611,140 @@ mod tests {
         assert_eq!(json["queue"]["tracks"][0]["id"], 1);
         assert!(json["queue"]["tracks"][0].get("mtproto_document").is_none());
         assert_eq!(json["isPlaying"], true);
+    }
+    #[test]
+    fn playlist_commit_removes_exact_current_duplicate_in_shuffled_and_plain_queues() {
+        for shuffle in [Shuffle::Off, Shuffle::On] {
+            let mut s = Session::default();
+            apply(
+                &mut s,
+                Command::PlayPlaylist {
+                    queue: sourced(),
+                    shuffle: Some(shuffle),
+                    toggle_if_current: false,
+                    pin_start: true,
+                },
+            );
+            let attempt = s.attempt;
+            let effect = apply(
+                &mut s,
+                Command::Realign {
+                    playlist_id: 1.into(),
+                    tracks: vec![track(1), track(2)],
+                    move_indices: None,
+                    membership_map: Some(vec![Some(0), None, Some(1)]),
+                },
+            );
+            assert_eq!(effect, Effect::Load);
+            assert!(s.attempt > attempt);
+            assert_eq!(s.queue.tracks.len(), 2);
+            assert_eq!(s.queue.base_entries.as_ref().unwrap().len(), 2);
+        }
+    }
+    #[test]
+    fn source_rename_and_delete_keep_the_current_attempt_and_manual_queue() {
+        let mut session = Session {
+            queue: sourced(),
+            ..Default::default()
+        };
+        let attempt = session.attempt;
+        let current = session.queue.current().unwrap().id;
+        assert_eq!(
+            apply(
+                &mut session,
+                Command::SourceMetadata {
+                    playlist_id: serde_json::json!(1),
+                    name: Some("Renamed".into())
+                }
+            ),
+            Effect::None
+        );
+        assert_eq!(session.queue.source.as_ref().unwrap().name, "Renamed");
+        assert_eq!(
+            apply(
+                &mut session,
+                Command::SourceMetadata {
+                    playlist_id: serde_json::json!(1),
+                    name: None
+                }
+            ),
+            Effect::None
+        );
+        assert!(session.queue.source.is_none());
+        assert_eq!(session.queue.current().unwrap().id, current);
+        assert_eq!(session.attempt, attempt);
+    }
+    #[test]
+    fn library_prune_compacts_source_slots_and_preserves_the_current_duplicate() {
+        let mut session = Session {
+            queue: sourced(),
+            ..Default::default()
+        };
+        let attempt = session.attempt;
+        assert_eq!(
+            apply(
+                &mut session,
+                Command::Refresh {
+                    tracks: vec![track(1)]
+                }
+            ),
+            Effect::None
+        );
+        assert_eq!(session.queue.source.as_ref().unwrap().track_ids, vec![1, 1]);
+        assert_eq!(session.queue.source_indices, Some(vec![1, 0]));
+        assert_eq!(
+            session
+                .queue
+                .base_entries
+                .as_ref()
+                .unwrap()
+                .iter()
+                .map(|e| e.source_index)
+                .collect::<Vec<_>>(),
+            vec![1, 0]
+        );
+        assert_eq!(session.attempt, attempt);
+        let queue = session.queue.clone();
+        assert!(session
+            .apply(
+                Command::SetQueue { queue, play: false },
+                0.0,
+                |entries, _| entries
+            )
+            .is_ok());
+    }
+
+    #[test]
+    fn additions_enter_a_shuffled_queue_without_changing_its_current_membership() {
+        let mut session = Session {
+            queue: sourced(),
+            ..Default::default()
+        };
+        session.preferences.shuffle = Shuffle::On;
+        let current = session.queue.current().unwrap().id;
+        let attempt = session.attempt;
+        assert_eq!(
+            apply(
+                &mut session,
+                Command::Realign {
+                    playlist_id: 1.into(),
+                    tracks: vec![track(1), track(1), track(2), track(3)],
+                    move_indices: None,
+                    membership_map: None
+                }
+            ),
+            Effect::None
+        );
+        assert_eq!(
+            session
+                .queue
+                .tracks
+                .iter()
+                .map(|t| t.id)
+                .collect::<Vec<_>>(),
+            vec![2, 1, 1, 3]
+        );
+        assert_eq!(session.queue.current().unwrap().id, current);
+        assert_eq!(session.attempt, attempt);
     }
 }

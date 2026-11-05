@@ -1,3 +1,4 @@
+import { usePlaylistJobsStore } from '@/stores/playlist-jobs-store'
 import type { Track } from '@/types'
 import { api } from '@/lib/api'
 import { errorMessage } from '@/lib/errors'
@@ -21,13 +22,16 @@ export function useTrackFileActions(onError: (message: string) => void) {
   const cache = (trackIds: number[]) => run(trackIds, async (ids) => {
     const generation = captureSession()
     const cached = await api.cacheTracks(ids)
-    if (isSessionCurrent(generation)) useCacheStore.getState().markCached(cached)
+    if (isSessionCurrent(generation)) {
+      useCacheStore.getState().markCached(cached.succeeded)
+      if (cached.failed.length) onError(`Caching failed for ${cached.failed.length} track(s): ${cached.failed[0].error}`)
+    }
   })
   const remove = async (track: Track) => {
     const generation = captureSession()
     try {
       await api.removeTrackFromCache(track.id)
-      if (isSessionCurrent(generation)) useCacheStore.getState().markUncached([track.id])
+      if (isSessionCurrent(generation)) await useCacheStore.getState().hydrate()
     }
     catch (error) {
       if (isSessionCurrent(generation)) onError(errorMessage(error))
@@ -41,7 +45,11 @@ export function useTrackFileActions(onError: (message: string) => void) {
     }),
     handleBulkCache: cache,
     handleDownload: (track: Track) => run([track.id], () => exportTrackAndReveal(track.id)),
-    handleBulkDownload: (trackIds: number[]) => run(trackIds, ids => api.exportTracks(ids)),
+    handleBulkDownload: (trackIds: number[]) => run(trackIds, async (ids) => {
+      const generation = captureSession()
+      const result = await api.exportTracks(ids)
+      if (isSessionCurrent(generation)) usePlaylistJobsStore.getState().enqueueResult({ playlistName: 'Selected tracks', result })
+    }),
     handleRemoveFromCache: remove,
   }
 }

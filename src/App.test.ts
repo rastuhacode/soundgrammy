@@ -5,7 +5,9 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import App from './App'
 import { api } from '@/lib/api'
 import { usePlaylistsStore } from '@/stores/playlists-store'
-import { deferred, playlists } from '@/test-support/fixtures'
+import { deferred, libraryPage, playlists, track } from '@/test-support/fixtures'
+import { useLibraryStore } from '@/stores/library-store'
+import { useConnectivityStore } from '@/stores/connectivity-store'
 
 const androidBack = vi.hoisted(() => ({ active: false, close: () => {} }))
 vi.mock('@/hooks/use-app-session', () => ({
@@ -38,6 +40,8 @@ beforeEach(async () => {
   vi.clearAllMocks()
   localStorage.clear()
   usePlaylistsStore.getState().reset()
+  useLibraryStore.getState().setLibrary([track(1)])
+  useConnectivityStore.getState().reset()
   usePlaylistsStore.getState().hydrate(playlists())
   vi.mocked(api.deletePlaylist).mockResolvedValue(undefined)
   host = document.createElement('div')
@@ -111,4 +115,35 @@ it('keeps an already open track view visible when its playlist is deleted', asyn
   await act(async () => usePlaylistsStore.getState().deletePlaylist(20))
   expect(usePlaylistsStore.getState().selectedPlaylistId).toBe('all')
   expect(host.querySelector('main')).not.toBeNull()
+})
+
+it('shows only the progress loader for an initial or restored incomplete index', async () => {
+  await act(async () => useLibraryStore.setState({
+    status: { ...libraryPage([]).status, complete: false, blocking: true, processed: 100, total: 10000 },
+  }))
+  expect(host.textContent).toContain('100 of 10000 tracks indexed')
+  expect(host.querySelector('[role="progressbar"]')?.getAttribute('aria-valuenow')).toBe('100')
+  expect(host.querySelector('[aria-label="Select Custom playlist"]')).toBeNull()
+  expect(host.textContent).not.toContain('Back')
+})
+
+it('keeps cached tracks hidden during a full reindex until the final library load finishes', async () => {
+  await act(async () => useConnectivityStore.setState({ blockingIndex: true, syncing: true, progress: { done: 100, total: 10000 } }))
+  expect(host.textContent).toContain('100 of 10000 tracks indexed')
+  await act(async () => useLibraryStore.setState({ status: libraryPage([track(1)]).status }))
+  expect(host.querySelector('[role="progressbar"]')).not.toBeNull()
+  expect(host.querySelector('[aria-label="Select Custom playlist"]')).toBeNull()
+  await act(async () => useConnectivityStore.setState({ blockingIndex: false, syncing: false }))
+  expect(host.querySelector('[role="progressbar"]')).toBeNull()
+  expect(host.querySelector('[aria-label="Select Custom playlist"]')).not.toBeNull()
+})
+
+it('retains normal navigation while tower soft sync is running', async () => {
+  await act(async () => {
+    useLibraryStore.setState({ status: { ...libraryPage([track(1)]).status, complete: false, blocking: false } })
+    useConnectivityStore.setState({ syncing: true, syncMode: 'soft', progress: { done: 100, total: 10000 } })
+  })
+  expect(host.querySelector('[role="progressbar"]')).toBeNull()
+  await click('Select Custom playlist')
+  expect(host.textContent).toContain('Back')
 })

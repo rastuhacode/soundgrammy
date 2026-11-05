@@ -99,7 +99,7 @@ interface PlaylistsState {
   setLiked: (trackIds: number[], liked: boolean) => Promise<BulkLikeResult>
   addTracks: (id: number, trackIds: number[]) => Promise<void>
   removeTracks: (id: number, positions: number[], expectedTrackIds: number[]) => Promise<void>
-  reorderTracks: (id: PlaylistId, trackIds: number[], expectedTrackIds: number[]) => Promise<void>
+  reorderTracks: (id: PlaylistId, trackIds: number[], expectedTrackIds: number[], moveIndices?: [number, number]) => Promise<void>
 }
 
 export const usePlaylistsStore = create<PlaylistsState>((set, get) => ({
@@ -190,12 +190,12 @@ export const usePlaylistsStore = create<PlaylistsState>((set, get) => ({
       ? { ...item, updatedAt, trackIds: item.trackIds.filter((_, index) => !removed.has(index)) }
       : item) })
   }),
-  reorderTracks: (id, trackIds, expectedTrackIds) => enqueue(async (generation) => {
+  reorderTracks: (id, trackIds, expectedTrackIds, moveIndices) => enqueue(async (generation) => {
     assertOrder(id, expectedTrackIds)
     const data = requireData()
     const dbId = id === LIKED_PLAYLIST_ID ? data.liked.id : id
     if (typeof dbId !== 'number') throw new Error('This playlist cannot be reordered')
-    const updatedAt = await api.reorderPlaylistTracks(dbId, trackIds)
+    const updatedAt = await api.reorderPlaylistTracks(dbId, trackIds, expectedTrackIds, moveIndices)
     assertSession(generation)
     const latest = requireData()
     if (id === LIKED_PLAYLIST_ID) get().setData({ ...latest, liked: { ...latest.liked, trackIds, updatedAt } })
