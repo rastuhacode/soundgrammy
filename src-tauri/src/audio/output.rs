@@ -326,7 +326,7 @@ impl Output {
     ) -> Result<(Self, HeapProd<f32>), &'static str> {
         let rate = config.sample_rate();
         let channels = config.channels() as usize;
-        // Two seconds maximum decode-ahead; startup watermark is 100ms.
+        // Two seconds maximum decode-ahead; startup watermark is 50ms.
         let (producer, consumer) = HeapRb::<f32>::new(rate as usize * channels * 2).split();
         let clock = Arc::new(Clock::default());
         clock.gain.store(

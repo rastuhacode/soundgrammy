@@ -219,11 +219,11 @@ async fn probe_embedded_artwork(
     if stream.total() < 10 {
         return Ok(None);
     }
-    let header = stream.read_artwork_range(0, 9, active.clone()).await?;
+    let header = stream.read_background_range(0, 9, active.clone()).await?;
     let Some(length) = leading_id3_length(&header, stream.total())? else {
         return Ok(None);
     };
-    let bytes = stream.read_artwork_range(0, length - 1, active).await?;
+    let bytes = stream.read_background_range(0, length - 1, active).await?;
     tokio::task::spawn_blocking(move || extract_id3_cover(bytes))
         .await
         .map_err(|error| AppError::msg(error.to_string()))?

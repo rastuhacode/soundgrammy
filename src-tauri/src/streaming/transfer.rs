@@ -35,6 +35,16 @@ pub(super) fn completed_chunk_wait_outcome(status: ChunkStatus) -> Option<ChunkW
 }
 
 impl TrackStream {
+    /// Speculation leaves aggregate media capacity available for demanded audio.
+    pub(crate) async fn prefetch_chunk(
+        self: &Arc<Self>,
+        index: usize,
+        active: Arc<AtomicBool>,
+    ) -> AppResult<()> {
+        self.ensure_chunk(index, Some(active), MediaPriority::Background)
+            .await
+    }
+
     pub async fn download_complete(self: &Arc<Self>) -> AppResult<PathBuf> {
         self.download_complete_with_active(None).await
     }
@@ -105,9 +115,8 @@ impl TrackStream {
         Ok(())
     }
 
-    /// Artwork shares the ledger but fetches missing chunks sequentially at
-    /// background priority, independently of its cancellation token.
-    pub(super) async fn ensure_artwork_range(
+    /// Artwork and playback speculation share verified chunks at background priority.
+    pub(super) async fn ensure_background_range(
         self: &Arc<Self>,
         start: u64,
         end: u64,

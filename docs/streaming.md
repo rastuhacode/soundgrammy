@@ -2,6 +2,39 @@
 
 Rust owns the complete playback path: `audio/source.rs` reads cached files or verified ranges from `TrackStream`, `audio/decode.rs` decodes packets with Symphonia, and `audio/output.rs` presents PCM through CPAL. The frontend sends transport commands and receives state; it does not fetch or append audio bytes.
 
+## Playback read-ahead
+
+Uncached playback follows Telegram Desktop's buffering policies: 128 KiB transfer
+parts, eight parts (1 MiB) of rolling byte read-ahead, a 32-second remote
+media-time load-ahead target, and three seconds of contiguous media coverage
+before resuming after an output underrun (or the remaining tail at EOF).
+Normal initial PCM readiness remains 50 ms. These targets come from Telegram's
+[reader](https://github.com/telegramdesktop/tdesktop/blob/dev/Telegram/SourceFiles/media/streaming/media_streaming_reader.cpp)
+and [player](https://github.com/telegramdesktop/tdesktop/blob/dev/Telegram/SourceFiles/media/streaming/media_streaming_player.cpp);
+the transport and decoder implementations remain SoundGrammy's.
+
+A playback-owned demux cursor reads verified cached ranges ahead of the decoder
+and uses actual packet timestamps to stop at the time target. It does not decode
+PCM. Its byte window fetches at most eight subsequent chunks, with one speculative
+claim at a time, through the shared background gate. Foreground demanded reads
+retain aggregate request capacity; existing in-flight shared chunk claims are
+reused. Normal sequential advance keeps the now-demanded claim alive. Seeks
+cancel obsolete windows and redirect both the prefetch cursor and passive display
+observer; skipped gaps are not filled. Speculative errors rebuild the demux cursor
+from verified data after a cancellation-aware 250 ms delay.
+
+The two-second PCM ring stays unchanged. Cached files open directly and do not
+start network prefetch. The separate storage-only display observer can outlive
+a released playback pipeline while explicit cache/export jobs finish, and never
+initiates downloads. Playback teardown cancels the prefetch cursor and its byte
+window; independent cache/export jobs retain their own lifetime. A retained,
+paused desktop pipeline can finish filling its bounded look-ahead target.
+
+The media-time target and extra byte window are separate limits: at low bitrates
+one MiB can represent more than 32 seconds. Container header/index probes may also
+read nonsequential ranges. Neither byte/time ratios nor total downloaded bytes
+are used as proof of contiguous playable headroom.
+
 ## Download lifecycle and partial cache
 
 - Each native source owns a playback session and cancellation token. Replacing or disposing the source closes the session and prevents new playback downloads. An already in-flight chunk can settle safely.

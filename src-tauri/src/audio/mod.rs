@@ -540,6 +540,8 @@ struct Pipeline {
     availability: Arc<availability::Availability>,
     observer: Option<CoverageObserver>,
     source_diagnostic: Arc<Mutex<Option<String>>>,
+    rebuffering: bool,
+    last_underruns: u64,
 }
 // The packet scanner can outlive mobile audio output while a paused track caches.
 struct CoverageObserver {
@@ -594,6 +596,7 @@ impl Drop for Pipeline {
         self.output.clock.playing.store(false, Ordering::Release);
         self.active.store(false, Ordering::Release);
         self.seek.cancel_read();
+        self.availability.prefetch_seek.cancel_read();
         if let Some(worker) = self.decoder.take() {
             let deadline = Instant::now() + Duration::from_millis(250);
             while !worker.is_finished() && Instant::now() < deadline {
@@ -629,6 +632,22 @@ fn output_stalled(
     now.duration_since(*stalled_since) >= timeout
 }
 
+fn ready_to_play(
+    queued: u64,
+    rate: u32,
+    eof: bool,
+    rebuffering: bool,
+    coverage: &availability::Availability,
+    position: f64,
+    duration: f64,
+) -> bool {
+    let pcm_ready = queued >= rate as u64 / 20 || (eof && queued > 0);
+    pcm_ready
+        && (!rebuffering
+            || eof
+            || coverage.has_headroom(position, availability::RECOVERY_SECONDS, duration))
+}
+
 fn pipeline(
     app: AppHandle,
     request: &Request,
@@ -646,6 +665,7 @@ fn pipeline(
     let clock = output.clock.clone();
     let seek = Arc::new(seek::SeekControl::default());
     let availability = Arc::new(availability::Availability::default());
+    availability.request_seek(origin);
     let observer_active = Arc::new(AtomicBool::new(true));
     let source_diagnostic = Arc::new(Mutex::new(None));
     let decoder_seek = seek.clone();
@@ -710,6 +730,8 @@ fn pipeline(
             availability,
         }),
         source_diagnostic,
+        rebuffering: false,
+        last_underruns: 0,
     })
 }
 fn update_session(snapshot: &mut Snapshot, session: &mut session::Session, desired: bool) {
@@ -1086,7 +1108,8 @@ fn run(
                         if let Some(p) = current.as_mut().filter(|_| restart.is_none()) {
                             p.output.clock.playing.store(false, Ordering::Release);
                             p.seek_revision = p.seek.request(target);
-                            p.availability.scan_seek.request(target);
+                            p.availability.request_seek(target);
+                            p.rebuffering = false;
                             p.origin = target;
                             p.landed = false;
                             p.waiting_seek = true;
@@ -1134,9 +1157,16 @@ fn run(
                     let pending =
                         consumed.saturating_sub(p.output.clock.presented.load(Ordering::Acquire));
                     let ready = !p.waiting_seek
-                        && (queued >= p.output.rate as u64 / 20
-                            || pending > 0
-                            || (p.eof && queued > 0));
+                        && ((!p.rebuffering && pending > 0)
+                            || ready_to_play(
+                                queued,
+                                p.output.rate,
+                                p.eof,
+                                p.rebuffering,
+                                &p.availability,
+                                snapshot.current_time_seconds,
+                                snapshot.duration_seconds,
+                            ));
                     let failed = p.output.clock.failed.load(Ordering::Acquire);
                     if ready && !failed {
                         // AAudio's synchronous start can return after PCM is already
@@ -1244,6 +1274,12 @@ fn run(
                 .load(Ordering::Acquire)
                 .saturating_sub(consumed);
             let presented = clock.presented.load(Ordering::Acquire);
+            let underruns = clock.underruns.load(Ordering::Acquire);
+            if underruns != p.last_underruns && !p.waiting_seek {
+                p.rebuffering = true;
+                clock.playing.store(false, Ordering::Release);
+            }
+            p.last_underruns = underruns;
             let stalled = output_stalled(
                 &mut last_output_frames,
                 &mut stalled_since,
@@ -1262,7 +1298,15 @@ fn run(
                     snapshot.status = Status::Paused;
                     desired = false;
                 }
-                let ready = queued >= p.output.rate as u64 / 20 || (p.eof && queued > 0);
+                let ready = ready_to_play(
+                    queued,
+                    p.output.rate,
+                    p.eof,
+                    p.rebuffering,
+                    &p.availability,
+                    snapshot.current_time_seconds,
+                    snapshot.duration_seconds,
+                );
                 if ready {
                     dirty |= snapshot.seeking;
                     if let Some(started) = p.seek_started.take() {
@@ -1277,13 +1321,17 @@ fn run(
                 if audible && ready && snapshot.status != "playing" {
                     clock.playing.store(true, Ordering::Release);
                 }
-                if audible && presented > 0 && !stalled {
+                if audible && ready && p.rebuffering {
+                    p.rebuffering = false;
+                    clock.playing.store(true, Ordering::Release);
+                }
+                if audible && presented > 0 && !stalled && !p.rebuffering {
                     if snapshot.status != "playing" {
                         dirty = true;
                     }
                     snapshot.status = Status::Playing;
                     snapshot.initial_loading = false;
-                } else if audible && stalled {
+                } else if audible && (stalled || p.rebuffering) {
                     if snapshot.status != "buffering" {
                         dirty = true;
                     }
@@ -1316,6 +1364,7 @@ fn run(
                     snapshot.current_time_seconds =
                         snapshot.current_time_seconds.min(snapshot.duration_seconds);
                 }
+                p.availability.set_position(snapshot.current_time_seconds);
                 if p.eof
                     && queued == 0
                     && consumed > 0
@@ -1395,6 +1444,27 @@ fn run(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn underrun_recovery_waits_for_media_headroom_without_growing_the_pcm_ring() {
+        let coverage = availability::Availability::default();
+        // Normal startup stays fast. An actual underrun requires three seconds
+        // of verified packet coverage, even with a full two-second PCM ring.
+        assert!(ready_to_play(
+            2400, 48000, false, false, &coverage, 10.0, 60.0
+        ));
+        coverage.record(10.0, 12.0);
+        assert!(!ready_to_play(
+            96000, 48000, false, true, &coverage, 10.0, 60.0
+        ));
+        coverage.record(12.0, 13.1);
+        assert!(ready_to_play(
+            2400, 48000, false, true, &coverage, 10.0, 60.0
+        ));
+        assert!(!ready_to_play(0, 48000, false, true, &coverage, 10.0, 60.0));
+        assert!(ready_to_play(1, 48000, true, true, &coverage, 59.9, 60.0));
+        assert!(!ready_to_play(0, 48000, true, true, &coverage, 60.0, 60.0));
+    }
 
     #[test]
     fn output_remains_live_while_callbacks_feed_pcm_between_presentation_updates() {

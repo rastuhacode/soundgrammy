@@ -16,6 +16,12 @@ use std::{
 use symphonia::core::io::MediaSource;
 use tauri::{AppHandle, Manager};
 
+#[cfg(test)]
+#[path = "source/diagnostics.rs"]
+mod diagnostics;
+#[path = "source/read_ahead.rs"]
+mod read_ahead;
+
 // Cancellation must not use Interrupted: read_exact and demuxers retry it forever.
 pub fn wait<T>(rx: &mpsc::Receiver<T>, active: &AtomicBool) -> io::Result<T> {
     loop {
@@ -49,17 +55,23 @@ impl Drop for Session {
 }
 trait RangeReader: Send + Sync {
     fn read(&self, start: u64, end: u64, active: Arc<AtomicBool>) -> io::Result<Vec<u8>>;
+    fn cancel_read_ahead(&self) {}
 }
 struct StreamReader {
     stream: Arc<TrackStream>,
     downloaded_only: bool,
     coverage: Arc<super::availability::Availability>,
     diagnostic: Arc<Mutex<Option<String>>>,
+    read_ahead: Option<read_ahead::ReadAhead>,
 }
 impl RangeReader for StreamReader {
     fn read(&self, start: u64, end: u64, active: Arc<AtomicBool>) -> io::Result<Vec<u8>> {
+        if let Some(ahead) = &self.read_ahead {
+            ahead.update(end, active.clone());
+        }
         let stream = self.stream.clone();
         let downloaded_only = self.downloaded_only;
+        let background = self.read_ahead.is_some();
         let coverage = self.coverage.clone();
         let token = active.clone();
         let (tx, rx) = mpsc::sync_channel(1);
@@ -67,6 +79,8 @@ impl RangeReader for StreamReader {
             // Always settle shared chunk state; never abort the downloader future.
             let result = if downloaded_only {
                 stream.read_downloaded_range(start, end, token).await
+            } else if background {
+                stream.read_background_range(start, end, token).await
             } else {
                 stream.read_range(start, end, Some(token)).await
             };
@@ -87,6 +101,12 @@ impl RangeReader for StreamReader {
             }
         }
         result
+    }
+
+    fn cancel_read_ahead(&self) {
+        if let Some(ahead) = &self.read_ahead {
+            ahead.cancel();
+        }
     }
 }
 pub struct Source {
@@ -177,6 +197,7 @@ impl Source {
             coverage.complete.store(true, Ordering::Release);
         }
         if let Some(stream) = &stream {
+            spawn_prefetch(stream.clone(), active.clone(), coverage.clone())?;
             spawn_observer(
                 stream.clone(),
                 observer_active,
@@ -192,6 +213,7 @@ impl Source {
                     downloaded_only: false,
                     coverage,
                     diagnostic,
+                    read_ahead: None,
                 }) as Box<dyn RangeReader>
             }),
             active,
@@ -219,6 +241,7 @@ pub fn spawn_observer(
             downloaded_only: true,
             coverage: coverage.clone(),
             diagnostic,
+            read_ahead: None,
         })),
         active: active.clone(),
         seek: Some(coverage.scan_seek.clone()),
@@ -230,6 +253,67 @@ pub fn spawn_observer(
         _lease: None,
     };
     spawn_scanner(Box::new(observer), active, coverage).map(|_| ())
+}
+
+fn spawn_prefetch(
+    stream: Arc<TrackStream>,
+    active: Arc<AtomicBool>,
+    coverage: Arc<super::availability::Availability>,
+) -> io::Result<()> {
+    std::thread::Builder::new()
+        .name("native-audio-prefetch".into())
+        .spawn(move || {
+            run_prefetch(&active, &coverage, || {
+                let ahead = read_ahead::ReadAhead::new(stream.clone(), active.clone());
+                Box::new(Source {
+                    file: None,
+                    stream: Some(Box::new(StreamReader {
+                        stream: stream.clone(),
+                        downloaded_only: false,
+                        coverage: coverage.clone(),
+                        // Speculation must not overwrite demanded-read diagnostics.
+                        diagnostic: Arc::new(Mutex::new(None)),
+                        read_ahead: Some(ahead),
+                    })),
+                    active: active.clone(),
+                    seek: Some(coverage.prefetch_seek.clone()),
+                    cursor: 0,
+                    total: stream.total(),
+                    block_start: 0,
+                    block: Vec::new(),
+                    _session: None,
+                    _lease: None,
+                })
+            });
+        })
+        .map(|_| ())
+}
+
+fn run_prefetch(
+    active: &AtomicBool,
+    coverage: &super::availability::Availability,
+    source: impl Fn() -> Box<dyn MediaSource>,
+) {
+    while active.load(Ordering::Acquire) {
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            super::availability::prefetch(source(), active, coverage);
+        }));
+        // A background range may fail while the foreground request recovers.
+        // Re-probe verified data rather than leaving recovery waiting forever,
+        // or retrying a demuxer whose partial packet parse was interrupted.
+        for _ in 0..10 {
+            if !active.load(Ordering::Acquire) {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(25));
+        }
+        coverage.prefetch_seek.cancel_read();
+        coverage
+            .prefetch_seek
+            .interruptible
+            .store(false, Ordering::Release);
+        coverage.prefetch_seek.request(coverage.position());
+    }
 }
 
 pub(super) fn spawn_scanner(
@@ -321,6 +405,11 @@ impl Seek for Source {
         };
         if position < 0 || position > self.total as i128 {
             return Err(io::Error::new(io::ErrorKind::InvalidInput, "invalid seek"));
+        }
+        if self.cursor != position as u64 {
+            if let Some(stream) = &self.stream {
+                stream.cancel_read_ahead();
+            }
         }
         self.cursor = position as u64;
         if let Some(file) = self.file.as_mut() {
@@ -422,6 +511,136 @@ mod streaming_decode_tests {
             Ok(self.bytes[start as usize..=end as usize].to_vec())
         }
     }
+    #[test]
+    fn prefetch_reprobes_after_a_failed_background_range() {
+        use std::sync::atomic::AtomicUsize;
+        struct FailsOnce {
+            bytes: Arc<Vec<u8>>,
+            fail: Arc<AtomicBool>,
+        }
+        impl RangeReader for FailsOnce {
+            fn read(&self, start: u64, end: u64, _: Arc<AtomicBool>) -> io::Result<Vec<u8>> {
+                if start >= CHUNK_SIZE && self.fail.swap(false, Ordering::AcqRel) {
+                    return Err(io::Error::other("injected background request failure"));
+                }
+                Ok(self.bytes[start as usize..=end as usize].to_vec())
+            }
+        }
+        let bytes = Arc::new(include_bytes!("../../tests/fixtures/audio/long-tone.mp3").to_vec());
+        let active = Arc::new(AtomicBool::new(true));
+        let coverage = Arc::new(super::super::availability::Availability::default());
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let failed = Arc::new(AtomicBool::new(true));
+        let token = active.clone();
+        let observer = coverage.clone();
+        let opens = attempts.clone();
+        let worker = std::thread::spawn(move || {
+            run_prefetch(&token, &observer, || {
+                opens.fetch_add(1, Ordering::AcqRel);
+                Box::new(Source {
+                    file: None,
+                    stream: Some(Box::new(FailsOnce {
+                        bytes: bytes.clone(),
+                        fail: failed.clone(),
+                    })),
+                    active: token.clone(),
+                    seek: Some(observer.prefetch_seek.clone()),
+                    cursor: 0,
+                    total: bytes.len() as u64,
+                    block_start: 0,
+                    block: Vec::new(),
+                    _session: None,
+                    _lease: None,
+                })
+            });
+        });
+        let deadline = Instant::now() + Duration::from_secs(3);
+        while !coverage.has_headroom(0.1, 31.9, 120.0) && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let recovered = coverage.has_headroom(0.1, 31.9, 120.0);
+        active.store(false, Ordering::Release);
+        coverage.prefetch_seek.cancel_read();
+        worker.join().unwrap();
+        assert!(recovered, "background prefetch did not recover");
+        assert!(attempts.load(Ordering::Acquire) >= 2);
+    }
+
+    #[test]
+    fn prefetch_maps_thirty_two_seconds_without_pcm_and_moves_with_playback() {
+        let mp3 = include_bytes!("../../tests/fixtures/audio/long-tone.mp3").to_vec();
+        let second = include_bytes!("../../tests/fixtures/audio/tone.wav");
+        let mut wav = second[..44].to_vec();
+        for _ in 0..120 {
+            wav.extend_from_slice(&second[44..]);
+        }
+        let size = wav.len() as u32;
+        wav[4..8].copy_from_slice(&(size - 8).to_le_bytes());
+        wav[40..44].copy_from_slice(&(size - 44).to_le_bytes());
+        for bytes in [mp3, wav] {
+            let total = bytes.len() as u64;
+            let requests = Arc::new(Mutex::new(Vec::new()));
+            let active = Arc::new(AtomicBool::new(true));
+            let coverage = Arc::new(super::super::availability::Availability::default());
+            let source = Source {
+                file: None,
+                stream: Some(Box::new(FileRanges {
+                    bytes,
+                    requests: requests.clone(),
+                })),
+                active: active.clone(),
+                seek: Some(coverage.prefetch_seek.clone()),
+                cursor: 0,
+                total,
+                block_start: 0,
+                block: Vec::new(),
+                _session: None,
+                _lease: None,
+            };
+            let token = active.clone();
+            let observer = coverage.clone();
+            let worker = std::thread::spawn(move || {
+                super::super::availability::prefetch(Box::new(source), &token, &observer);
+            });
+            let wait_for = |start: f64, end: f64| {
+                let deadline = Instant::now() + Duration::from_secs(3);
+                while Instant::now() < deadline {
+                    if coverage.has_headroom(start, end - start, 120.0) {
+                        return true;
+                    }
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                false
+            };
+            let initial = wait_for(0.1, 32.0);
+            std::thread::sleep(Duration::from_millis(60));
+            let initial_end = coverage.ranges(120.0).last().map(|r| r.end).unwrap_or(0.0);
+            coverage.set_position(20.0);
+            let rolling = wait_for(20.0, 52.0);
+            coverage.request_seek(95.0);
+            let sought = wait_for(95.1, 119.9);
+            active.store(false, Ordering::Release);
+            coverage.prefetch_seek.cancel_read();
+            worker.join().unwrap();
+            assert!(
+                initial && rolling && sought,
+                "missing initial, rolling, or sought coverage"
+            );
+            assert!(
+                initial_end < 32.1,
+                "prefetch must stop at its time target, got {initial_end}"
+            );
+            assert!(
+                !requests
+                    .lock()
+                    .unwrap()
+                    .iter()
+                    .any(|&offset| { offset > total * 3 / 5 && offset < total * 7 / 10 }),
+                "seek must not download the middle gap"
+            );
+        }
+    }
+
     #[test]
     fn mp3_seek_downloads_target_without_filling_the_gap() {
         let bytes = include_bytes!("../../tests/fixtures/audio/long-tone.mp3").to_vec();

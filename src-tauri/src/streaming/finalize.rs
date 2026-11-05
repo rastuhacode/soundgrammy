@@ -181,13 +181,13 @@ impl TrackStream {
         self.read_ready_range(start, end).await
     }
 
-    pub async fn read_artwork_range(
+    pub async fn read_background_range(
         self: &Arc<Self>,
         start: u64,
         end: u64,
         active: Arc<AtomicBool>,
     ) -> AppResult<Vec<u8>> {
-        self.ensure_artwork_range(start, end, active).await?;
+        self.ensure_background_range(start, end, active).await?;
         self.read_ready_range(start, end).await
     }
 
