@@ -37,7 +37,7 @@ You can read more about philosophy around SoundGrammy in [Why I don’t use musi
 - ✏️**Editable queue** — play next, add to the end, reorder tracks, and save the queue as a playlist.
 - 💾**Downloads and exports** — download individual tracks or complete playlists, including an `M3U8` playlist file.
 - 📝**Bulk actions** — add, cache, download, or manage many selected tracks at once.
-- ✨**Thoughtful extras** — fullscreen playback (with artwork bounce), drag and drop, configurable caching, MTProto proxy support, smart shuffle and more.
+- ✨**Thoughtful extras** — fullscreen playback with adaptive artwork movement and music-reactive artwork colors, drag and drop, configurable caching, MTProto proxy support, smart shuffle and more.
 
 ### What SoundGrammy is NOT
 

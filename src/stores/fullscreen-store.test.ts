@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { DEFAULT_BOUNCE_SETTINGS } from '@/lib/bounce'
+import { BOUNCE_SETTINGS_KEY, DEFAULT_BOUNCE_SETTINGS, loadBounceSettings } from '@/lib/bounce'
 import {
   KEEP_DISPLAY_AWAKE_KEY,
   loadKeepDisplayAwake,
@@ -46,23 +46,13 @@ describe('fullscreen display wake setting', () => {
   })
 })
 
-describe('fullscreen bounce settings', () => {
-  it('updates one control without replacing the others and persists it', () => {
-    useFullscreenStore.getState().setBounceSettings({ strength: 82 })
-    expect(useFullscreenStore.getState().bounce).toEqual({
-      ...DEFAULT_BOUNCE_SETTINGS,
-      strength: 82,
-    })
-    expect([...values.values()][0]).toContain('"strength":82')
-  })
-
-  it('resets every control to the defaults', () => {
-    useFullscreenStore.getState().setBounceSettings({
-      enabled: false,
-      balance: 100,
-      smoothness: 0,
-    })
-    useFullscreenStore.getState().resetBounceSettings()
-    expect(useFullscreenStore.getState().bounce).toEqual(DEFAULT_BOUNCE_SETTINGS)
+describe('fullscreen dynamic setting', () => {
+  it('persists the single enabled preference', () => {
+    useFullscreenStore.getState().setBounceEnabled(true)
+    expect(useFullscreenStore.getState().bounce).toEqual({ enabled: true })
+    expect(values.get(BOUNCE_SETTINGS_KEY)).toBe('{"enabled":true}')
+    expect(loadBounceSettings()).toEqual({ enabled: true })
+    useFullscreenStore.getState().setBounceEnabled(false)
+    expect(loadBounceSettings()).toEqual({ enabled: false })
   })
 })

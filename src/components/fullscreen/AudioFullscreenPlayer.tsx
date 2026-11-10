@@ -3,7 +3,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window'
 import { Minimize2, Music } from 'lucide-react'
 import type { Track } from '@/lib/db'
 import { useCachedThumbnail } from '@/hooks/use-cached-thumbnail'
-import { useImagePalette } from '@/hooks/use-image-palette'
+import { artworkColorRange, useImagePalette } from '@/hooks/use-image-palette'
 import { useArtworkBounce } from '@/hooks/use-artwork-bounce'
 import { formatTime } from '@/lib/format-time'
 import { updateFullscreenWakeLock } from '@/lib/fullscreen-wake-lock'
@@ -39,7 +39,7 @@ interface AudioFullscreenPlayerProps {
 
 export function AudioFullscreenPlayer(props: AudioFullscreenPlayerProps) {
   const { url, failed, onError } = useCachedThumbnail(props.track.id, { quality: 'high' })
-  const palette = useImagePalette(url)
+  const { colors, accent } = useImagePalette(url)
   const exitFullscreen = useFullscreenStore(state => state.exitFullscreen)
   const syncFullscreen = useFullscreenStore(state => state.syncFullscreen)
   const keepDisplayAwake = useFullscreenStore(state => state.keepDisplayAwake)
@@ -47,10 +47,14 @@ export function AudioFullscreenPlayer(props: AudioFullscreenPlayerProps) {
   const [controlsVisible, setControlsVisible] = useState(true)
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const artworkBounceRef = useRef<HTMLDivElement>(null)
+  const paletteRef = useRef<HTMLDivElement>(null)
+  const accentPeak = accent ? artworkColorRange(accent, { recoveredAccent: true }).peak : undefined
+  const colorRanges = colors.map(color => artworkColorRange(color, { accentPeak }))
 
   useArtworkBounce({
     trackId: props.track.id,
     elementRef: artworkBounceRef,
+    paletteRef,
     currentTime: props.currentTime,
     isActuallyPlaying: props.isActuallyPlaying,
   })
@@ -115,9 +119,15 @@ export function AudioFullscreenPlayer(props: AudioFullscreenPlayerProps) {
         !controlsVisible && 'cursor-none',
       )}
       style={{
-        '--fullscreen-color-one': palette[0],
-        '--fullscreen-color-two': palette[1],
-        '--fullscreen-color-three': palette[2],
+        '--fullscreen-color-one': colorRanges[0].rest,
+        '--fullscreen-color-two': colorRanges[1].rest,
+        '--fullscreen-color-three': colorRanges[2].rest,
+        '--fullscreen-top-active': colorRanges[0].active,
+        '--fullscreen-top-peak': colorRanges[0].peak,
+        '--fullscreen-center-active': colorRanges[1].active,
+        '--fullscreen-center-peak': colorRanges[1].peak,
+        '--fullscreen-bottom-active': colorRanges[2].active,
+        '--fullscreen-bottom-peak': colorRanges[2].peak,
       } as React.CSSProperties}
     >
       {url
@@ -131,9 +141,15 @@ export function AudioFullscreenPlayer(props: AudioFullscreenPlayerProps) {
           )
         : <div className="absolute inset-0 bg-[#141414]" />}
       <div
-        key={`palette:${props.track.id}:${url ?? 'fallback'}`}
+        ref={paletteRef}
+        aria-hidden
+        data-monochrome={colorRanges.every(range => range.peak === 'transparent') || undefined}
         className="fullscreen-palette absolute inset-0"
-      />
+      >
+        <div className="fullscreen-palette-band fullscreen-palette-bottom" />
+        <div className="fullscreen-palette-band fullscreen-palette-center" />
+        <div className="fullscreen-palette-band fullscreen-palette-top" />
+      </div>
       <div className="absolute inset-0 bg-black/45" />
 
       <button

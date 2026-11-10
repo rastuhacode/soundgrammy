@@ -132,6 +132,9 @@ pub struct TrackBounceProfileRecord {
     pub file_size: Option<i64>,
     pub loudness: Vec<u8>,
     pub onset: Vec<u8>,
+    pub bass: Vec<u8>,
+    pub mid: Vec<u8>,
+    pub treble: Vec<u8>,
 }
 
 #[derive(Debug, Clone, Serialize)]

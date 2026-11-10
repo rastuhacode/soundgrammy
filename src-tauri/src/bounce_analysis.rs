@@ -25,10 +25,10 @@ mod normalization;
 #[cfg(test)]
 mod tests;
 
-use normalization::{normalize_loudness, normalize_onset, quantize};
+use normalization::{normalize_band, normalize_loudness, normalize_onset, quantize};
 
-pub const ALGORITHM_VERSION: i64 = 1;
-pub const FRAME_MS: i64 = 50;
+pub const ALGORITHM_VERSION: i64 = 2;
+pub const FRAME_MS: i64 = 25;
 const FFT_SIZE: usize = 2048;
 const FFT_HOP: usize = 1024;
 
@@ -46,6 +46,12 @@ pub enum BounceProfileResponse {
         loudness_data: String,
         #[serde(rename = "onsetData")]
         onset_data: String,
+        #[serde(rename = "bassData")]
+        bass_data: String,
+        #[serde(rename = "midData")]
+        mid_data: String,
+        #[serde(rename = "trebleData")]
+        treble_data: String,
     },
     Unavailable,
 }
@@ -59,6 +65,9 @@ impl BounceProfileResponse {
             duration_ms: record.duration_ms,
             loudness_data: encoder.encode(record.loudness),
             onset_data: encoder.encode(record.onset),
+            bass_data: encoder.encode(record.bass),
+            mid_data: encoder.encode(record.mid),
+            treble_data: encoder.encode(record.treble),
         }
     }
 }
@@ -125,6 +134,9 @@ pub async fn profile_for_track(
         file_size: track.file_size,
         loudness: analyzed.loudness,
         onset: analyzed.onset,
+        bass: analyzed.bass,
+        mid: analyzed.mid,
+        treble: analyzed.treble,
     };
     if let Err(error) = state.db.save_track_bounce_profile(&record) {
         tracing::warn!(track_id, "could not cache bounce profile: {error}");
@@ -137,6 +149,9 @@ struct AnalyzedProfile {
     duration_ms: i64,
     loudness: Vec<u8>,
     onset: Vec<u8>,
+    bass: Vec<u8>,
+    mid: Vec<u8>,
+    treble: Vec<u8>,
 }
 
 fn analyze_file(path: &Path) -> anyhow::Result<AnalyzedProfile> {
@@ -294,15 +309,17 @@ struct FeatureExtractor {
     power_frames: Vec<f32>,
     onset_sum: Vec<f32>,
     onset_count: Vec<u16>,
+    band_power: Vec<[f32; 3]>,
     shelf: Biquad,
     high_pass: Biquad,
     shelf_state: Vec<BiquadState>,
     high_pass_state: Vec<BiquadState>,
     fft: std::sync::Arc<dyn Fft<f32>>,
     fft_window: Vec<f32>,
-    fft_buffer: VecDeque<f32>,
+    fft_buffers: Vec<VecDeque<f32>>,
     fft_scratch: Vec<Complex32>,
     previous_spectrum: Vec<f32>,
+    spectrum: Vec<f32>,
     samples_until_fft: usize,
 }
 
@@ -326,15 +343,19 @@ impl FeatureExtractor {
             power_frames: Vec::new(),
             onset_sum: Vec::new(),
             onset_count: Vec::new(),
+            band_power: Vec::new(),
             shelf: Biquad::high_shelf(sample_rate as f32, 1_500.0, 4.0),
             high_pass: Biquad::high_pass(sample_rate as f32, 60.0, 0.5),
             shelf_state: vec![BiquadState::default(); channels],
             high_pass_state: vec![BiquadState::default(); channels],
             fft,
             fft_window,
-            fft_buffer: VecDeque::with_capacity(FFT_SIZE * 2),
+            fft_buffers: (0..channels)
+                .map(|_| VecDeque::with_capacity(FFT_SIZE * 2))
+                .collect(),
             fft_scratch: vec![Complex32::default(); FFT_SIZE],
             previous_spectrum: vec![0.0; FFT_SIZE / 2],
+            spectrum: vec![0.0; FFT_SIZE / 2],
             samples_until_fft: FFT_SIZE,
         }
     }
@@ -353,15 +374,18 @@ impl FeatureExtractor {
             self.frame_count += 1;
             self.total_frames += 1;
 
-            // A stable channel is preferable to averaging here: anti-phase
-            // stereo should not erase spectral motion.
-            self.fft_buffer.push_back(frame[0]);
+            // Analyze channel power independently: neither anti-phase audio nor
+            // a hard-panned instrument should disappear from the visual profile.
+            for (buffer, sample) in self.fft_buffers.iter_mut().zip(frame) {
+                buffer.push_back(*sample);
+            }
             self.samples_until_fft = self.samples_until_fft.saturating_sub(1);
-            if self.samples_until_fft == 0 && self.fft_buffer.len() >= FFT_SIZE {
+            if self.samples_until_fft == 0 && self.fft_buffers[0].len() >= FFT_SIZE {
                 self.compute_flux();
-                self.samples_until_fft = FFT_HOP;
-                for _ in 0..FFT_HOP.min(self.fft_buffer.len()) {
-                    self.fft_buffer.pop_front();
+                let hop = FFT_HOP.min(self.frame_samples);
+                self.samples_until_fft = hop;
+                for buffer in &mut self.fft_buffers {
+                    buffer.drain(..hop);
                 }
             }
 
@@ -382,18 +406,34 @@ impl FeatureExtractor {
     }
 
     fn compute_flux(&mut self) {
-        for (index, value) in self.fft_buffer.iter().take(FFT_SIZE).enumerate() {
-            self.fft_scratch[index] = Complex32::new(*value * self.fft_window[index], 0.0);
+        self.spectrum.fill(0.0);
+        for buffer in &self.fft_buffers {
+            for (index, value) in buffer.iter().take(FFT_SIZE).enumerate() {
+                self.fft_scratch[index] = Complex32::new(*value * self.fft_window[index], 0.0);
+            }
+            self.fft.process(&mut self.fft_scratch);
+            for (power, bin) in self.spectrum.iter_mut().zip(&self.fft_scratch) {
+                *power += bin.norm_sqr() / self.channels as f32;
+            }
         }
-        self.fft.process(&mut self.fft_scratch);
         let hz_per_bin = self.sample_rate as f32 / FFT_SIZE as f32;
         let mut flux = 0.0;
+        let mut bands = [0.0; 3];
         for index in 1..FFT_SIZE / 2 {
             let frequency = index as f32 * hz_per_bin;
-            if !(45.0..=16_000.0).contains(&frequency) {
+            if !(20.0..=16_000.0).contains(&frequency) {
                 continue;
             }
-            let magnitude = self.fft_scratch[index].norm().ln_1p();
+            let band = if frequency < 250.0 {
+                0
+            } else if frequency < 2_500.0 {
+                1
+            } else {
+                2
+            };
+            // Hann-window power, scaled back into the sample-power domain.
+            bands[band] += self.spectrum[index] * 16.0 / (3.0 * (FFT_SIZE * FFT_SIZE) as f32);
+            let magnitude = self.spectrum[index].sqrt().ln_1p();
             let delta = (magnitude - self.previous_spectrum[index]).max(0.0);
             let weight = if frequency < 180.0 {
                 1.2
@@ -410,9 +450,13 @@ impl FeatureExtractor {
         if self.onset_sum.len() <= profile_index {
             self.onset_sum.resize(profile_index + 1, 0.0);
             self.onset_count.resize(profile_index + 1, 0);
+            self.band_power.resize(profile_index + 1, [0.0; 3]);
         }
         self.onset_sum[profile_index] += flux;
         self.onset_count[profile_index] = self.onset_count[profile_index].saturating_add(1);
+        for (output, power) in self.band_power[profile_index].iter_mut().zip(bands) {
+            *output += power;
+        }
     }
 
     fn finish(mut self) -> anyhow::Result<AnalyzedProfile> {
@@ -434,10 +478,23 @@ impl FeatureExtractor {
         }
         let loudness = normalize_loudness(&self.power_frames);
         let onset = normalize_onset(&raw_onset, &self.power_frames);
+        let [bass, mid, treble] = [0, 1, 2].map(|band| {
+            let power: Vec<f32> = (0..frame_count)
+                .map(|index| {
+                    self.band_power.get(index).map_or(0.0, |bands| {
+                        bands[band] / self.onset_count[index].max(1) as f32
+                    })
+                })
+                .collect();
+            quantize(&normalize_band(&power, &self.power_frames))
+        });
         Ok(AnalyzedProfile {
             duration_ms: ((self.total_frames as u128 * 1000) / self.sample_rate as u128) as i64,
             loudness: quantize(&loudness),
             onset: quantize(&onset),
+            bass,
+            mid,
+            treble,
         })
     }
 }
