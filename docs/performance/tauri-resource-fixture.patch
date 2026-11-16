@@ -1,0 +1,256 @@
+--- a/src-tauri/src/lib.rs
++++ b/src-tauri/src/lib.rs
+@@ -69,8 +69,8 @@
+             ));
+             let config = config::Config::load()?;
+ 
+-            let data_dir = handle.path().app_data_dir()?;
+-            let cache_dir = handle.path().app_cache_dir()?;
++            let data_dir = std::path::PathBuf::from(std::env::var("SOUNDGRAMMY_DATA_DIR").expect("isolated audit root")).join("data");
++            let cache_dir = std::path::PathBuf::from(std::env::var("SOUNDGRAMMY_DATA_DIR").expect("isolated audit root")).join("cache");
+             std::fs::create_dir_all(&data_dir)?;
+             std::fs::create_dir_all(&cache_dir)?;
+ 
+@@ -95,7 +95,7 @@
+ 
+             Ok(())
+         })
+-        .invoke_handler(tauri::generate_handler![
++        .invoke_handler(tauri::generate_handler![audit_fixture, audit_ready,
+             commands::audio::native_player_command,
+             commands::audio::native_audio_capabilities,
+             commands::audio::native_audio_snapshot,
+@@ -211,3 +211,17 @@
+         );
+     }
+ }
++
++#[tauri::command]
++fn audit_fixture() -> Option<serde_json::Value> {
++    let mut value: serde_json::Value = std::env::var_os("SOUNDGRAMMY_BENCH_FIXTURE").and_then(|_|std::fs::read(std::env::var("SOUNDGRAMMY_BENCH_FIXTURE_PATH").unwrap_or_else(|_|"/private/tmp/soundgrammy-audit-fixture.json".into())).ok()).and_then(|v|serde_json::from_slice(&v).ok())?;
++    if let Ok(mode) = std::env::var("SOUNDGRAMMY_PREVIEW_PERF_MODE") { value["_performance_mode"] = serde_json::json!(mode); }
++    if let Ok(scenario)=std::env::var("SOUNDGRAMMY_BENCH_SCENARIO") {value["_benchmark_scenario"]=serde_json::json!(scenario);}
++    Some(value)
++}
++#[tauri::command]
++fn audit_ready(payload:serde_json::Value) {
++    if let Ok(path)=std::env::var("SOUNDGRAMMY_BENCH_READY_FILE") {
++        if path.starts_with("/private/tmp/") { let _=std::fs::write(if payload["phase"]=="startup" {format!("{}.startup.json",path.trim_end_matches(".json"))}else if payload["phase"]=="metrics" {format!("{}.frames.json",path.trim_end_matches(".json"))}else{path},payload.to_string()); }
++    }
++}
+--- a/src-tauri/tauri.conf.json
++++ b/src-tauri/tauri.conf.json
+@@ -1,8 +1,8 @@
+ {
+   "$schema": "https://schema.tauri.app/config/2",
+-  "productName": "SoundGrammy",
++  "productName": "SoundGrammy Tauri Audit",
+   "version": "3.5.0",
+-  "identifier": "com.soundgrammy.app",
++  "identifier": "com.soundgrammy.app.audit.tauri",
+   "build": {
+     "frontendDist": "../dist",
+     "devUrl": "http://localhost:1420",
+@@ -13,12 +13,13 @@
+     "windows": [
+       {
+         "label": "main",
+-        "title": "SoundGrammy",
++        "title": "SoundGrammy Tauri Audit",
+         "devtools": true,
+         "width": 1200,
+         "height": 800,
+         "minWidth": 320,
+-        "minHeight": 480
++        "minHeight": 480,
++        "dataDirectory": "/private/tmp/soundgrammy-tauri-webview-benchmark"
+       }
+     ],
+     "security": {
+@@ -27,7 +28,8 @@
+         "enable": true,
+         "scope": [
+           "$APPCACHE/**",
+-          "$APPCACHE/*"
++          "$APPCACHE/*",
++          "/private/tmp/soundgrammy-benchmark-assets/**"
+         ]
+       }
+     }
+--- a/src-tauri/capabilities/default.json
++++ b/src-tauri/capabilities/default.json
+@@ -2,15 +2,23 @@
+   "$schema": "../gen/schemas/desktop-schema.json",
+   "identifier": "default",
+   "description": "Default capabilities for the SoundGrammy main window",
+-  "windows": ["main"],
++  "windows": [
++    "main"
++  ],
+   "permissions": [
+     "core:default",
+     {
+       "identifier": "opener:allow-open-url",
+       "allow": [
+-        { "url": "https://www.last.fm/*" },
+-        { "url": "https://github.com/Flowseal/tg-ws-proxy" },
+-        { "url": "https://github.com/rastuhacode/soundgrammy/releases" }
++        {
++          "url": "https://www.last.fm/*"
++        },
++        {
++          "url": "https://github.com/Flowseal/tg-ws-proxy"
++        },
++        {
++          "url": "https://github.com/rastuhacode/soundgrammy/releases"
++        }
+       ]
+     },
+     "opener:allow-reveal-item-in-dir",
+@@ -18,6 +26,8 @@
+     "core:event:default",
+     "core:window:allow-start-dragging",
+     "core:window:allow-set-fullscreen",
+-    "core:window:allow-is-fullscreen"
++    "core:window:allow-is-fullscreen",
++    "core:window:allow-set-size",
++    "core:window:allow-minimize"
+   ]
+ }
+--- a/src/main.tsx
++++ b/src/main.tsx
+@@ -1,5 +1,8 @@
++import { invoke } from '@tauri-apps/api/core'
++import { setAuditFixture } from '@/lib/audit'
+ import { StrictMode } from 'react'
+ import { createRoot } from 'react-dom/client'
++import { startBenchmark } from './resource-benchmark'
+ import App from '@/App'
+ import { installGlobalErrorLogging } from '@/lib/app-logger'
+ import { isAndroid } from '@/lib/platform'
+@@ -8,8 +11,18 @@
+ installGlobalErrorLogging()
+ if (isAndroid(navigator.userAgent)) document.documentElement.dataset.platform = 'android'
+ 
++const fixture = await invoke('audit_fixture'); localStorage.clear(); setAuditFixture(fixture)
+ createRoot(document.getElementById('root') as HTMLElement).render(
+   <StrictMode>
+     <App />
+   </StrictMode>,
+ )
++
++let reported=false; const observer = new MutationObserver(() => {
++  if (!reported && ((document.body.innerText.includes('Track 00001') && document.body.innerText.includes('1:23')) || (!fixture && document.body.innerText.includes('Sound')))) {
++    reported=true; requestAnimationFrame(()=>requestAnimationFrame(()=>void invoke('audit_ready',{payload:{phase:'startup',text:document.body.innerText,frontendMs:performance.now()}}))); observer.disconnect();
++  }
++}); observer.observe(document.body,{subtree:true,childList:true});
++
++
++void startBenchmark(fixture)
+--- a/src/lib/api.ts
++++ b/src/lib/api.ts
+@@ -1,3 +1,4 @@
++import { auditResponse } from './audit'
+ import type {
+   CacheJobResult,
+   CacheClearResult,
+@@ -44,6 +45,7 @@
+ 
+ async function invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
+   try {
++    const audit=auditResponse(command,args); if(audit.handled)return audit.value as T
+     return await tauriInvoke<T>(command, args)
+   }
+   catch (error) {
+--- /dev/null
++++ b/src/lib/audit.ts
+@@ -0,0 +1,31 @@
++import type { Track } from '@/types'
++let fixture: any = null
++let tracks:any[]=[]
++let playerCache:any=null, snapshotCache:any=null
++export function setAuditFixture(value: unknown) {fixture=value; tracks=fixture?.tracks.map((t:any)=>({...t,tg_user_id:1,file_id:'',file_unique_id:String(t.id),source:'profile',created_at:'2026-11-14T00:00:00Z'}))??[]}
++export function auditResponse(command:string,args?:Record<string,unknown>): {handled:boolean,value:any} {
++ if(!fixture)return {handled:false,value:null}
++ const status={tgUserId:1,revision:1,indexed:tracks.length,total:tracks.length,complete:true,blocking:false,processed:tracks.length,lastSyncAt:'2026-11-14T00:00:00Z'}
++ const user={id:1,firstName:'SoundGrammy',lastName:null,username:null,phone:null}
++ const player=playerCache??={revision:1,attempt:1,isPlaying:fixture?._benchmark_scenario==='fullscreen-playing',endReason:'',preferences:{repeat:'none',shuffle:'off',mode:'random'},queue:{tracks,cursor:4,source:{type:'playlist',playlistId:'all',name:'All tracks',trackIds:tracks.map((t:Track)=>t.id)},sourceIndices:null,baseEntries:null}}
++ const snapshot=snapshotCache??={revision:1,kind:'native-rust',status:fixture?._benchmark_scenario==='fullscreen-playing'?'playing':'paused',player,trackId:5,attemptId:null,currentTimeSeconds:83,durationSeconds:196,bufferedRanges:[],volumePercent:25,error:null,initialLoading:false,seeking:false}
++ let value:any=null
++ switch(command){
++  case 'auth_status': case 'refresh_auth':value={authorized:true,user};break
++  case 'list_tracks_page':{const offset=Number(args?.offset??0);value={tracks:tracks.slice(offset,offset+500).map((track:Track,i:number)=>({track,position:offset+i})),status,nextOffset:offset+500<tracks.length?offset+500:null};break}
++  case 'list_playlists':value={liked:{id:1,trackIds:[1,3,5],updatedAt:'2026-11-14'},custom:[{id:2,name:'Presentation',trackIds:[1,2,1,4],updatedAt:'2026-11-14'}]};break
++  case 'list_listen_stats':case 'get_cache_status':value=[];break
++  case 'get_listen_statistics_enabled':value=true;break
++  case 'get_lastfm_status':value={configured:false,connected:false,enabled:false,username:null,pendingCount:0};break
++  case 'native_audio_capabilities':value={available:true,streaming:true,codecs:[]};break
++  case 'native_audio_snapshot':case 'native_player_command':value=snapshot;break
++  case 'sync_saved_music':value={changed:false,total:tracks.length,lastSyncAt:status.lastSyncAt};break
++  case 'sync_status':value=status.lastSyncAt;break
++  case 'get_track_thumbnail':value=fixture.thumbnails?.[String(args?.trackId)]??null;break
++  case 'get_track_bounce_profile':value=fixture.bounce_profile??{status:'unavailable'};break
++  case 'get_user_avatar':value=null;break
++  case 'get_profile':value={tgUserId:1,firstName:'SoundGrammy',lastName:null,username:null,phone:null};break
++  default:if(command.startsWith('native_audio_')) return {handled:true,value:snapshot}; return {handled:false,value:null}
++ }
++ return {handled:true,value}
++}
+--- /dev/null
++++ b/src/resource-benchmark.ts
+@@ -0,0 +1,55 @@
++// Audit-only adapter for the disposable develop checkout. UI components stay intact.
++import { invoke } from '@tauri-apps/api/core'
++import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window'
++import { useFullscreenStore } from '@/stores/fullscreen-store'
++const wait=(ms:number)=>new Promise(r=>setTimeout(r,ms))
++const frame=()=>new Promise<number>(r=>requestAnimationFrame(r))
++const click=(label:string)=>{const el=document.querySelector<HTMLElement>(`[aria-label="${label}"]`);if(!el)throw new Error(`Missing ${label}`);el.click()}
++export async function startBenchmark(fixture:any) {
++ const scenario=fixture?._benchmark_scenario
++ if(!scenario)return
++ const win=getCurrentWindow()
++ try {
++  await wait(1500)
++  if(scenario==='search'||scenario==='search-filter') {
++   await win.setSize(new LogicalSize(390,844));await wait(200)
++   click('Select All tracks playlist');await frame();await frame()
++  }
++  const opened=performance.now()
++  if(scenario==='search'||scenario==='search-filter') {click('Search tracks');await frame();await frame()}
++  if(scenario==='search-filter') {
++   const input=document.querySelector<HTMLInputElement>('.playlist-search-overlay input')!
++   Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value')!.set!.call(input,'005')
++   input.dispatchEvent(new Event('input',{bubbles:true}));await frame();await frame()
++  }
++  if(scenario==='drawer'||scenario==='settings') {click('Open navigation menu');await frame();await frame()}
++  if(scenario==='settings') {
++   await wait(400)
++   const el=Array.from(document.querySelectorAll<HTMLElement>('button')).find(el=>el.textContent?.trim()==='Settings')
++   if(!el)throw new Error('No Settings item');el.click()
++  }
++  if(scenario.startsWith('fullscreen'))await useFullscreenStore.getState().enterFullscreen()
++  if(scenario==='minimized')await win.minimize()
++  let opening:number|null=null
++  if(scenario!=='minimized') {await frame();await frame();opening=performance.now()-opened}
++  const ready={scenario,tracks:fixture.tracks.length,window:[innerWidth,innerHeight],fullscreen:useFullscreenStore.getState().isFullscreen,
++    opening_callback_ms:opening,ready_text:document.body.innerText.slice(0,1000),
++    artwork_loaded:Array.from(document.images).filter(i=>i.complete&&i.naturalWidth>0).length,
++    matching_rows:document.querySelectorAll('[role="row"]').length,
++    query:document.querySelector<HTMLInputElement>('.playlist-search-overlay input')?.value??null}
++  if(scenario==='scroll'||scenario==='artwork-scroll'||scenario==='search') {
++   const viewport=Array.from(document.querySelectorAll<HTMLElement>('[data-slot="scroll-area-viewport"]')).find(el=>el.querySelector('[role="rowgroup"]'))
++   if(!viewport)throw new Error('No scrolling viewport')
++   const started=performance.now();let last=started
++   const scroll=(now:number)=>{const dt=Math.min((now-last)/1000,.1);last=now;viewport.scrollTop+=(Math.floor((now-started)/8000)%2===0?1:-1)*1080*dt;requestAnimationFrame(scroll)}
++   requestAnimationFrame(scroll)
++  }
++  await wait(2000)
++  await invoke('audit_ready',{payload:{...ready,phase:'ready'}})
++  if(['scroll','artwork-scroll','search','fullscreen','fullscreen-playing'].includes(scenario)) {
++   const times:number[]=[];const started=performance.now()
++   const sample=(now:number)=>{times.push(now);if(now-started<8500)requestAnimationFrame(sample);else void invoke('audit_ready',{payload:{phase:'metrics',times_ms:times,method:'requestAnimationFrame callbacks; not actual compositor presentations'}})}
++   requestAnimationFrame(sample)
++  }
++ } catch(error) {await invoke('audit_ready',{payload:{scenario,error:String(error)}})}
++}

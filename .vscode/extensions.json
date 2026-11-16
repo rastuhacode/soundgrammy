@@ -1,9 +1,5 @@
 {
-    "recommendations": [
-      "dbaeumer.vscode-eslint",
-      "bradlc.vscode-tailwindcss",
-      "antfu.iconify",
-      "rust-lang.rust-analyzer"
-    ]
-  }
-  
+  "recommendations": [
+    "rust-lang.rust-analyzer"
+  ]
+}

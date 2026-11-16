@@ -1,0 +1,6 @@
+[alias]
+xtask = "run --package xtask --"
+
+# End-user Windows installs must not require Visual Studio's VC runtime DLLs.
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

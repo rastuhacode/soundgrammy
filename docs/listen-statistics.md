@@ -10,7 +10,7 @@ Append-only listen history + per-track aggregates + likeness score.
 | FE `listen-stats-store` | Hydrated aggregates for smart playlists + live upserts after ends |
 | BE `listen_stats` + `db` | Events, aggregates, likeness, rebuild |
 
-Native playback records attempts directly. React receives `listen:stats` updates and reloads aggregates on reattachment; mounting/unmounting never opens or closes an attempt. Compatibility write commands remain available, but the production player does not call them.
+Native playback records attempts directly. GPUI receives `listen:stats` updates and reloads aggregates on reattachment; mounting/unmounting never opens or closes an attempt. Compatibility write commands remain available, but the production player does not call them.
 
 Read/settings IPC: `get_track_listen_stats` / `list_listen_stats` / `rebuild_listen_stats` / `clear_listen_statistics` via [`src/lib/api.ts`](../src/lib/api.ts).
 

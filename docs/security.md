@@ -4,7 +4,7 @@ Agent-facing constraints for credentials and Telegram session material.
 
 ## Credentials
 
-- `TELEGRAM_API_ID` and `TELEGRAM_API_HASH` are embedded at compile time (`build.rs` → `option_env!`). Prefer process env (CI secrets); otherwise `src-tauri/.env.local` is loaded for local builds. Debug also loads `.env.local` at runtime for `tauri dev`.
+- `TELEGRAM_API_ID` and `TELEGRAM_API_HASH` are embedded at compile time (`build.rs` → `option_env!`). Prefer process env (CI secrets); otherwise `native/.env.local` is loaded for local builds. Debug also loads `.env.local` at runtime for `cargo run`.
 - `LASTFM_API_KEY` and `LASTFM_API_SECRET` follow the same resolution order but are optional outside official releases. They remain backend-only; the application key appears only in the backend-opened authorization URL.
 - Never commit `.env`, `.env.local`, API hashes, or session files. Use `.env.example` as the template.
 - Do not log credential values or put them in frontend code / analytics.
@@ -19,11 +19,12 @@ Agent-facing constraints for credentials and Telegram session material.
 - Last.fm session keys use the same OS credential store under service `<effective application ID>.lastfm` (`com.soundgrammy.app.lastfm` for release), keyed by canonical Last.fm username. Temporary authorization tokens remain in backend memory.
 - Treat edits to `session.rs`, `config.rs`, and `telegram/auth.rs` as high-risk: smallest possible diff, no drive-by refactors.
 
-## Frontend surface
+## Native presentation boundary
 
 - UI may hold display fields only (`AuthUser` / `SessionPayload`: name, username, ids).
-- No MTProto auth keys, DC options, or encrypted session blobs in React state, localStorage, or logs.
-- Last.fm IPC exposes only safe status, usernames, queue counts, timestamps, and fixed error messages. It never exposes application credentials, signatures, request bodies, auth URLs, temporary tokens, or session keys.
+- No MTProto auth keys, DC options, encrypted session blobs, or Telegram document descriptors in GPUI presentation entities or diagnostic logs.
+- Last.fm presentation exposes only safe status, usernames, queue counts, timestamps, and fixed error messages. It never exposes application credentials, signatures, request bodies, auth URLs, temporary tokens, or session keys.
+- `Snapshot::for_display()` removes Telegram document descriptors before presentation. Preference import reads old WebView storage; Chromium recovery operates on a temporary copy.
 - Logout must clear app session state and rely on backend `logout` to drop the Telegram session.
 - Offline UI may trust the local SQLite profile + `session.enc`; remote session revoke clears that local session only once the device reaches Telegram again (`refresh_auth` / `auth:revoked`).
 
@@ -31,4 +32,4 @@ Agent-facing constraints for credentials and Telegram session material.
 
 - [ ] No secrets in git, logs, or UI
 - [ ] Session still loads/saves only via `session.rs`
-- [ ] New IPC does not expose raw session or API hash to the webview
+- [ ] Typed UI calls and notifications do not expose raw sessions, Telegram document descriptors or API hashes to GPUI presentation entities

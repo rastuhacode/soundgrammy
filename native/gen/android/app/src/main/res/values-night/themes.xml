@@ -1,0 +1,11 @@
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!-- Base application theme. -->
+    <style name="Theme.soundgrammy" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <!-- Customize your theme here. -->
+    </style>
+    <style name="Theme.SoundGrammy.Splash" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">#141414</item>
+        <item name="windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
+        <item name="postSplashScreenTheme">@style/Theme.soundgrammy</item>
+    </style>
+</resources>

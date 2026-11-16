@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="src-tauri/icons/original/soundgrammy-original.svg" alt="SoundGrammy icon" width="128" height="128">
+  <img src="native/icons/original/soundgrammy-original.svg" alt="SoundGrammy icon" width="128" height="128">
 </p>
 
 <h1 align="center">SoundGrammy</h1>
@@ -53,7 +53,7 @@ You can read more about philosophy around SoundGrammy in [Why I don’t use musi
 | **Windows** | 64-bit (`x86_64`) |
 | **Android** | (`apk`) |
 
-Linux and iOS are not officially supported although Tauri can build those. Contributions that complete platform support are welcome.
+The GPUI interface runs natively on desktop and Android. Android device acceptance is tracked in [the migration log](docs/gpui-migration.md). Linux is compiled in CI but is not an officially packaged release. An iOS application host is not configured; the existing iOS audio adapter remains available for future work.
 
 ## How to use
 
@@ -72,23 +72,25 @@ Linux and iOS are not officially supported although Tauri can build those. Contr
 - **How can I use this app if Telegram is blocked in my country?** - you can use VPN or connect to MTProto proxy (for ex. [tg-ws-proxy](https://github.com/Flowseal/tg-ws-proxy)).
 - **I found a bug, how can I report it?** - enable logs in the settings and reproduce the problem. Copy logs if they exist and open an issue.
 
+See the [current migration audit](docs/gpui-audit.md) and [measured performance comparison](docs/performance/report.md).
+
 ## Local development
 
 ### Prerequisites
 
 - Install [Rust](https://www.rust-lang.org/learn/get-started)
-- Install [Bun](https://bun.com/docs/installation)
-- The [Tauri 2 system prerequisites](https://v2.tauri.app/start/prerequisites/) for your operating system
+- macOS: Xcode command-line tools; Windows: Visual Studio C++ build tools and Windows SDK
+- Linux: Clang, pkg-config, Fontconfig, Wayland, XKB/X11, OpenSSL, Zstd, ALSA and Vulkan development/runtime packages
+- Android: JDK 17, SDK platform 36, build-tools 35.0.0 and NDK 29.0.13846066; Rust target `aarch64-linux-android`
 - Telegram requires third-party clients to use their own application API credentials. You can get yours `api_id` and `api_hash` from [my.telegram.org/apps](https://my.telegram.org/apps)
 
 ### Setup
 
 ```bash
-bun install
-cp src-tauri/.env.example src-tauri/.env.local
+cp native/.env.example native/.env.local
 ```
 
-Add your Telegram application credentials to `src-tauri/.env.local`:
+Add your Telegram application credentials to `native/.env.local`:
 
 ```dotenv
 TELEGRAM_API_ID=your_api_id
@@ -107,44 +109,79 @@ The Last.fm user session is stored in the operating-system keychain. The applica
 Start the desktop app:
 
 ```bash
-bun tauri:dev
+cargo run
 ```
 
 The development app uses its own `com.soundgrammy.app.dev` identity, data directory,
-cache and Telegram session to not interfere with production installment.
+cache and Telegram session, separate from the installed production app.
+`native/.env.local` is ignored by Git, so each new worktree needs its own copy.
 
-To develop on a connected Android device, enable USB debugging and run:
-
-```bash
-adb devices -l
-bun tauri:android:dev
-```
-
-Tauri starts Vite, builds the Rust and Android code, installs `com.soundgrammy.app.dev`,
-and opens it on the device. Keep the command running for live frontend updates and
-Rust rebuilds; press Ctrl-C to stop it. The first Android build can take several
-minutes. The debug application ID suffix lets it coexist with the production app.
-
-### Quality checks
+Build and install the Android development app:
 
 ```bash
-bun lint
-bun typecheck
-bun run test
-cd src-tauri && cargo check
+rustup target add aarch64-linux-android
+export ANDROID_HOME=/path/to/Android/sdk
+cargo xtask android --debug
+adb install -r native/gen/android/app/build/outputs/apk/debug/app-debug.apk
+adb shell am start -n com.soundgrammy.app.dev/com.soundgrammy.app.MainActivity
 ```
 
-To regenerate every platform and web icon from the source SVG:
+The task builds the Rust GPUI library, stages it for Gradle, packages the APK and runs JVM tests. The `.dev` application ID stays separate from the installed release. Rebuild after Rust changes. `cargo xtask android` creates a release APK; release signing uses `ANDROID_KEYSTORE_PATH`, `ANDROID_KEY_ALIAS`, and `ANDROID_KEY_PASSWORD`.
+
+### Everyday Cargo workflow
 
 ```bash
-bun generate-icons
+cargo check --locked
+cargo fmt --all
+cargo clippy --workspace --all-targets --locked -- -D warnings
+cargo test --workspace --locked
 ```
 
-### Production build
+To regenerate the native application icons from the source SVG:
 
 ```bash
-bun tauri:build
+cargo xtask icons
 ```
+
+### Release build
+
+```bash
+cargo build --release --locked    # native release binary
+cargo install cargo-packager --version 0.11.2 --locked # once, for installers
+cargo xtask package               # macOS app/DMG; Windows EXE/MSI
+cargo xtask package --target x86_64-apple-darwin
+```
+
+Installers are written under `dist/`. Development uses GPUI directly: there is no web server, browser runtime, React or JavaScript in the application. `cargo run -- --preview` launches an account-free fixture in temporary storage for visual checks.
+
+This implementation pins GPUI Kit 0.8.1 and its `gpui-pre` 0.3.10 renderer, plus the matching `longbridge/gpui-mobile` Android host. Their revisions and notices are recorded in [the migration log](docs/gpui-migration.md).
+
+GPUI describes the UI in Rust using flex layout, components and event handlers. It draws through the GPU instead of putting HTML into a WebView. Existing Telegram, database and audio services remain Rust services; UI calls are ordinary typed function calls. See [architecture](docs/architecture.md) and [migration verification](docs/gpui-migration.md).
+
+### Safe release testing
+
+A normal release build uses the production identity. Always set an isolated root
+when testing an optimized build alongside your installed app:
+
+```sh
+SOUNDGRAMMY_DATA_DIR="$(mktemp -d /tmp/soundgrammy-test.XXXXXX)" cargo run --release --locked
+```
+
+The override must be absolute. Database, session file, cache, exports, preferences
+and diagnostic logs all live below that root; credentials use a sandbox namespace.
+Do not copy a production session or database into it. For an account-free visual
+fixture use `cargo run --release --locked -- --preview` (also isolated).
+
+`cargo run` compiles and starts the debug app; rerun it after edits. GUI/layout and image dependencies use optimization level 2 in development so trackpad scrolling and image preparation stay responsive; application code keeps normal debug information. The first build after this profile change rebuilds those dependencies. Rust has no
+frontend server or hot reload here. `cargo check` checks types without linking;
+`cargo build` produces the binary; `--release` enables optimization. `cargo fmt`
+formats code; `cargo clippy` checks common mistakes; `cargo test --workspace` runs
+both application and tooling tests. `--locked` prevents dependency resolution
+from changing the committed root `Cargo.lock`. Use `cargo update -p <crate>` for
+an intentional dependency update. Optional edit/restart: install `bacon` or
+`cargo-watch`; neither is required. `cargo xtask help` lists installer, Android,
+version and icon maintenance tasks. Bun, Node, package.json and TypeScript are
+no longer part of this project's development workflow.
 
 ## Contributing and support
 
@@ -171,7 +208,7 @@ The SoundGrammy name, artwork, and source code are independent of Telegram. The 
 ### Native audio playback
 
 Desktop playback uses the Rust audio engine in development and release builds.
-Run `bun tauri:dev`; no playback environment variable is required. See [native audio](docs/native-audio.md)
+Run `cargo run`; no playback environment variable is required. See [native audio](docs/native-audio.md)
 for architecture, codec coverage, Linux dependencies, and verification gates.
 The [architecture overview](docs/architecture.md) explains native playback ownership,
 UI reattachment, and what persists across application restarts.

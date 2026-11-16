@@ -1,0 +1,1345 @@
+{
+  "date_utc": "2026-11-14T23:59:46Z",
+  "system": "ProductName:\t\tmacOS\nProductVersion:\t\t27.0.1\nBuildVersion:\t\t26A434\n",
+  "hardware": "Mac16,8\n25769803776\n12\n",
+  "binary_bytes": {
+    "Tauri": 36239952,
+    "GPUI": 54522880
+  },
+  "fixture_tracks": 5000,
+  "warmup_seconds": 10,
+  "runs": [
+    {
+      "app": "Tauri",
+      "run": 1,
+      "rss_mib_median": 328.640625,
+      "rss_mib_max": 328.71875,
+      "cpu_percent_one_core": 0.10080606016631842,
+      "elapsed_seconds": 19.840077041997574,
+      "processes": [
+        {
+          "pid": 88298,
+          "parent": 88293,
+          "rss_kib": 114208,
+          "cpu_seconds": 0.25,
+          "command": "/private/tmp/soundgrammy-audit-apps/Tauri Audit.app/Contents/MacOS/tauri"
+        },
+        {
+          "pid": 88300,
+          "parent": 1,
+          "rss_kib": 32848,
+          "cpu_seconds": 0.11,
+          "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.GPU.xpc/Contents/MacOS/com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 88301,
+          "parent": 1,
+          "rss_kib": 175072,
+          "cpu_seconds": 0.45,
+          "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 88302,
+          "parent": 1,
+          "rss_kib": 14432,
+          "cpu_seconds": 0.04,
+          "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.Networking.xpc/Contents/MacOS/com.apple.WebKit.Networking"
+        }
+      ],
+      "ready": {
+        "frontendMs": 309,
+        "text": "Library\nAll tracks\n5000\nLiked\n3\nPresentation\n4\nPopular\n0\nRecent\n0\nTitle\nArtist\nTime\nTRACK OPTIONS\nTrack 00001\nArtist 00\n3:16\nTrack 00002\nArtist 01\n3:16\nTrack 00003\nArtist 02\n3:16\nTrack 00004\nArtist 03\n3:16\nTrack 00005\nArtist 04\n3:16\nTrack 00006\nArtist 05\n3:16\nTrack 00007\nArtist 06\n3:16\nTrack 00008\nArtist 07\n3:16\nTrack 00009\nArtist 08\n3:16\nTrack 00010\nArtist 09\n3:16\nTrack 00011\nArtist 10\n3:16\nTrack 00012\nArtist 11\n3:16\nTrack 00013\nArtist 12\n3:16\nTrack 00014\nArtist 13\n3:16\nTrack 00015\nArtist 14\n3:16\nTrack 00016\nArtist 15\n3:16\nTrack 00005\nArtist 04\n1:23\n/\n3:16"
+      },
+      "samples": [
+        {
+          "at": 608174.264078291,
+          "rss_mib": 328.65625,
+          "cpu": {
+            "88298": 0.24,
+            "88300": 0.1,
+            "88301": 0.45,
+            "88302": 0.04
+          },
+          "process_count": 4
+        },
+        {
+          "at": 608175.303862875,
+          "rss_mib": 328.65625,
+          "cpu": {
+            "88298": 0.24,
+            "88300": 0.1,
+            "88301": 0.45,
+            "88302": 0.04
+          },
+          "process_count": 4
+        },
+        {
+          "at": 608176.3415645,
+          "rss_mib": 328.640625,
+          "cpu": {
+            "88298": 0.24,
+            "88300": 0.1,
+            "88301": 0.45,
+            "88302": 0.04
+          },
+          "process_count": 4
+        },
+        {
+          "at": 608177.3901435,
+          "rss_mib": 328.640625,
+          "cpu": {
+            "88298": 0.24,
+            "88300": 0.1,
+            "88301": 0.45,
+            "88302": 0.04
+          },
+          "process_count": 4
+        },
+        {
+          "at": 608178.439814125,
+          "rss_mib": 328.640625,
+          "cpu": {
+            "88298": 0.24,
+            "88300": 0.1,
+            "88301": 0.45,
+            "88302": 0.04
+          },
+          "process_count": 4
+        },
+        {
+          "at": 608179.475907375,
+          "rss_mib": 328.71875,
+          "cpu": {
+            "88298": 0.25,
+            "88300": 0.1,
+            "88301": 0.45,
+            "88302": 0.04
+          },
+          "process_count": 4
+        },
+        {
+          "at": 608180.524513125,
+          "rss_mib": 328.703125,
+          "cpu": {
+            "88298": 0.25,
+            "88300": 0.1,
+            "88301": 0.45,
+            "88302": 0.04
+          },
+          "process_count": 4
+        },
+        {
+          "at": 608181.572203125,
+          "rss_mib": 328.703125,
+          "cpu": {
+            "88298": 0.25,
+            "88300": 0.1,
+            "88301": 0.45,
+            "88302": 0.04
+          },
+          "process_count": 4
+        },
+        {
+          "at": 608182.622353916,
+          "rss_mib": 328.703125,
+          "cpu": {
+            "88298": 0.25,
+            "88300": 0.1,
+            "88301": 0.45,
+            "88302": 0.04
+          },
+          "process_count": 4
+        },
+        {
+          "at": 608183.667869458,
+          "rss_mib": 328.703125,
+          "cpu": {
+            "88298": 0.25,
+            "88300": 0.1,
+            "88301": 0.45,
+            "88302": 0.04
+          },
+          "process_count": 4
+        },
+        {
+          "at": 608184.709841875,
+          "rss_mib": 328.609375,
+          "cpu": {
+            "88298": 0.25,
+            "88300": 0.1,
+            "88301": 0.45,
+            "88302": 0.04
+          },
+          "process_count": 4
+        },
+        {
+          "at": 608185.753656083,
+          "rss_mib": 328.609375,
+          "cpu": {
+            "88298": 0.25,
+            "88300": 0.1,
+            "88301": 0.45,
+            "88302": 0.04
+          },
+          "process_count": 4
+        },
+        {
+          "at": 608186.802437583,
+          "rss_mib": 328.609375,
+          "cpu": {
+            "88298": 0.25,
+            "88300": 0.11,
+            "88301": 0.45,
+            "88302": 0.04
+          },
+          "process_count": 4
+        },
+        {
+          "at": 608187.845025416,
+          "rss_mib": 328.609375,
+          "cpu": {
+            "88298": 0.25,
+            "88300": 0.11,
+            "88301": 0.45,
+            "88302": 0.04
+          },
+          "process_count": 4
+        },
+        {
+          "at": 608188.886366583,
+          "rss_mib": 328.609375,
+          "cpu": {
+            "88298": 0.25,
+            "88300": 0.11,
+            "88301": 0.45,
+            "88302": 0.04
+          },
+          "process_count": 4
+        },
+        {
+          "at": 608189.935114875,
+          "rss_mib": 328.578125,
+          "cpu": {
+            "88298": 0.25,
+            "88300": 0.11,
+            "88301": 0.45,
+            "88302": 0.04
+          },
+          "process_count": 4
+        },
+        {
+          "at": 608190.973189125,
+          "rss_mib": 328.578125,
+          "cpu": {
+            "88298": 0.25,
+            "88300": 0.11,
+            "88301": 0.45,
+            "88302": 0.04
+          },
+          "process_count": 4
+        },
+        {
+          "at": 608192.020541916,
+          "rss_mib": 328.578125,
+          "cpu": {
+            "88298": 0.25,
+            "88300": 0.11,
+            "88301": 0.45,
+            "88302": 0.04
+          },
+          "process_count": 4
+        },
+        {
+          "at": 608193.063596583,
+          "rss_mib": 328.578125,
+          "cpu": {
+            "88298": 0.25,
+            "88300": 0.11,
+            "88301": 0.45,
+            "88302": 0.04
+          },
+          "process_count": 4
+        },
+        {
+          "at": 608194.104155333,
+          "rss_mib": 328.671875,
+          "cpu": {
+            "88298": 0.25,
+            "88300": 0.11,
+            "88301": 0.45,
+            "88302": 0.04
+          },
+          "process_count": 4
+        }
+      ]
+    },
+    {
+      "app": "GPUI",
+      "run": 1,
+      "rss_mib_median": 139.96875,
+      "rss_mib_max": 140.46875,
+      "cpu_percent_one_core": 0.050165430120153925,
+      "elapsed_seconds": 19.934046166948974,
+      "processes": [
+        {
+          "pid": 88347,
+          "parent": 88293,
+          "rss_kib": 143408,
+          "cpu_seconds": 0.28,
+          "command": "/private/tmp/soundgrammy-audit-apps/GPUI Audit.app/Contents/MacOS/gpui"
+        }
+      ],
+      "ready": null,
+      "samples": [
+        {
+          "at": 608205.422999333,
+          "rss_mib": 140.46875,
+          "cpu": {
+            "88347": 0.27
+          },
+          "process_count": 1
+        },
+        {
+          "at": 608206.468190708,
+          "rss_mib": 140.46875,
+          "cpu": {
+            "88347": 0.27
+          },
+          "process_count": 1
+        },
+        {
+          "at": 608207.517454291,
+          "rss_mib": 140.46875,
+          "cpu": {
+            "88347": 0.27
+          },
+          "process_count": 1
+        },
+        {
+          "at": 608208.569073041,
+          "rss_mib": 139.96875,
+          "cpu": {
+            "88347": 0.27
+          },
+          "process_count": 1
+        },
+        {
+          "at": 608209.6200475,
+          "rss_mib": 139.96875,
+          "cpu": {
+            "88347": 0.27
+          },
+          "process_count": 1
+        },
+        {
+          "at": 608210.667619166,
+          "rss_mib": 139.96875,
+          "cpu": {
+            "88347": 0.27
+          },
+          "process_count": 1
+        },
+        {
+          "at": 608211.712394208,
+          "rss_mib": 139.96875,
+          "cpu": {
+            "88347": 0.27
+          },
+          "process_count": 1
+        },
+        {
+          "at": 608212.762397083,
+          "rss_mib": 139.96875,
+          "cpu": {
+            "88347": 0.27
+          },
+          "process_count": 1
+        },
+        {
+          "at": 608213.813096625,
+          "rss_mib": 139.96875,
+          "cpu": {
+            "88347": 0.27
+          },
+          "process_count": 1
+        },
+        {
+          "at": 608214.861179958,
+          "rss_mib": 139.96875,
+          "cpu": {
+            "88347": 0.27
+          },
+          "process_count": 1
+        },
+        {
+          "at": 608215.910124208,
+          "rss_mib": 139.96875,
+          "cpu": {
+            "88347": 0.27
+          },
+          "process_count": 1
+        },
+        {
+          "at": 608216.96106275,
+          "rss_mib": 139.96875,
+          "cpu": {
+            "88347": 0.27
+          },
+          "process_count": 1
+        },
+        {
+          "at": 608218.011850833,
+          "rss_mib": 139.96875,
+          "cpu": {
+            "88347": 0.27
+          },
+          "process_count": 1
+        },
+        {
+          "at": 608219.060431375,
+          "rss_mib": 139.96875,
+          "cpu": {
+            "88347": 0.27
+          },
+          "process_count": 1
+        },
+        {
+          "at": 608220.110457208,
+          "rss_mib": 139.96875,
+          "cpu": {
+            "88347": 0.27
+          },
+          "process_count": 1
+        },
+        {
+          "at": 608221.1579995,
+          "rss_mib": 139.96875,
+          "cpu": {
+            "88347": 0.27
+          },
+          "process_count": 1
+        },
+        {
+          "at": 608222.204457,
+          "rss_mib": 139.96875,
+          "cpu": {
+            "88347": 0.27
+          },
+          "process_count": 1
+        },
+        {
+          "at": 608223.252930291,
+          "rss_mib": 139.96875,
+          "cpu": {
+            "88347": 0.27
+          },
+          "process_count": 1
+        },
+        {
+          "at": 608224.303829875,
+          "rss_mib": 139.96875,
+          "cpu": {
+            "88347": 0.27
+          },
+          "process_count": 1
+        },
+        {
+          "at": 608225.3570455,
+          "rss_mib": 140.046875,
+          "cpu": {
+            "88347": 0.28
+          },
+          "process_count": 1
+        }
+      ]
+    },
+    {
+      "app": "GPUI",
+      "run": 2,
+      "rss_mib_median": 135.15625,
+      "rss_mib_max": 140.640625,
+      "cpu_percent_one_core": 0.0,
+      "elapsed_seconds": 19.892523083020933,
+      "processes": [
+        {
+          "pid": 88396,
+          "parent": 88293,
+          "rss_kib": 138448,
+          "cpu_seconds": 0.25,
+          "command": "/private/tmp/soundgrammy-audit-apps/GPUI Audit.app/Contents/MacOS/gpui"
+        }
+      ],
+      "ready": null,
+      "samples": [
+        {
+          "at": 608236.663961833,
+          "rss_mib": 140.640625,
+          "cpu": {
+            "88396": 0.25
+          },
+          "process_count": 1
+        },
+        {
+          "at": 608237.712869875,
+          "rss_mib": 140.640625,
+          "cpu": {
+            "88396": 0.25
+          },
+          "process_count": 1
+        },
+        {
+          "at": 608238.763007333,
+          "rss_mib": 140.640625,
+          "cpu": {
+            "88396": 0.25
+          },
+          "process_count": 1
+        },
+        {
+          "at": 608239.811376958,
+          "rss_mib": 140.140625,
+          "cpu": {
+            "88396": 0.25
+          },
+          "process_count": 1
+        },
+        {
+          "at": 608240.855043083,
+          "rss_mib": 140.140625,
+          "cpu": {
+            "88396": 0.25
+          },
+          "process_count": 1
+        },
+        {
+          "at": 608241.904709833,
+          "rss_mib": 136.46875,
+          "cpu": {
+            "88396": 0.25
+          },
+          "process_count": 1
+        },
+        {
+          "at": 608242.943346875,
+          "rss_mib": 135.15625,
+          "cpu": {
+            "88396": 0.25
+          },
+          "process_count": 1
+        },
+        {
+          "at": 608243.991183791,
+          "rss_mib": 135.15625,
+          "cpu": {
+            "88396": 0.25
+          },
+          "process_count": 1
+        },
+        {
+          "at": 608245.035311291,
+          "rss_mib": 135.15625,
+          "cpu": {
+            "88396": 0.25
+          },
+          "process_count": 1
+        },
+        {
+          "at": 608246.071978375,
+          "rss_mib": 135.15625,
+          "cpu": {
+            "88396": 0.25
+          },
+          "process_count": 1
+        },
+        {
+          "at": 608247.124847208,
+          "rss_mib": 135.15625,
+          "cpu": {
+            "88396": 0.25
+          },
+          "process_count": 1
+        },
+        {
+          "at": 608248.170822166,
+          "rss_mib": 135.15625,
+          "cpu": {
+            "88396": 0.25
+          },
+          "process_count": 1
+        },
+        {
+          "at": 608249.217371125,
+          "rss_mib": 135.15625,
+          "cpu": {
+            "88396": 0.25
+          },
+          "process_count": 1
+        },
+        {
+          "at": 608250.266455625,
+          "rss_mib": 135.15625,
+          "cpu": {
+            "88396": 0.25
+          },
+          "process_count": 1
+        },
+        {
+          "at": 608251.314822625,
+          "rss_mib": 135.15625,
+          "cpu": {
+            "88396": 0.25
+          },
+          "process_count": 1
+        },
+        {
+          "at": 608252.362237416,
+          "rss_mib": 135.15625,
+          "cpu": {
+            "88396": 0.25
+          },
+          "process_count": 1
+        },
+        {
+          "at": 608253.409511666,
+          "rss_mib": 135.15625,
+          "cpu": {
+            "88396": 0.25
+          },
+          "process_count": 1
+        },
+        {
+          "at": 608254.4598385,
+          "rss_mib": 135.15625,
+          "cpu": {
+            "88396": 0.25
+          },
+          "process_count": 1
+        },
+        {
+          "at": 608255.509286541,
+          "rss_mib": 135.15625,
+          "cpu": {
+            "88396": 0.25
+          },
+          "process_count": 1
+        },
+        {
+          "at": 608256.556484916,
+          "rss_mib": 135.203125,
+          "cpu": {
+            "88396": 0.25
+          },
+          "process_count": 1
+        }
+      ]
+    },
+    {
+      "app": "Tauri",
+      "run": 2,
+      "rss_mib_median": 326.609375,
+      "rss_mib_max": 326.765625,
+      "cpu_percent_one_core": 0.0,
+      "elapsed_seconds": 19.863446832983755,
+      "processes": [
+        {
+          "pid": 88440,
+          "parent": 88293,
+          "rss_kib": 114944,
+          "cpu_seconds": 0.19,
+          "command": "/private/tmp/soundgrammy-audit-apps/Tauri Audit.app/Contents/MacOS/tauri"
+        },
+        {
+          "pid": 88442,
+          "parent": 1,
+          "rss_kib": 31040,
+          "cpu_seconds": 0.09,
+          "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.GPU.xpc/Contents/MacOS/com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 88443,
+          "parent": 1,
+          "rss_kib": 172992,
+          "cpu_seconds": 0.39,
+          "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 88444,
+          "parent": 1,
+          "rss_kib": 13984,
+          "cpu_seconds": 0.03,
+          "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.Networking.xpc/Contents/MacOS/com.apple.WebKit.Networking"
+        }
+      ],
+      "ready": {
+        "frontendMs": 239,
+        "text": "Library\nAll tracks\n5000\nLiked\n3\nPresentation\n4\nPopular\n0\nRecent\n0\nTitle\nArtist\nTime\nTRACK OPTIONS\nTrack 00001\nArtist 00\n3:16\nTrack 00002\nArtist 01\n3:16\nTrack 00003\nArtist 02\n3:16\nTrack 00004\nArtist 03\n3:16\nTrack 00005\nArtist 04\n3:16\nTrack 00006\nArtist 05\n3:16\nTrack 00007\nArtist 06\n3:16\nTrack 00008\nArtist 07\n3:16\nTrack 00009\nArtist 08\n3:16\nTrack 00010\nArtist 09\n3:16\nTrack 00011\nArtist 10\n3:16\nTrack 00012\nArtist 11\n3:16\nTrack 00013\nArtist 12\n3:16\nTrack 00014\nArtist 13\n3:16\nTrack 00015\nArtist 14\n3:16\nTrack 00016\nArtist 15\n3:16\nTrack 00005\nArtist 04\n1:23\n/\n3:16"
+      },
+      "samples": [
+        {
+          "at": 608267.858518,
+          "rss_mib": 326.765625,
+          "cpu": {
+            "88440": 0.19,
+            "88442": 0.09,
+            "88443": 0.39,
+            "88444": 0.03
+          },
+          "process_count": 4
+        },
+        {
+          "at": 608268.904935541,
+          "rss_mib": 326.765625,
+          "cpu": {
+            "88440": 0.19,
+            "88442": 0.09,
+            "88443": 0.39,
+            "88444": 0.03
+          },
+          "process_count": 4
+        },
+        {
+          "at": 608269.953260833,
+          "rss_mib": 326.609375,
+          "cpu": {
+            "88440": 0.19,
+            "88442": 0.09,
+            "88443": 0.39,
+            "88444": 0.03
+          },
+          "process_count": 4
+        },
+        {
+          "at": 608271.003205166,
+          "rss_mib": 326.609375,
+          "cpu": {
+            "88440": 0.19,
+            "88442": 0.09,
+            "88443": 0.39,
+            "88444": 0.03
+          },
+          "process_count": 4
+        },
+        {
+          "at": 608272.052668625,
+          "rss_mib": 326.609375,
+          "cpu": {
+            "88440": 0.19,
+            "88442": 0.09,
+            "88443": 0.39,
+            "88444": 0.03
+          },
+          "process_count": 4
+        },
+        {
+          "at": 608273.098946875,
+          "rss_mib": 326.734375,
+          "cpu": {
+            "88440": 0.19,
+            "88442": 0.09,
+            "88443": 0.39,
+            "88444": 0.03
+          },
+          "process_count": 4
+        },
+        {
+          "at": 608274.138786833,
+          "rss_mib": 326.71875,
+          "cpu": {
+            "88440": 0.19,
+            "88442": 0.09,
+            "88443": 0.39,
+            "88444": 0.03
+          },
+          "process_count": 4
+        },
+        {
+          "at": 608275.182913083,
+          "rss_mib": 326.71875,
+          "cpu": {
+            "88440": 0.19,
+            "88442": 0.09,
+            "88443": 0.39,
+            "88444": 0.03
+          },
+          "process_count": 4
+        },
+        {
+          "at": 608276.229981166,
+          "rss_mib": 326.71875,
+          "cpu": {
+            "88440": 0.19,
+            "88442": 0.09,
+            "88443": 0.39,
+            "88444": 0.03
+          },
+          "process_count": 4
+        },
+        {
+          "at": 608277.274604291,
+          "rss_mib": 326.625,
+          "cpu": {
+            "88440": 0.19,
+            "88442": 0.09,
+            "88443": 0.39,
+            "88444": 0.03
+          },
+          "process_count": 4
+        },
+        {
+          "at": 608278.324145791,
+          "rss_mib": 326.625,
+          "cpu": {
+            "88440": 0.19,
+            "88442": 0.09,
+            "88443": 0.39,
+            "88444": 0.03
+          },
+          "process_count": 4
+        },
+        {
+          "at": 608279.347996416,
+          "rss_mib": 326.625,
+          "cpu": {
+            "88440": 0.19,
+            "88442": 0.09,
+            "88443": 0.39,
+            "88444": 0.03
+          },
+          "process_count": 4
+        },
+        {
+          "at": 608280.388245375,
+          "rss_mib": 325.953125,
+          "cpu": {
+            "88440": 0.19,
+            "88442": 0.09,
+            "88443": 0.39,
+            "88444": 0.03
+          },
+          "process_count": 4
+        },
+        {
+          "at": 608281.434149,
+          "rss_mib": 324.9375,
+          "cpu": {
+            "88440": 0.19,
+            "88442": 0.09,
+            "88443": 0.39,
+            "88444": 0.03
+          },
+          "process_count": 4
+        },
+        {
+          "at": 608282.479924916,
+          "rss_mib": 324.9375,
+          "cpu": {
+            "88440": 0.19,
+            "88442": 0.09,
+            "88443": 0.39,
+            "88444": 0.03
+          },
+          "process_count": 4
+        },
+        {
+          "at": 608283.532001375,
+          "rss_mib": 324.90625,
+          "cpu": {
+            "88440": 0.19,
+            "88442": 0.09,
+            "88443": 0.39,
+            "88444": 0.03
+          },
+          "process_count": 4
+        },
+        {
+          "at": 608284.577902416,
+          "rss_mib": 324.90625,
+          "cpu": {
+            "88440": 0.19,
+            "88442": 0.09,
+            "88443": 0.39,
+            "88444": 0.03
+          },
+          "process_count": 4
+        },
+        {
+          "at": 608285.62431575,
+          "rss_mib": 325.109375,
+          "cpu": {
+            "88440": 0.19,
+            "88442": 0.09,
+            "88443": 0.39,
+            "88444": 0.03
+          },
+          "process_count": 4
+        },
+        {
+          "at": 608286.671344791,
+          "rss_mib": 325.109375,
+          "cpu": {
+            "88440": 0.19,
+            "88442": 0.09,
+            "88443": 0.39,
+            "88444": 0.03
+          },
+          "process_count": 4
+        },
+        {
+          "at": 608287.721964833,
+          "rss_mib": 325.15625,
+          "cpu": {
+            "88440": 0.19,
+            "88442": 0.09,
+            "88443": 0.39,
+            "88444": 0.03
+          },
+          "process_count": 4
+        }
+      ]
+    },
+    {
+      "app": "Tauri",
+      "run": 3,
+      "rss_mib_median": 327.0546875,
+      "rss_mib_max": 327.15625,
+      "cpu_percent_one_core": 0.05028972096832175,
+      "elapsed_seconds": 19.884779250016436,
+      "processes": [
+        {
+          "pid": 88505,
+          "parent": 1,
+          "rss_kib": 32624,
+          "cpu_seconds": 0.09,
+          "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.GPU.xpc/Contents/MacOS/com.apple.WebKit.GPU"
+        },
+        {
+          "pid": 88506,
+          "parent": 1,
+          "rss_kib": 173504,
+          "cpu_seconds": 0.35,
+          "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.WebContent.xpc/Contents/MacOS/com.apple.WebKit.WebContent"
+        },
+        {
+          "pid": 88507,
+          "parent": 1,
+          "rss_kib": 14544,
+          "cpu_seconds": 0.03,
+          "command": "/System/Library/Frameworks/WebKit.framework/Versions/A/XPCServices/com.apple.WebKit.Networking.xpc/Contents/MacOS/com.apple.WebKit.Networking"
+        },
+        {
+          "pid": 88503,
+          "parent": 88293,
+          "rss_kib": 114240,
+          "cpu_seconds": 0.19,
+          "command": "/private/tmp/soundgrammy-audit-apps/Tauri Audit.app/Contents/MacOS/tauri"
+        }
+      ],
+      "ready": {
+        "frontendMs": 226,
+        "text": "Library\nAll tracks\n5000\nLiked\n3\nPresentation\n4\nPopular\n0\nRecent\n0\nTitle\nArtist\nTime\nTRACK OPTIONS\nTrack 00001\nArtist 00\n3:16\nTrack 00002\nArtist 01\n3:16\nTrack 00003\nArtist 02\n3:16\nTrack 00004\nArtist 03\n3:16\nTrack 00005\nArtist 04\n3:16\nTrack 00006\nArtist 05\n3:16\nTrack 00007\nArtist 06\n3:16\nTrack 00008\nArtist 07\n3:16\nTrack 00009\nArtist 08\n3:16\nTrack 00010\nArtist 09\n3:16\nTrack 00011\nArtist 10\n3:16\nTrack 00012\nArtist 11\n3:16\nTrack 00013\nArtist 12\n3:16\nTrack 00014\nArtist 13\n3:16\nTrack 00015\nArtist 14\n3:16\nTrack 00016\nArtist 15\n3:16\nTrack 00005\nArtist 04\n1:23\n/\n3:16"
+      },
+      "samples": [
+        {
+          "at": 608299.021010625,
+          "rss_mib": 327.109375,
+          "cpu": {
+            "88505": 0.09,
+            "88506": 0.35,
+            "88507": 0.03,
+            "88503": 0.18
+          },
+          "process_count": 4
+        },
+        {
+          "at": 608300.072492416,
+          "rss_mib": 327.109375,
+          "cpu": {
+            "88505": 0.09,
+            "88506": 0.35,
+            "88507": 0.03,
+            "88503": 0.18
+          },
+          "process_count": 4
+        },
+        {
+          "at": 608301.120775875,
+          "rss_mib": 327.09375,
+          "cpu": {
+            "88505": 0.09,
+            "88506": 0.35,
+            "88507": 0.03,
+            "88503": 0.18
+          },
+          "process_count": 4
+        },
+        {
+          "at": 608302.163580166,
+          "rss_mib": 327.09375,
+          "cpu": {
+            "88505": 0.09,
+            "88506": 0.35,
+            "88507": 0.03,
+            "88503": 0.18
+          },
+          "process_count": 4
+        },
+        {
+          "at": 608303.210953916,
+          "rss_mib": 327.09375,
+          "cpu": {
+            "88505": 0.09,
+            "88506": 0.35,
+            "88507": 0.03,
+            "88503": 0.18
+          },
+          "process_count": 4
+        },
+        {
+          "at": 608304.261809666,
+          "rss_mib": 327.15625,
+          "cpu": {
+            "88505": 0.09,
+            "88506": 0.35,
+            "88507": 0.03,
+            "88503": 0.18
+          },
+          "process_count": 4
+        },
+        {
+          "at": 608305.312442666,
+          "rss_mib": 327.140625,
+          "cpu": {
+            "88505": 0.09,
+            "88506": 0.35,
+            "88507": 0.03,
+            "88503": 0.18
+          },
+          "process_count": 4
+        },
+        {
+          "at": 608306.358507833,
+          "rss_mib": 327.140625,
+          "cpu": {
+            "88505": 0.09,
+            "88506": 0.35,
+            "88507": 0.03,
+            "88503": 0.18
+          },
+          "process_count": 4
+        },
+        {
+          "at": 608307.40461775,
+          "rss_mib": 327.140625,
+          "cpu": {
+            "88505": 0.09,
+            "88506": 0.35,
+            "88507": 0.03,
+            "88503": 0.18
+          },
+          "process_count": 4
+        },
+        {
+          "at": 608308.45201825,
+          "rss_mib": 327.046875,
+          "cpu": {
+            "88505": 0.09,
+            "88506": 0.35,
+            "88507": 0.03,
+            "88503": 0.19
+          },
+          "process_count": 4
+        },
+        {
+          "at": 608309.499558166,
+          "rss_mib": 327.046875,
+          "cpu": {
+            "88505": 0.09,
+            "88506": 0.35,
+            "88507": 0.03,
+            "88503": 0.19
+          },
+          "process_count": 4
+        },
+        {
+          "at": 608310.539195416,
+          "rss_mib": 327.046875,
+          "cpu": {
+            "88505": 0.09,
+            "88506": 0.35,
+            "88507": 0.03,
+            "88503": 0.19
+          },
+          "process_count": 4
+        },
+        {
+          "at": 608311.584878625,
+          "rss_mib": 327.046875,
+          "cpu": {
+            "88505": 0.09,
+            "88506": 0.35,
+            "88507": 0.03,
+            "88503": 0.19
+          },
+          "process_count": 4
+        },
+        {
+          "at": 608312.630942541,
+          "rss_mib": 327.046875,
+          "cpu": {
+            "88505": 0.09,
+            "88506": 0.35,
+            "88507": 0.03,
+            "88503": 0.19
+          },
+          "process_count": 4
+        },
+        {
+          "at": 608313.67808025,
+          "rss_mib": 327.046875,
+          "cpu": {
+            "88505": 0.09,
+            "88506": 0.35,
+            "88507": 0.03,
+            "88503": 0.19
+          },
+          "process_count": 4
+        },
+        {
+          "at": 608314.728106666,
+          "rss_mib": 327.015625,
+          "cpu": {
+            "88505": 0.09,
+            "88506": 0.35,
+            "88507": 0.03,
+            "88503": 0.19
+          },
+          "process_count": 4
+        },
+        {
+          "at": 608315.779259791,
+          "rss_mib": 327.015625,
+          "cpu": {
+            "88505": 0.09,
+            "88506": 0.35,
+            "88507": 0.03,
+            "88503": 0.19
+          },
+          "process_count": 4
+        },
+        {
+          "at": 608316.81423675,
+          "rss_mib": 327.015625,
+          "cpu": {
+            "88505": 0.09,
+            "88506": 0.35,
+            "88507": 0.03,
+            "88503": 0.19
+          },
+          "process_count": 4
+        },
+        {
+          "at": 608317.859210458,
+          "rss_mib": 327.015625,
+          "cpu": {
+            "88505": 0.09,
+            "88506": 0.35,
+            "88507": 0.03,
+            "88503": 0.19
+          },
+          "process_count": 4
+        },
+        {
+          "at": 608318.905789875,
+          "rss_mib": 327.0625,
+          "cpu": {
+            "88505": 0.09,
+            "88506": 0.35,
+            "88507": 0.03,
+            "88503": 0.19
+          },
+          "process_count": 4
+        }
+      ]
+    },
+    {
+      "app": "GPUI",
+      "run": 3,
+      "rss_mib_median": 136.59375,
+      "rss_mib_max": 140.328125,
+      "cpu_percent_one_core": 0.2511823666785527,
+      "elapsed_seconds": 19.905855917022564,
+      "processes": [
+        {
+          "pid": 88558,
+          "parent": 88293,
+          "rss_kib": 139872,
+          "cpu_seconds": 0.29,
+          "command": "/private/tmp/soundgrammy-audit-apps/GPUI Audit.app/Contents/MacOS/gpui"
+        }
+      ],
+      "ready": null,
+      "samples": [
+        {
+          "at": 608330.122225083,
+          "rss_mib": 140.328125,
+          "cpu": {
+            "88558": 0.24
+          },
+          "process_count": 1
+        },
+        {
+          "at": 608331.179490333,
+          "rss_mib": 140.328125,
+          "cpu": {
+            "88558": 0.24
+          },
+          "process_count": 1
+        },
+        {
+          "at": 608332.23282475,
+          "rss_mib": 140.328125,
+          "cpu": {
+            "88558": 0.24
+          },
+          "process_count": 1
+        },
+        {
+          "at": 608333.289603666,
+          "rss_mib": 139.828125,
+          "cpu": {
+            "88558": 0.24
+          },
+          "process_count": 1
+        },
+        {
+          "at": 608334.339625666,
+          "rss_mib": 136.765625,
+          "cpu": {
+            "88558": 0.28
+          },
+          "process_count": 1
+        },
+        {
+          "at": 608335.389088083,
+          "rss_mib": 136.765625,
+          "cpu": {
+            "88558": 0.28
+          },
+          "process_count": 1
+        },
+        {
+          "at": 608336.436999958,
+          "rss_mib": 136.59375,
+          "cpu": {
+            "88558": 0.28
+          },
+          "process_count": 1
+        },
+        {
+          "at": 608337.487865291,
+          "rss_mib": 136.59375,
+          "cpu": {
+            "88558": 0.28
+          },
+          "process_count": 1
+        },
+        {
+          "at": 608338.52957825,
+          "rss_mib": 136.59375,
+          "cpu": {
+            "88558": 0.28
+          },
+          "process_count": 1
+        },
+        {
+          "at": 608339.575039208,
+          "rss_mib": 136.59375,
+          "cpu": {
+            "88558": 0.29
+          },
+          "process_count": 1
+        },
+        {
+          "at": 608340.620527166,
+          "rss_mib": 136.578125,
+          "cpu": {
+            "88558": 0.29
+          },
+          "process_count": 1
+        },
+        {
+          "at": 608341.669472625,
+          "rss_mib": 136.578125,
+          "cpu": {
+            "88558": 0.29
+          },
+          "process_count": 1
+        },
+        {
+          "at": 608342.709800375,
+          "rss_mib": 136.578125,
+          "cpu": {
+            "88558": 0.29
+          },
+          "process_count": 1
+        },
+        {
+          "at": 608343.742213916,
+          "rss_mib": 136.578125,
+          "cpu": {
+            "88558": 0.29
+          },
+          "process_count": 1
+        },
+        {
+          "at": 608344.768995333,
+          "rss_mib": 136.578125,
+          "cpu": {
+            "88558": 0.29
+          },
+          "process_count": 1
+        },
+        {
+          "at": 608345.810740833,
+          "rss_mib": 136.578125,
+          "cpu": {
+            "88558": 0.29
+          },
+          "process_count": 1
+        },
+        {
+          "at": 608346.856793291,
+          "rss_mib": 136.578125,
+          "cpu": {
+            "88558": 0.29
+          },
+          "process_count": 1
+        },
+        {
+          "at": 608347.924556791,
+          "rss_mib": 136.578125,
+          "cpu": {
+            "88558": 0.29
+          },
+          "process_count": 1
+        },
+        {
+          "at": 608348.973984458,
+          "rss_mib": 136.59375,
+          "cpu": {
+            "88558": 0.29
+          },
+          "process_count": 1
+        },
+        {
+          "at": 608350.028081,
+          "rss_mib": 136.59375,
+          "cpu": {
+            "88558": 0.29
+          },
+          "process_count": 1
+        }
+      ]
+    }
+  ]
+}

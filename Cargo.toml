@@ -1,0 +1,25 @@
+[workspace]
+members = ["native", "xtask"]
+default-members = ["native"]
+resolver = "2"
+
+[patch.crates-io]
+# Remove once ferogram ships cancellation-safe, per-connection DC readiness.
+ferogram-mtsender = { path = "native/vendor/ferogram-mtsender" }
+
+# Window-paced ProMotion and demand-driven idle frames; see vendor README.
+gpui-pre-macos = { path = "native/vendor/gpui-pre-macos" }
+
+# GPU compositing and actual Metal presentation diagnostics.
+gpui-pre-apple = { path = "native/vendor/gpui-pre-apple" }
+
+# GUI layout/painting and image kernels run every interaction. Keep application
+# code fully debuggable while optimizing these dependencies in `cargo run`.
+[profile.dev.package.gpui-pre]
+opt-level = 2
+[profile.dev.package.gpui-base]
+opt-level = 2
+[profile.dev.package.gpui-component]
+opt-level = 2
+[profile.dev.package.image]
+opt-level = 2
