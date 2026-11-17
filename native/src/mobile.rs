@@ -18,12 +18,8 @@ fn android_main(app: android_activity::AndroidApp) {
 
 #[no_mangle]
 pub extern "system" fn Java_com_soundgrammy_app_MainActivity_nativeBack(
-    _: jni::JNIEnv<'_>,
+    _: jni::EnvUnowned<'_>,
     _: jni::objects::JObject<'_>,
 ) -> jni::sys::jboolean {
-    if crate::runtime::request_mobile_back() {
-        1
-    } else {
-        0
-    }
+    crate::runtime::request_mobile_back()
 }

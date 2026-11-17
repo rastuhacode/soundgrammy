@@ -1,6 +1,8 @@
 //! Native application lifetime, typed notifications, and platform services.
 //! Services never depend on a renderer or on a WebView. Handles are weak so
 //! streams and background jobs cannot keep a closed application alive.
+mod persistence;
+
 use crate::{
     config::Config,
     db::Db,
@@ -25,7 +27,7 @@ pub(crate) fn request_mobile_back() -> bool {
         r.notifications
             .read()
             .unwrap_or_else(|e| e.into_inner())
-            .send(UiMessage::Event(Event::new("ui:back", ())))
+            .send(UiMessage::Event(Box::new(Event::Back)))
             .is_ok()
     })
 }
@@ -55,25 +57,28 @@ where
     executor().spawn_blocking(work)
 }
 
-/// Payloads stay typed Rust values; no serialization or IPC is involved.
+/// Domain notifications are exhaustive Rust values, independent of GPUI.
 #[derive(Clone)]
-pub struct Event {
-    pub name: &'static str,
-    payload: Arc<dyn Any + Send + Sync>,
+pub(crate) enum Event {
+    #[cfg(target_os = "android")]
+    Back,
+    AuthRevoked,
+    AudioState(crate::audio::Snapshot),
+    LibraryBatch(crate::db::LibraryBatch),
+    SyncStarted,
+    SyncFinished,
+    SyncFailed(crate::telegram::saved_music::SyncError),
+    SyncProgress(crate::telegram::saved_music::SyncProgress),
+    DownloadProgress(crate::streaming::DownloadProgress),
+    CacheChanged(crate::cache::CacheChanged),
+    ListenStats(crate::db::TrackListenStats),
+    LastFmStatus(crate::lastfm::models::LastFmStatus),
+    ArtworkChanged(crate::cache::media_art::ArtworkChanged),
+    CacheProgress(crate::cache::CacheTracksProgress),
+    ExportProgress(crate::export::PlaylistDownloadProgress),
 }
-impl Event {
-    pub fn new<T: Any + Send + Sync>(name: &'static str, payload: T) -> Self {
-        Self {
-            name,
-            payload: Arc::new(payload),
-        }
-    }
-    pub fn payload<T: Any>(&self) -> Option<&T> {
-        self.payload.downcast_ref()
-    }
-}
-pub enum UiMessage {
-    Event(Event),
+pub(crate) enum UiMessage {
+    Event(Box<Event>),
     MainThread(Box<dyn FnOnce() + Send>),
 }
 struct Resources {
@@ -81,6 +86,7 @@ struct Resources {
     notifications: RwLock<mpsc::UnboundedSender<UiMessage>>,
     downloads: PathBuf,
     native_window: std::sync::atomic::AtomicUsize,
+    settings_writer: Option<persistence::SettingsWriter>,
     _preview_directory: Option<tempfile::TempDir>,
 }
 #[derive(Clone)]
@@ -114,8 +120,23 @@ impl AppHost {
         values.insert(TypeId::of::<T>(), Arc::new(state));
         true
     }
-    pub fn emit<T: Any + Send + Sync>(&self, name: &'static str, payload: T) -> AppResult<()> {
-        self.send(UiMessage::Event(Event::new(name, payload)))
+    pub(crate) fn emit(&self, event: Event) -> AppResult<()> {
+        self.send(UiMessage::Event(Box::new(event)))
+    }
+    pub(crate) fn persist_setting<T: serde::Serialize + Send + 'static>(
+        &self,
+        key: &'static str,
+        value: T,
+    ) -> AppResult<()> {
+        let resources = self
+            .resources
+            .upgrade()
+            .ok_or_else(|| AppError::msg("Application closed"))?;
+        resources
+            .settings_writer
+            .as_ref()
+            .ok_or_else(|| AppError::msg("Settings writer unavailable"))?
+            .save(key, value)
     }
     fn send(&self, message: UiMessage) -> AppResult<()> {
         self.resources
@@ -174,9 +195,6 @@ pub struct AppRuntime {
     worker: Option<JoinHandle<()>>,
 }
 impl AppRuntime {
-    pub fn open() -> AppResult<(Self, mpsc::UnboundedReceiver<UiMessage>)> {
-        Self::open_with_preview(false)
-    }
     pub(crate) fn open_with_preview(
         preview: bool,
     ) -> AppResult<(Self, mpsc::UnboundedReceiver<UiMessage>)> {
@@ -231,7 +249,15 @@ impl AppRuntime {
         crate::session::initialize_namespace(&crate::session::app_namespace(identifier, None));
         #[cfg(target_os = "android")]
         crate::session::repair_android_restored_session(&data)?;
-        let config = Config::load()?;
+        let config = if preview {
+            Config {
+                api_id: 0,
+                api_hash: String::new(),
+                lastfm: None,
+            }
+        } else {
+            Config::load()?
+        };
         let db = Db::open(&data.join("library.db"))?;
         let (notifications, receiver) = mpsc::unbounded_channel();
         let resources = Arc::new(Resources {
@@ -239,6 +265,7 @@ impl AppRuntime {
             notifications: RwLock::new(notifications),
             downloads,
             native_window: Default::default(),
+            settings_writer: Some(persistence::SettingsWriter::new(db.clone())?),
             _preview_directory: preview_directory,
         });
         #[cfg(target_os = "android")]
@@ -360,6 +387,7 @@ mod tests {
             notifications: RwLock::new(notifications),
             downloads: PathBuf::from("/tmp"),
             native_window: Default::default(),
+            settings_writer: None,
             _preview_directory: None,
         });
         let h = AppHost {
@@ -375,12 +403,12 @@ mod tests {
         assert!(!host.manage(7_u64));
         drop(owner);
         assert!(host.try_state::<u64>().is_none());
-        assert!(host.emit("audio:state", 1_u64).is_err());
+        assert!(host.emit(Event::SyncStarted).is_err());
     }
     #[test]
     fn notifications_preserve_types_and_order_and_main_thread_work_is_deferred() {
         let (_owner, host, mut receiver) = resources();
-        host.emit("audio:state", 42_u64).unwrap();
+        host.emit(Event::SyncStarted).unwrap();
         let changed = Arc::new(std::sync::atomic::AtomicBool::new(false));
         let target = changed.clone();
         host.run_on_main_thread(move || target.store(true, std::sync::atomic::Ordering::Release))
@@ -389,9 +417,7 @@ mod tests {
         let UiMessage::Event(event) = receiver.try_recv().unwrap() else {
             panic!("event expected")
         };
-        assert_eq!(event.name, "audio:state");
-        assert_eq!(event.payload::<u64>(), Some(&42));
-        assert!(event.payload::<String>().is_none());
+        assert!(matches!(*event, Event::SyncStarted));
         let UiMessage::MainThread(work) = receiver.try_recv().unwrap() else {
             panic!("work expected")
         };

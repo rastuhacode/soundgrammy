@@ -42,7 +42,7 @@ impl LastFmHost for AppHost {
             status.enabled && status.state == LastFmAuthState::Connected,
             std::sync::atomic::Ordering::Release,
         );
-        let _ = self.emit("lastfm:status_changed", status);
+        let _ = self.emit(crate::runtime::Event::LastFmStatus(status));
     }
     fn open_url(&self, url: &str) -> AppResult<()> {
         self.open_url(url)

@@ -220,7 +220,7 @@ pub async fn export_track(state: &AppState, app: &AppHost, track_id: i64) -> App
         let cached = cache::ensure_audio_leased(state, app, track_id).await?;
         let (ext, mime) = finalized_format(&cached, &track)?;
         let file_name = format!("{}.{}", track_export_basename(&track), ext);
-        return crate::android_downloads::save(cached.path.clone(), file_name, mime).await;
+        crate::android_downloads::save(cached.path.clone(), file_name, mime).await
     }
 
     #[cfg(not(target_os = "android"))]
@@ -343,15 +343,14 @@ async fn export_folder(
     for (index, &track_id) in track_ids.iter().enumerate() {
         let current = (index as u32).saturating_add(1);
         if let Some(job_id) = &job_id {
-            let _ = app.emit(
-                "download_playlist:progress",
+            let _ = app.emit(crate::runtime::Event::ExportProgress(
                 PlaylistDownloadProgress {
                     job_id: job_id.clone(),
                     current,
                     total,
                     track_id,
                 },
-            );
+            ));
         }
 
         let meta = cache::require_track(state, track_id).ok();

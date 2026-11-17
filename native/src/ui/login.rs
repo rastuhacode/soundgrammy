@@ -1,5 +1,6 @@
-//! The same narrow sign-in shell and step layouts as the original client.
-use super::views::{button, glyph, muted, BG, BORDER, FG, MUTED, PRIMARY};
+//! Retained sign-in feature: native inputs, focus and QR presentation have
+//! their own lifetime. Account/session service calls stay in the coordinator.
+use super::views::{button, glyph, muted};
 use super::*;
 use gpui_kit::assets::IconName;
 use gpui_kit::component::{
@@ -7,28 +8,162 @@ use gpui_kit::component::{
     input::Input,
     Disableable,
 };
-impl PlayerApp {
-    pub(super) fn login_view(&mut self, window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
-        let focus_step = match self.login {
-            LoginStep::Qr => "qr",
-            LoginStep::Phone => "phone",
-            LoginStep::Code => "code",
-            LoginStep::Password { .. } => "password",
+
+#[derive(Clone)]
+pub(super) struct LoginInputs {
+    pub phone: Entity<InputState>,
+    pub code: Entity<InputState>,
+    pub password: Entity<InputState>,
+}
+#[derive(Default, PartialEq)]
+struct LoginProps {
+    busy: bool,
+    error: Option<String>,
+    proxy_enabled: bool,
+}
+impl LoginProps {
+    fn from_app(app: &PlayerApp, cx: &App) -> Self {
+        Self {
+            busy: app.busy > 0,
+            error: app.error.clone(),
+            proxy_enabled: app.settings.read(cx).proxy.enabled,
+        }
+    }
+}
+pub(super) struct LoginView {
+    controller: WeakEntity<PlayerApp>,
+    focus_pending: bool,
+    pub inputs: LoginInputs,
+    pub step: LoginStep,
+    pub qr: Option<(usize, Vec<bool>)>,
+    pub request: u64,
+    equalizer: Entity<motion::Equalizer>,
+    props: LoginProps,
+    subscriptions: Vec<Subscription>,
+}
+impl LoginView {
+    pub fn new(
+        controller: WeakEntity<PlayerApp>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Self {
+        let inputs = LoginInputs {
+            phone: cx.new(|cx| InputState::new(window, cx).placeholder("+447700900123")),
+            code: cx.new(|cx| InputState::new(window, cx).placeholder("Telegram login code")),
+            password: cx.new(|cx| {
+                InputState::new(window, cx)
+                    .placeholder("2FA password")
+                    .masked(true)
+            }),
         };
-        if self.login_focus_step != Some(focus_step) {
-            self.login_focus_step = Some(focus_step);
-            match focus_step {
-                "phone" => self.inputs.phone.update(cx, |s, cx| s.focus(window, cx)),
-                "code" => self.inputs.code.update(cx, |s, cx| {
-                    s.set_value("", window, cx);
-                    s.focus(window, cx);
+        let mut view = Self {
+            controller: controller.clone(),
+            focus_pending: true,
+            inputs,
+            step: LoginStep::Qr,
+            qr: None,
+            request: 0,
+            equalizer: cx.new(|_| motion::Equalizer::new(true)),
+            props: LoginProps::default(),
+            subscriptions: vec![],
+        };
+        if let Some(controller) = controller.upgrade() {
+            view.subscriptions
+                .push(cx.observe(&controller, |view, controller, cx| {
+                    let props = LoginProps::from_app(controller.read(cx), cx);
+                    if view.props != props {
+                        view.props = props;
+                        cx.notify();
+                    }
+                }));
+        }
+        let owner = view.controller.clone();
+        view.subscriptions.push(cx.subscribe_in(
+            &view.inputs.code,
+            window,
+            move |view, input, event, window, cx| {
+                if matches!(event, InputEvent::Change) && view.step == LoginStep::Code {
+                    let value = input.read(cx).value();
+                    let complete = value.len() == 5 && value.chars().all(|v| v.is_ascii_digit());
+                    let _ = owner.update(cx, |app, cx| {
+                        if app.phase == Phase::Login {
+                            app.error = None;
+                            if app.busy == 0 && complete {
+                                let app = cx.weak_entity();
+                                let window = window.window_handle();
+                                cx.defer(move |cx| {
+                                    let _ = window.update(cx, |_, window, cx| {
+                                        let _ =
+                                            app.update(cx, |app, cx| app.submit_login(window, cx));
+                                    });
+                                });
+                            }
+                            cx.notify();
+                        }
+                    });
+                }
+            },
+        ));
+        for input in [&view.inputs.phone, &view.inputs.code, &view.inputs.password] {
+            let owner = view.controller.clone();
+            view.subscriptions.push(cx.subscribe_in(
+                input,
+                window,
+                move |_, _, event, window, cx| {
+                    if matches!(event, InputEvent::PressEnter { .. }) {
+                        let owner = owner.clone();
+                        let window = window.window_handle();
+                        cx.defer(move |cx| {
+                            let _ = window.update(cx, |_, window, cx| {
+                                let _ = owner.update(cx, |app, cx| app.submit_login(window, cx));
+                            });
+                        });
+                    }
+                },
+            ));
+        }
+        view
+    }
+    pub fn set_step(&mut self, step: LoginStep, cx: &mut Context<Self>) {
+        if self.step == step {
+            return;
+        }
+        self.step = step.clone();
+        self.focus_pending = true;
+        cx.notify();
+    }
+    fn action<E: 'static>(
+        &self,
+        handler: impl Fn(&mut PlayerApp, &E, &mut Window, &mut Context<PlayerApp>) + 'static,
+    ) -> impl Fn(&E, &mut Window, &mut App) + 'static {
+        let owner = self.controller.clone();
+        move |event, window, cx| {
+            let _ = owner.update(cx, |app, cx| handler(app, event, window, cx));
+        }
+    }
+}
+impl Render for LoginView {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if std::mem::take(&mut self.focus_pending) {
+            match self.step {
+                LoginStep::Phone => self
+                    .inputs
+                    .phone
+                    .update(cx, |input, cx| input.focus(window, cx)),
+                LoginStep::Code => self.inputs.code.update(cx, |input, cx| {
+                    input.set_value("", window, cx);
+                    input.focus(window, cx);
                 }),
-                "password" => self.inputs.password.update(cx, |s, cx| s.focus(window, cx)),
-                _ => {}
+                LoginStep::Password { .. } => self
+                    .inputs
+                    .password
+                    .update(cx, |input, cx| input.focus(window, cx)),
+                LoginStep::Qr => {}
             }
         }
-        let busy = self.busy > 0;
-        let step = match self.login.clone() {
+
+        let busy = self.props.busy;
+        let step = match self.step.clone() {
             LoginStep::Qr => {
                 let qr = self.qr.clone();
                 div()
@@ -99,12 +234,12 @@ impl PlayerApp {
                                 )
                             }),
                     )
-                    .when(self.error.is_some(), |el| {
+                    .when(self.props.error.is_some(), |el| {
                         el.child(
                             button("refresh-qr", "Refresh QR code")
                                 .ghost()
                                 .disabled(busy)
-                                .on_click(cx.listener(|app, _, _, cx| app.start_qr(true, cx))),
+                                .on_click(self.action(|app, _, _, cx| app.start_qr(true, cx))),
                         )
                     })
                     .child(
@@ -112,11 +247,17 @@ impl PlayerApp {
                             .outline()
                             .w_full()
                             .disabled(busy)
-                            .on_click(cx.listener(|app, _, window, cx| {
-                                app.qr_request += 1;
-                                app.login = LoginStep::Phone;
+                            .on_click(self.action(|app, _, window, cx| {
+                                app.sign_in.update(cx, |login, cx| {
+                                    login.request += 1;
+                                    cx.notify();
+                                });
+                                app.sign_in
+                                    .update(cx, |login, cx| login.set_step(LoginStep::Phone, cx));
                                 app.error = None;
-                                app.inputs.phone.update(cx, |s, cx| s.focus(window, cx));
+                                app.login_inputs(cx)
+                                    .phone
+                                    .update(cx, |s, cx| s.focus(window, cx));
                                 cx.notify();
                             })),
                     )
@@ -140,13 +281,13 @@ impl PlayerApp {
                             "Send login code"
                         })
                         .disabled(busy)
-                        .on_click(cx.listener(|app, _, window, cx| app.submit_login(window, cx))),
+                        .on_click(self.action(|app, _, window, cx| app.submit_login(window, cx))),
                 )
                 .child(
                     button("use-qr", "Use QR instead")
                         .outline()
                         .disabled(busy)
-                        .on_click(cx.listener(|app, _, _, cx| app.start_qr(false, cx))),
+                        .on_click(self.action(|app, _, _, cx| app.start_qr(false, cx))),
                 )
                 .into_any_element(),
             LoginStep::Code => {
@@ -192,7 +333,7 @@ impl PlayerApp {
                                     .when(index > 0, |el| el.border_l_0())
                                     .when(index == 0, |el| el.rounded_l(px(12.)))
                                     .when(index == 4, |el| el.rounded_r(px(12.)))
-                                    .bg(rgb(0x272727))
+                                    .bg(rgb(SECONDARY))
                                     .flex()
                                     .items_center()
                                     .justify_center()
@@ -222,10 +363,13 @@ impl PlayerApp {
                         button("change-phone", "Back to phone number")
                             .outline()
                             .disabled(busy)
-                            .on_click(cx.listener(|app, _, window, cx| {
-                                app.login = LoginStep::Phone;
+                            .on_click(self.action(|app, _, window, cx| {
+                                app.sign_in
+                                    .update(cx, |login, cx| login.set_step(LoginStep::Phone, cx));
                                 app.error = None;
-                                app.inputs.phone.update(cx, |s, cx| s.focus(window, cx));
+                                app.login_inputs(cx)
+                                    .phone
+                                    .update(cx, |s, cx| s.focus(window, cx));
                                 cx.notify();
                             })),
                     )
@@ -254,25 +398,31 @@ impl PlayerApp {
                             "Sign in"
                         })
                         .disabled(busy)
-                        .on_click(cx.listener(|app, _, window, cx| app.submit_login(window, cx))),
+                        .on_click(self.action(|app, _, window, cx| app.submit_login(window, cx))),
                 )
                 .when(qr, |el| {
                     el.child(
                         button("password-back-qr", "Back to QR login")
                             .outline()
                             .disabled(busy)
-                            .on_click(cx.listener(|app, _, _, cx| app.start_qr(false, cx))),
+                            .on_click(self.action(|app, _, _, cx| app.start_qr(false, cx))),
                     )
                 })
                 .child(
                     button("password-use-phone", "Back to phone number")
                         .outline()
                         .disabled(busy)
-                        .on_click(cx.listener(|app, _, window, cx| {
-                            app.qr_request += 1;
-                            app.login = LoginStep::Phone;
+                        .on_click(self.action(|app, _, window, cx| {
+                            app.sign_in.update(cx, |login, cx| {
+                                login.request += 1;
+                                cx.notify();
+                            });
+                            app.sign_in
+                                .update(cx, |login, cx| login.set_step(LoginStep::Phone, cx));
                             app.error = None;
-                            app.inputs.phone.update(cx, |s, cx| s.focus(window, cx));
+                            app.login_inputs(cx)
+                                .phone
+                                .update(cx, |s, cx| s.focus(window, cx));
                             cx.notify();
                         })),
                 )
@@ -280,11 +430,11 @@ impl PlayerApp {
         };
         div().id("login-shell").flex_1().min_h_0().overflow_y_scroll().bg(rgb(BG)).px_5().pt(px(if window.viewport_size().width<px(640.) {64.}else{80.})).pb_12().flex().justify_center()
             .child(div().w(px(416.)).max_w_full().flex().flex_col().items_center()
-                .child(div().w(px(32.)).mb_5().child(self.login_equalizer.clone()))
+                .child(div().w(px(32.)).mb_5().child(self.equalizer.clone()))
                 .child(div().mb_8().flex().text_size(px(36.)).line_height(px(40.)).font_weight(FontWeight::SEMIBOLD).child(div().text_color(rgb(FG)).child("Sound")).child(div().text_color(rgb(PRIMARY)).child("grammy")))
                 .child(div().w(px(300.)).max_w_full().child(step)
-                    .when_some(self.error.clone(),|el,error|el.child(div().mt_2().text_sm().text_color(rgb(0xff656a)).text_center().child(error))))
-                .child(button("login-proxy",if self.proxy.enabled {"Proxy: On"}else{"Proxy: Off"}).ghost().w(px(300.)).max_w_full().mt_6().text_color(rgb(MUTED)).icon(glyph(IconName::Circle,8.)).on_click(cx.listener(|app,_,window,cx|app.open_panel(Panel::Proxy,window,cx))))
+                    .when_some(self.props.error.clone(),|el,error|el.child(div().mt_2().text_sm().text_color(rgb(ERROR)).text_center().child(error))))
+                .child(button("login-proxy",if self.props.proxy_enabled {"Proxy: On"}else{"Proxy: Off"}).ghost().w(px(300.)).max_w_full().mt_6().text_color(rgb(MUTED)).icon(glyph(IconName::Circle,8.)).on_click(self.action(|app,_,window,cx|app.open_panel(Panel::Proxy,window,cx))))
                 .child(muted("SoundGrammy is an independent app that uses the Telegram API. It is not affiliated with or endorsed by Telegram.").w(px(320.)).max_w_full().mt_6().text_xs().line_height(px(19.5)).text_center())).into_any_element()
     }
 }

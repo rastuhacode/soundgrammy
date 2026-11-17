@@ -55,26 +55,7 @@ pub(super) fn prepare(path: &std::path::Path) -> Option<Prepared> {
             .resize_exact(48, 48, image::imageops::FilterType::Triangle)
             .to_rgba8(),
     );
-    #[cfg(target_os = "macos")]
-    let background = {
-        let small = decoded
-            .resize_exact(512, 512, image::imageops::FilterType::Triangle)
-            .to_rgba8();
-        let mut small = image::imageops::blur(&small, 20.);
-        for p in small.pixels_mut() {
-            p.0.swap(0, 2);
-        }
-        Background {
-            gpu: Some(gpui_apple::effects::Image {
-                width: 512,
-                height: 512,
-                pixels: Arc::new(small.into_raw()),
-            }),
-            ..Default::default()
-        }
-    };
-    #[cfg(not(target_os = "macos"))]
-    let background = colors::background(path, palette);
+    let background = colors::background(&decoded, palette);
     let decoded = if decoded.width() > 2048 || decoded.height() > 2048 {
         decoded.resize(2048, 2048, image::imageops::FilterType::Lanczos3)
     } else {
@@ -208,8 +189,6 @@ pub(super) struct FullscreenVisual {
     frame: Option<FullscreenFrame>,
     clock: Option<(Instant, Instant, Instant)>, // entrance, playback anchor, previous frame
     motion: super::bounce::Motion,
-    #[cfg(target_os = "macos")]
-    gpu_surface: Option<Arc<gpui_apple::effects::Surface>>,
 }
 
 impl FullscreenVisual {
@@ -219,8 +198,6 @@ impl FullscreenVisual {
             frame: None,
             clock: None,
             motion: Default::default(),
-            #[cfg(target_os = "macos")]
-            gpu_surface: None,
         }
     }
     pub fn clear(&mut self) {
@@ -306,16 +283,6 @@ impl Render for FullscreenVisual {
         if !reduce_motion
             && window.is_visible()
             && (frame.backdrop.rest.is_some()
-                || {
-                    #[cfg(target_os = "macos")]
-                    {
-                        frame.backdrop.gpu.is_some()
-                    }
-                    #[cfg(not(target_os = "macos"))]
-                    {
-                        false
-                    }
-                }
                 || enter < 1.
                 || (frame.settings.enabled && (frame.playing || self.motion.active())))
         {
@@ -332,53 +299,6 @@ impl Render for FullscreenVisual {
         } else {
             (1. - (age as f32 * std::f32::consts::PI / 28.).cos()) / 2.
         };
-        #[cfg(target_os = "macos")]
-        let gpu = frame.backdrop.gpu.as_ref().and_then(|image| {
-            let mut uniforms = colors::gpu_uniforms(frame.palette);
-            uniforms.energy = [
-                self.motion.energy[0] as f32,
-                self.motion.energy[1] as f32,
-                self.motion.energy[2] as f32,
-                0.,
-            ];
-            uniforms.spread = [
-                self.motion.spread[0] as f32,
-                self.motion.spread[1] as f32,
-                self.motion.spread[2] as f32,
-                0.,
-            ];
-            let phase = |seconds: f32, duration: f32| {
-                let t = (seconds / duration).rem_euclid(2.);
-                cubic_bezier(0.42, 0., 0.58, 1.)(if t <= 1. { t } else { 2. - t })
-            };
-            for (i, delay) in [0., 11., 21.].into_iter().enumerate() {
-                uniforms.drift[i] = if reduce_motion {
-                    0.5
-                } else {
-                    phase(age as f32 + delay, 32.)
-                };
-            }
-            let t = (age as f32 / 28.).rem_euclid(2.);
-            let t = if t <= 1. { t } else { 2. - t };
-            let (x, y) = if t <= 0.5 {
-                let p = cubic_bezier(0.42, 0., 0.58, 1.)(t * 2.);
-                (p, p * 0.35)
-            } else {
-                let p = cubic_bezier(0.42, 0., 0.58, 1.)((t - 0.5) * 2.);
-                (1. - p * 0.7, 0.35 + p * 0.65)
-            };
-            uniforms.ambient = [x, y, 0., 0.];
-            let effect = gpui_apple::effects::Effect::Palette {
-                image: image.clone(),
-                uniforms,
-            };
-            if let Some(surface) = &self.gpu_surface {
-                surface.update(effect);
-            } else {
-                self.gpu_surface = gpui_apple::effects::Surface::new(effect).map(Arc::new);
-            }
-            self.gpu_surface.clone()
-        });
         div()
             .absolute()
             .inset_0()
@@ -388,29 +308,6 @@ impl Render for FullscreenVisual {
                 linear_color_stop(rgb(frame.palette.colors[0]), 0.),
                 linear_color_stop(rgb(frame.palette.colors[1]), 1.),
             ))
-            .child({
-                #[cfg(target_os = "macos")]
-                {
-                    gpu.map_or_else(
-                        || Empty.into_any_element(),
-                        |surface| {
-                            canvas(
-                                |_, _, _| (),
-                                move |bounds, _, window, _| {
-                                    window.paint_surface(bounds, surface.buffer())
-                                },
-                            )
-                            .absolute()
-                            .inset_0()
-                            .into_any_element()
-                        },
-                    )
-                }
-                #[cfg(not(target_os = "macos"))]
-                {
-                    Empty.into_any_element()
-                }
-            })
             .when_some(frame.backdrop.rest.clone(), |el, backdrop| {
                 el.child(
                     img(backdrop)
@@ -591,8 +488,8 @@ mod quality_tests {
 }
 
 impl super::PlayerApp {
-    pub(super) fn fullscreen_artwork_pending(&self) -> bool {
-        let Some(id) = self.snapshot.track_id else {
+    pub(super) fn fullscreen_artwork_pending(&self, cx: &App) -> bool {
+        let Some(id) = self.playback.read(cx).track_id else {
             return false;
         };
         if self.thumb_loading.contains(&id)

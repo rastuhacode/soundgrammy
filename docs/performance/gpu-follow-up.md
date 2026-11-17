@@ -2,6 +2,11 @@
 
 This follows the initial migration/performance audit. The earlier resource table describes the earlier build; it is not a new measurement of this renderer patch. Production databases, session/cache/preferences, credential namespaces and the running production app were not used.
 
+> Historical renderer results. The local Apple renderer patch was later removed
+> in favor of a shared dim backdrop and prepared artwork layers. New fixture
+> runs report callback timings; the Metal presentation data below applies only
+> to the patched build. See [dependency maintenance](../dependencies.md).
+
 ## Blur without the opening freeze
 
 Removing blur was a workaround, not a requirement. The original migrated implementation read a Metal drawable back to CPU memory and resized/blurred it synchronously during modal rendering. That is different from a compositor/GPU blur.
@@ -74,4 +79,4 @@ Measurements use a 5,000-track synthetic library and one scroll delta every seco
 
 After the dialog input follow-up, 387 native tests plus 4 xtask tests pass; one existing application test is ignored. Formatting, locked workspace checking and all-target workspace Clippy with warnings denied pass. The preceding renderer follow-up also passed locked release/development builds and Android arm64 compilation. Native UI inspection of that renderer follow-up confirmed the restored blur, a coloured fullscreen background with ready artwork, and the scrollbar appearing during scroll. Regression tests cover scrollbar dragging and intermediate scroll positions with no added post-input momentum.
 
-GPU blending/blur is implemented through the local `gpui-pre-apple` patch, documented in [SOUNDGRAMMY-PATCH.md](../../native/vendor/gpui-pre-apple/SOUNDGRAMMY-PATCH.md). The original macOS frame-source patch remains separate. Intel/discrete GPU and old macOS runtime behavior, Android devices, live audio/streaming, animated energy usage and long-session memory have not been measured.
+These results describe the build with the local `gpui-pre-apple` effects patch and the separate macOS frame-source patch. Intel/discrete GPU and old macOS runtime behavior, Android devices, live audio/streaming, animated energy usage and long-session memory have not been measured.

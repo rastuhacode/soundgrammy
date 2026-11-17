@@ -87,12 +87,13 @@ fn execute() -> Result {
     let debug = args.iter().any(|v| v == "--debug");
     let target = option(&args, "--target")?;
     match args.first().map(String::as_str).unwrap_or("help") {
+        "check-dependencies" => check_dependencies(),
         "check-versions" => check_versions(args.iter().any(|v| v == "--fix")),
         "package" => package(&args, debug, target.as_deref()),
         "android" => android(&args, debug, target.as_deref()),
         "icons" => icons::generate(args.iter().any(|v| v == "--check")),
         "help" | "--help" | "-h" => {
-            println!("Daily: cargo run | cargo check | cargo test | cargo fmt | cargo clippy\n\ncargo xtask check-versions [--fix]\ncargo xtask package [--debug] [--target TRIPLE] [--no-build] [--formats app,dmg]\ncargo xtask android [--debug] [--target TRIPLE] [--offline]\ncargo xtask icons [--check]\n\nRelease testing: SOUNDGRAMMY_DATA_DIR=/absolute/sandbox cargo run --release\nAccount-free UI: cargo run --release -- --preview");
+            println!("Daily: cargo run | cargo check | cargo test | cargo fmt | cargo clippy\n\ncargo xtask check-versions [--fix]\ncargo xtask check-dependencies\ncargo xtask package [--debug] [--target TRIPLE] [--no-build] [--formats app,dmg]\ncargo xtask android [--debug] [--target TRIPLE] [--offline]\ncargo xtask icons [--check]\n\nRelease testing: SOUNDGRAMMY_DATA_DIR=/absolute/sandbox cargo run --release\nAccount-free UI: cargo run --release -- --preview");
             Ok(())
         }
         other => Err(format!("Unknown task: {other}; use cargo xtask help").into()),
@@ -137,6 +138,59 @@ fn check_versions(fix: bool) -> Result {
         )?;
     }
     println!("Application versions synchronized at {version} ({expected}).");
+    Ok(())
+}
+// A tested Kit/renderer pair plus the local fixes that must not silently
+// resolve back to an unpatched registry crate during dependency maintenance.
+fn locked_package<'a>(lock: &'a str, name: &str) -> Result<&'a str> {
+    let expected = format!("name = \"{name}\"");
+    lock.split("[[package]]")
+        .find(|package| package.lines().any(|line| line == expected))
+        .ok_or_else(|| format!("Missing locked package {name}").into())
+}
+fn check_local_patch(lock: &str, name: &str, version: &str) -> Result {
+    let package = locked_package(lock, name)?;
+    let expected = format!("version = \"{version}\"");
+    if !package.lines().any(|line| line == expected)
+        || package.lines().any(|line| line.starts_with("source ="))
+    {
+        return Err(format!("{name} must resolve to the reviewed local patch at {version}; see docs/dependencies.md").into());
+    }
+    Ok(())
+}
+fn check_dependencies() -> Result {
+    let lock = fs::read_to_string(root().join("Cargo.lock"))?;
+    let (name, version) = ("gpui-pre-mobile", "0.1.0");
+    check_local_patch(&lock, name, version)?;
+    let directory = root().join("native/vendor").join(name);
+    let manifest = fs::read_to_string(directory.join("Cargo.toml"))?;
+    if !manifest
+        .lines()
+        .any(|line| line == format!("version = \"{version}\""))
+    {
+        return Err(format!("Patch manifest version differs for {name}").into());
+    }
+    fs::metadata(directory.join("SOUNDGRAMMY-PATCH.md"))?;
+    if !locked_package(&lock, "gpui-pre-apple")?
+        .lines()
+        .any(|line| line == "source = \"registry+https://github.com/rust-lang/crates.io-index\"")
+    {
+        return Err(
+            "The Apple renderer must resolve from crates.io; see docs/dependencies.md".into(),
+        );
+    }
+    for (name, version) in [("gpui-kit", "0.10.0"), ("gpui-pre", "0.3.12")] {
+        if !locked_package(&lock, name)?
+            .lines()
+            .any(|line| line == format!("version = \"{version}\""))
+        {
+            return Err(format!(
+                "Review the Kit/renderer pair before updating {name}; see docs/dependencies.md"
+            )
+            .into());
+        }
+    }
+    println!("Reviewed GPUI Kit/renderer pair and Android host patch verified.");
     Ok(())
 }
 fn windows_upgrade_code(name: &str) -> String {
@@ -322,6 +376,19 @@ mod icons;
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn dependency_policy_rejects_registry_fallback_and_version_drift() {
+        let local = "[[package]]\nname = \"example\"\nversion = \"1.0.0\"\n";
+        assert!(check_local_patch(local, "example", "1.0.0").is_ok());
+        assert!(check_local_patch(local, "example", "1.0.1").is_err());
+        assert!(check_local_patch(
+            &(local.to_owned() + "source = \"registry+https://example.com\"\n"),
+            "example",
+            "1.0.0"
+        )
+        .is_err());
+        assert!(check_local_patch(local, "missing", "1.0.0").is_err());
+    }
     #[test]
     fn android_version_contract() {
         assert_eq!(version_code("3.5.0-develop").unwrap(), 3_050_000);

@@ -61,10 +61,7 @@ impl LogBook {
     }
     fn persist(&self) {
         if let Some(host) = &self.host {
-            let _ = host.state::<AppState>().db.set_setting(
-                "native_diagnostic_logs",
-                &serde_json::to_string(&self.entries).unwrap_or_default(),
-            );
+            let _ = host.persist_setting("native_diagnostic_logs", self.entries.clone());
         }
     }
 }

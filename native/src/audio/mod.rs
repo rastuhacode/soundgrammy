@@ -141,14 +141,6 @@ impl Default for Snapshot {
         }
     }
 }
-#[derive(Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-struct Ended {
-    r#type: &'static str,
-    track_id: i64,
-    attempt_id: String,
-    revision: u64,
-}
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Capabilities {
@@ -446,7 +438,8 @@ impl NativeAudioService {
                                 snapshot.clone()
                             };
                             media::publish(&app, &snapshot, true);
-                            let _ = app.emit("audio:state", snapshot.for_display());
+                            let _ =
+                                app.emit(crate::runtime::Event::AudioState(snapshot.for_display()));
                         }
                     })
                     .map_err(|_| "output-unavailable")?;
@@ -1195,7 +1188,7 @@ fn run(
                         snapshot.revision += 1;
                         *shared.lock().unwrap_or_else(|p| p.into_inner()) = snapshot.clone();
                         media::publish(&app, &snapshot, true);
-                        let _ = app.emit("audio:state", snapshot.for_display());
+                        let _ = app.emit(crate::runtime::Event::AudioState(snapshot.for_display()));
                     }
                     if failed || p.output.resume(ready).is_err() {
                         restart = Some(snapshot.current_time_seconds);
@@ -1243,7 +1236,7 @@ fn run(
             snapshot.revision += 1;
             *shared.lock().unwrap_or_else(|p| p.into_inner()) = snapshot.clone();
             media::publish(&app, &snapshot, true);
-            let _ = app.emit("audio:state", snapshot.for_display());
+            let _ = app.emit(crate::runtime::Event::AudioState(snapshot.for_display()));
             let _ = envelope.reply.send(Ok(snapshot.clone()));
         }
         let mut error = None;
@@ -1403,16 +1396,7 @@ fn run(
                     snapshot.revision += 1;
                     *shared.lock().unwrap_or_else(|p| p.into_inner()) = snapshot.clone();
                     media::publish(&app, &snapshot, true);
-                    let _ = app.emit("audio:state", snapshot.for_display());
-                    let _ = app.emit(
-                        "audio:event",
-                        Ended {
-                            r#type: "ended",
-                            track_id: snapshot.track_id.unwrap(),
-                            attempt_id: snapshot.attempt_id.clone().unwrap(),
-                            revision: snapshot.revision,
-                        },
-                    );
+                    let _ = app.emit(crate::runtime::Event::AudioState(snapshot.for_display()));
                 }
                 #[cfg(target_os = "android")]
                 if !audible && ready && p.output.suspend().is_err() {
@@ -1441,7 +1425,7 @@ fn run(
                 event.player = None;
             }
             media::publish(&app, &snapshot, dirty);
-            let _ = app.emit("audio:state", event.for_display());
+            let _ = app.emit(crate::runtime::Event::AudioState(event.for_display()));
             last_emit = Instant::now();
         }
     }

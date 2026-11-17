@@ -35,7 +35,7 @@ def measure(app,binary,scenario,count,art,index,seconds):
                 elapsed=samples[-1]['at']-initial
                 cpu=sum(max(0,samples[-1]['cpu'].get(str(pid),p['cpu_seconds'])-p['cpu_seconds']) for pid,p in baseline.items())/elapsed*100
                 metricsfile=ready.with_suffix('.frames.json')
-                if app.startswith('GPUI') or scenario in ('scroll','artwork-scroll','search','fullscreen','fullscreen-playing'):
+                if not app.startswith('GPUI') and scenario in ('scroll','artwork-scroll','search','fullscreen','fullscreen-playing'):
                     deadline=time.monotonic()+4
                     while not metricsfile.exists() and time.monotonic()<deadline:time.sleep(.05)
                 metrics=json.loads(metricsfile.read_text()) if metricsfile.exists() else None

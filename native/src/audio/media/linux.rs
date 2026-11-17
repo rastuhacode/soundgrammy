@@ -5,10 +5,7 @@ use std::{
     collections::HashMap,
     sync::{Arc, RwLock},
 };
-use zbus::{
-    blocking::{connection::Builder, Connection},
-    zvariant::{OwnedObjectPath, OwnedValue, Value},
-};
+use zbus::{connection::Builder, Connection, OwnedObjectPath, OwnedVariant, Variant};
 const PATH: &str = "/org/mpris/MediaPlayer2";
 type Shared = Arc<RwLock<Option<Presentation>>>;
 struct Root;
@@ -68,12 +65,12 @@ fn track_path(p: &Presentation) -> OwnedObjectPath {
     )
     .unwrap()
 }
-fn metadata(p: Option<&Presentation>) -> HashMap<String, OwnedValue> {
+fn metadata(p: Option<&Presentation>) -> HashMap<String, OwnedVariant> {
     let mut map = HashMap::new();
     if let Some(p) = p.filter(|p| p.identity.is_some()) {
         map.insert(
             "mpris:trackid".into(),
-            Value::from(track_path(p)).try_into().unwrap(),
+            Variant::from(track_path(p)).try_into().unwrap(),
         );
         map.insert(
             "mpris:length".into(),
@@ -81,11 +78,11 @@ fn metadata(p: Option<&Presentation>) -> HashMap<String, OwnedValue> {
         );
         map.insert(
             "xesam:title".into(),
-            Value::from(p.title.clone()).try_into().unwrap(),
+            Variant::from(p.title.clone()).try_into().unwrap(),
         );
         map.insert(
             "xesam:artist".into(),
-            Value::from(vec![p.artist.clone()]).try_into().unwrap(),
+            Variant::from(vec![p.artist.clone()]).try_into().unwrap(),
         );
         if let Some(url) = p
             .artwork
@@ -94,7 +91,7 @@ fn metadata(p: Option<&Presentation>) -> HashMap<String, OwnedValue> {
         {
             map.insert(
                 "mpris:artUrl".into(),
-                Value::from(url.to_string()).try_into().unwrap(),
+                Variant::from(url.to_string()).try_into().unwrap(),
             );
         }
     }
@@ -174,7 +171,7 @@ impl Player {
         1.0
     }
     #[zbus(property)]
-    fn metadata(&self) -> HashMap<String, OwnedValue> {
+    fn metadata(&self) -> HashMap<String, OwnedVariant> {
         metadata(self.current().as_ref())
     }
     // Volume control is optional to this bridge; advertise a fixed value.
@@ -224,22 +221,23 @@ pub struct Adapter {
 impl Adapter {
     pub fn new(app: &AppHost) -> Result<Self, String> {
         let state = Shared::default();
-        let connection = (|| -> zbus::Result<Connection> {
-            Builder::session()?
+        let connection = zbus::block_on(async {
+            Builder::session()
                 .name(format!(
                     "org.mpris.MediaPlayer2.SoundGrammy.instance{}",
                     std::process::id()
-                ))?
-                .serve_at(PATH, Root)?
+                ))
+                .serve_at(PATH, Root)
                 .serve_at(
                     PATH,
                     Player {
                         app: app.clone(),
                         state: state.clone(),
                     },
-                )?
+                )
                 .build()
-        })()
+                .await
+        })
         .map_err(|e| e.to_string())?;
         Ok(Self { connection, state })
     }
@@ -249,14 +247,14 @@ impl Adapter {
             .write()
             .unwrap_or_else(|p| p.into_inner())
             .replace(p.clone());
-        let mut changed: HashMap<&str, OwnedValue> = HashMap::new();
+        let mut changed: HashMap<&str, OwnedVariant> = HashMap::new();
         changed.insert(
             "Metadata",
-            Value::from(metadata(Some(p))).try_into().unwrap(),
+            Variant::from(metadata(Some(p))).try_into().unwrap(),
         );
         changed.insert(
             "PlaybackStatus",
-            Value::from(status(Some(p))).try_into().unwrap(),
+            Variant::from(status(Some(p))).try_into().unwrap(),
         );
         for (name, value) in [
             ("CanGoNext", p.actions.next),
@@ -267,31 +265,29 @@ impl Adapter {
         ] {
             changed.insert(name, value.into());
         }
-        self.connection
-            .emit_signal(
-                None::<&str>,
-                PATH,
-                "org.freedesktop.DBus.Properties",
-                "PropertiesChanged",
-                &(
-                    "org.mpris.MediaPlayer2.Player",
-                    changed,
-                    Vec::<String>::new(),
-                ),
-            )
-            .map_err(|e| e.to_string())?;
+        zbus::block_on(self.connection.emit_signal(
+            None::<&str>,
+            PATH,
+            "org.freedesktop.DBus.Properties",
+            "PropertiesChanged",
+            &(
+                "org.mpris.MediaPlayer2.Player",
+                changed,
+                Vec::<String>::new(),
+            ),
+        ))
+        .map_err(|e| e.to_string())?;
         if previous.is_some_and(|old| {
             old.identity == p.identity && (old.position_now() - p.position).abs() > 0.5
         }) {
-            self.connection
-                .emit_signal(
-                    None::<&str>,
-                    PATH,
-                    "org.mpris.MediaPlayer2.Player",
-                    "Seeked",
-                    &((p.position * 1_000_000.0) as i64,),
-                )
-                .map_err(|e| e.to_string())?;
+            zbus::block_on(self.connection.emit_signal(
+                None::<&str>,
+                PATH,
+                "org.mpris.MediaPlayer2.Player",
+                "Seeked",
+                &((p.position * 1_000_000.0) as i64,),
+            ))
+            .map_err(|e| e.to_string())?;
         }
         Ok(())
     }

@@ -295,14 +295,11 @@ pub async fn get_cache_usage(state: &AppState) -> AppResult<CacheUsage> {
 }
 
 fn emit_cache_changed(app: &AppHost, track_ids: &[i64], cached: bool) {
-    let _ = app.emit(
-        "cache:changed",
-        CacheChanged {
-            track_ids: track_ids.to_vec(),
-            cached,
-            cleared: false,
-        },
-    );
+    let _ = app.emit(crate::runtime::Event::CacheChanged(CacheChanged {
+        track_ids: track_ids.to_vec(),
+        cached,
+        cleared: false,
+    }));
 }
 
 fn matches_audio_identity(name: &str, unique_id: &str) -> bool {
@@ -530,18 +527,15 @@ pub async fn cache_tracks(
     };
     for (index, track) in tracks.iter().enumerate() {
         if let Some(job_id) = job_id {
-            let _ = app.emit(
-                "cache_tracks:progress",
-                CacheTracksProgress {
-                    job_id: job_id.into(),
-                    current: track_ids
-                        .iter()
-                        .filter(|id| tracks[..=index].iter().any(|t| t.id == **id))
-                        .count() as u32,
-                    total: track_ids.len() as u32,
-                    track_id: track.id,
-                },
-            );
+            let _ = app.emit(crate::runtime::Event::CacheProgress(CacheTracksProgress {
+                job_id: job_id.into(),
+                current: track_ids
+                    .iter()
+                    .filter(|id| tracks[..=index].iter().any(|t| t.id == **id))
+                    .count() as u32,
+                total: track_ids.len() as u32,
+                track_id: track.id,
+            }));
         }
         let outcome = async {
             let _lease = ensure_audio_leased(state, app, track.id).await?;

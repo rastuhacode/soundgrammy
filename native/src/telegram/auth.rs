@@ -116,7 +116,7 @@ async fn clear_local_session_at(state: &AppState, epoch: u64) -> AppResult<()> {
 }
 
 fn emit_auth_revoked(app: &AppHost) {
-    let _ = app.emit("auth:revoked", ());
+    let _ = app.emit(crate::runtime::Event::AuthRevoked);
 }
 
 /// Online check: refresh profile from Telegram, or report unreachable / revoked.

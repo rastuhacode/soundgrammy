@@ -1,5 +1,6 @@
 //! Artwork sampling and color layers. Image work runs on the blocking executor,
 //! once per cover; animation only composites cached GPU textures.
+use crate::ui::theme::{BG, CARD, SECONDARY};
 use gpui_kit::RenderImage;
 use std::{collections::HashMap, sync::Arc};
 #[derive(Clone, Copy, PartialEq)]
@@ -10,7 +11,7 @@ pub(in crate::ui) struct Palette {
 impl Default for Palette {
     fn default() -> Self {
         Self {
-            colors: [0x141414, 0x202020, 0x272727],
+            colors: [BG, CARD, SECONDARY],
             accent: None,
         }
     }
@@ -183,12 +184,10 @@ fn tone(h: f64, s: f64, l: f64) -> [f32; 3] {
     };
     c.map(|v| (v + m) as f32)
 }
-#[cfg(any(test, not(target_os = "macos")))]
 fn luminosity(c: [f32; 3]) -> f32 {
     c[0] * 0.3 + c[1] * 0.59 + c[2] * 0.11
 }
 /// W3C nonseparable color blend: retain the backdrop's luminosity.
-#[cfg(any(test, not(target_os = "macos")))]
 fn color_blend(mut c: [f32; 3], backdrop: [f32; 3]) -> [f32; 3] {
     let d = luminosity(backdrop) - luminosity(c);
     for v in &mut c {
@@ -210,10 +209,7 @@ pub(in crate::ui) struct Background {
     pub rest: Option<Arc<RenderImage>>,
     pub bands: [Option<Arc<RenderImage>>; 3],
     pub peaks: [Option<Arc<RenderImage>>; 3],
-    #[cfg(target_os = "macos")]
-    pub gpu: Option<gpui_apple::effects::Image>,
 }
-#[cfg(not(target_os = "macos"))]
 fn texture(mut image: image::RgbaImage) -> Arc<RenderImage> {
     for pixel in image.pixels_mut() {
         pixel.0.swap(0, 2);
@@ -244,11 +240,7 @@ fn color_range(c: u32, recovered: bool) -> ([f32; 3], Option<[f32; 3]>, Option<[
     )
 }
 
-#[cfg(not(target_os = "macos"))]
-pub(in crate::ui) fn background(path: &std::path::Path, palette: Palette) -> Background {
-    let Ok(image) = image::open(path) else {
-        return Background::default();
-    };
+pub(super) fn background(image: &image::DynamicImage, palette: Palette) -> Background {
     let image = image
         .resize_to_fill(256, 160, image::imageops::FilterType::Triangle)
         .to_rgba8();
@@ -310,26 +302,8 @@ pub(in crate::ui) fn background(path: &std::path::Path, palette: Palette) -> Bac
         rest: Some(texture(rest)),
         bands,
         peaks,
-        #[cfg(target_os = "macos")]
-        gpu: None,
     }
 }
-#[cfg(target_os = "macos")]
-pub(super) fn gpu_uniforms(palette: Palette) -> gpui_apple::effects::PaletteUniforms {
-    let accent = palette.accent.and_then(|c| color_range(c, true).2);
-    let ranges = palette.colors.map(|c| {
-        let (rest, active, peak) = color_range(c, false);
-        (rest, active, peak.or(accent))
-    });
-    let rgba = |c: Option<[f32; 3]>| c.map_or([0.; 4], |v| [v[0], v[1], v[2], 1.]);
-    gpui_apple::effects::PaletteUniforms {
-        rest: ranges.map(|range| rgba(Some(range.0))),
-        active: std::array::from_fn(|i| rgba(ranges[2 - i].1)),
-        peak: std::array::from_fn(|i| rgba(ranges[2 - i].2)),
-        ..Default::default()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::{color_blend, extract, luminosity, unpack};

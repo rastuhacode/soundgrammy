@@ -18,6 +18,7 @@ Native GPUI music player over Telegram MTProto (ferogram). Local-first: SQLite o
 ```sh
 cargo run
 cargo check --locked
+cargo xtask check-dependencies
 cargo fmt --all --check
 cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo test --workspace --locked

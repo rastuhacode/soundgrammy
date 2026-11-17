@@ -48,6 +48,7 @@ impl PlayerApp {
                 .aria_label("Main navigation")
                 .size_full()
                 .bg(rgb(SIDEBAR))
+                .shadow_lg()
                 .border_r_1()
                 .border_color(rgb(BORDER))
                 .flex()
@@ -65,7 +66,7 @@ impl PlayerApp {
                                 .flex_shrink_0()
                                 .rounded_full()
                                 .overflow_hidden()
-                                .bg(rgba(0x2aabee26))
+                                .bg(tint(PRIMARY, 0x26))
                                 .flex()
                                 .items_center()
                                 .justify_center()
@@ -129,7 +130,7 @@ impl PlayerApp {
                                 .items_center()
                                 .gap_4()
                                 .cursor_pointer()
-                                .hover(|el| el.bg(rgb(0x203039)))
+                                .hover(|el| el.bg(rgb(SELECTED)))
                                 .child(
                                     glyph(IconName::RadioTower, 20.)
                                         .text_color(rgb(if self.online { PRIMARY } else { MUTED })),
@@ -189,7 +190,7 @@ impl PlayerApp {
                                 .items_center()
                                 .gap_4()
                                 .cursor_pointer()
-                                .hover(|el| el.bg(rgb(0x203039)))
+                                .hover(|el| el.bg(rgb(SELECTED)))
                                 .child(glyph(IconName::Settings, 20.).text_color(rgb(MUTED)))
                                 .child("Settings")
                                 .on_click(cx.listener(|app, _, window, cx| {
@@ -220,9 +221,9 @@ impl PlayerApp {
                                 .justify_start()
                                 .items_center()
                                 .gap_4()
-                                .text_color(rgb(0xff656a))
+                                .text_color(rgb(ERROR))
                                 .cursor_pointer()
-                                .hover(|el| el.bg(rgba(0xff656a1a)))
+                                .hover(|el| el.bg(tint(ERROR, 0x1a)))
                                 .child(glyph(IconName::LogOut, 20.))
                                 .child("Log out")
                                 .on_click(cx.listener(|app, _, _, cx| {
@@ -261,7 +262,7 @@ impl PlayerApp {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let view = cx.entity();
-        let queue = self.snapshot.player.as_ref().map(|p| &p.queue);
+        let queue = self.playback.read(cx).player.as_ref().map(|p| &p.queue);
         let position = queue
             .filter(|q| !q.tracks.is_empty())
             .map(|q| format!("{} of {}", q.cursor + 1, q.tracks.len()))
@@ -392,66 +393,77 @@ impl PlayerApp {
                     .aria_label("Search playlists"),
             )
             .child(div().mt_2().mb_2().border_b_1().border_color(rgb(BORDER)))
-            .children(
-                [
-                    ("recency", "Recency"),
-                    ("custom", "Custom Order"),
-                    ("alphabetical", "Alphabetical"),
-                ]
-                .into_iter()
-                .map(|(key, label)| {
-                    let selected = self.preferences.playlist_sort == key;
-                    gpui_kit::base::Radio::new(SharedString::from(format!("playlist-sort-{key}")))
-                        .key_context("PlaylistSort")
-                        .checked(selected)
-                        .accessibility_label(label)
-                        .track_focus(
-                            &self.playlist_sort_focus[match key {
-                                "recency" => 0,
-                                "custom" => 1,
-                                _ => 2,
-                            }],
-                        )
-                        .on_key_down(cx.listener(move |app, event: &KeyDownEvent, window, cx| {
-                            let index = match key {
-                                "recency" => 0,
-                                "custom" => 1,
-                                _ => 2,
-                            };
-                            let next = match event.keystroke.key.as_str() {
-                                "up" | "left" => (index + 2) % 3,
-                                "down" | "right" => (index + 1) % 3,
-                                "home" => 0,
-                                "end" => 2,
-                                _ => return,
-                            };
-                            app.preferences.playlist_sort =
-                                ["recency", "custom", "alphabetical"][next].into();
-                            app.playlist_sort_focus[next].focus(window, cx);
-                            app.save_preferences();
-                            cx.stop_propagation();
-                            cx.notify();
-                        }))
-                        .h(px(28.))
-                        .px_2()
-                        .rounded(px(12.))
-                        .flex()
-                        .items_center()
-                        .justify_between()
-                        .cursor_pointer()
-                        .when(selected, |el| el.bg(rgb(0x203039)))
-                        .hover(|el| el.bg(rgb(0x272727)))
-                        .child(label)
-                        .when(selected, |el| el.child(glyph(IconName::Check, 16.)))
-                        .on_change({
-                            let change = cx.listener(move |app, _: &ClickEvent, _, cx| {
-                                app.preferences.playlist_sort = key.into();
-                                app.save_preferences();
-                                cx.notify();
-                            });
-                            move |_, event, window, cx| change(event, window, cx)
-                        })
-                }),
+            .child(
+                gpui_kit::base::RadioGroup::new("playlist-sort-options")
+                    .aria_label("Playlist order")
+                    .flex()
+                    .flex_col()
+                    .children(
+                        [
+                            ("recency", "Recency"),
+                            ("custom", "Custom Order"),
+                            ("alphabetical", "Alphabetical"),
+                        ]
+                        .into_iter()
+                        .map(|(key, label)| {
+                            let selected = self.preferences.playlist_sort == key;
+                            gpui_kit::base::Radio::new(SharedString::from(format!(
+                                "playlist-sort-{key}"
+                            )))
+                            .key_context("PlaylistSort")
+                            .checked(selected)
+                            .tab_stop(selected)
+                            .accessibility_label(label)
+                            .track_focus(
+                                &self.playlist_sort_focus[match key {
+                                    "recency" => 0,
+                                    "custom" => 1,
+                                    _ => 2,
+                                }],
+                            )
+                            .on_key_down(cx.listener(
+                                move |app, event: &KeyDownEvent, window, cx| {
+                                    let index = match key {
+                                        "recency" => 0,
+                                        "custom" => 1,
+                                        _ => 2,
+                                    };
+                                    let next = match event.keystroke.key.as_str() {
+                                        "up" | "left" => (index + 2) % 3,
+                                        "down" | "right" => (index + 1) % 3,
+                                        "home" => 0,
+                                        "end" => 2,
+                                        _ => return,
+                                    };
+                                    app.preferences.playlist_sort =
+                                        ["recency", "custom", "alphabetical"][next].into();
+                                    app.playlist_sort_focus[next].focus(window, cx);
+                                    app.save_preferences();
+                                    cx.stop_propagation();
+                                    cx.notify();
+                                },
+                            ))
+                            .h(px(28.))
+                            .px_2()
+                            .rounded(px(12.))
+                            .flex()
+                            .items_center()
+                            .justify_between()
+                            .cursor_pointer()
+                            .when(selected, |el| el.bg(rgb(SELECTED)))
+                            .hover(|el| el.bg(rgb(SECONDARY)))
+                            .child(label)
+                            .when(selected, |el| el.child(glyph(IconName::Check, 16.)))
+                            .on_change({
+                                let change = cx.listener(move |app, _: &ClickEvent, _, cx| {
+                                    app.preferences.playlist_sort = key.into();
+                                    app.save_preferences();
+                                    cx.notify();
+                                });
+                                move |_, event, window, cx| change(event, window, cx)
+                            })
+                        }),
+                    ),
             )
             .child(div().my_2().border_b_1().border_color(rgb(BORDER)))
             .child(
@@ -513,16 +525,15 @@ impl PlayerApp {
         cx: &mut Context<Self>,
     ) -> AnyElement {
         let track = self
-            .snapshot
+            .playback
+            .read(cx)
             .player
             .as_ref()
             .and_then(|p| p.queue.current())
             .cloned();
-        if let Some(t) = &track {
-            self.high_quality_thumbnail(t.id, cx);
-        }
         let source = self
-            .snapshot
+            .playback
+            .read(cx)
             .player
             .as_ref()
             .and_then(|p| p.queue.source.as_ref())
@@ -609,7 +620,7 @@ impl PlayerApp {
                                 .rounded(px(20.))
                                 .border_1()
                                 .border_color(rgb(BORDER))
-                                .bg(rgb(0x272727))
+                                .bg(rgb(SECONDARY))
                                 .shadow_lg()
                                 .when_some(
                                     track
@@ -674,8 +685,8 @@ impl PlayerApp {
                                 .font_family(mono_font())
                                 .text_xs()
                                 .text_color(rgb(MUTED))
-                                .child(time(self.snapshot.current_time_seconds))
-                                .child(time(self.snapshot.duration_seconds)),
+                                .child(time(self.playback.read(cx).current_time_seconds))
+                                .child(time(self.playback.read(cx).duration_seconds)),
                         )
                         .child(
                             div()

@@ -21,7 +21,7 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.98.1
         with:
           components: clippy, rustfmt
       - name: Install Linux native dependencies
@@ -33,6 +33,7 @@ jobs:
         with:
           workspaces: . -> target
       - run: cargo xtask check-versions
+      - run: cargo xtask check-dependencies
       - run: cargo check --workspace --locked
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
@@ -62,13 +63,14 @@ jobs:
       - uses: android-actions/setup-android@v4
       - name: Install Android build dependencies
         run: sdkmanager "platforms;android-36" "build-tools;35.0.0" "ndk;29.0.13846066"
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.98.1
         with:
           targets: aarch64-linux-android
       - uses: swatinem/rust-cache@v2
         with:
           workspaces: . -> target
       - run: cargo xtask check-versions
+      - run: cargo xtask check-dependencies
       - run: cargo xtask android --debug
       - uses: actions/upload-artifact@v6
         with:

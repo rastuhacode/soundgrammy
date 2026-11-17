@@ -5,6 +5,7 @@ use crate::{
     runtime::AppHost,
     state::AppState,
 };
+use futures_util::FutureExt;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
@@ -16,15 +17,34 @@ pub(super) struct CommandPort {
     active: Arc<AtomicBool>,
 }
 impl CommandPort {
-    pub fn new(host: AppHost) -> Self {
-        let generation = host.state::<AppState>().db.account_generation().ok();
+    pub fn new(host: AppHost, active: Arc<AtomicBool>) -> Self {
+        let db = host.state::<AppState>().db.clone();
+        let generation = async move {
+            crate::runtime::spawn_blocking(move || db.account_generation())
+                .await
+                .map_err(|error| error.to_string())?
+                .map_err(|error| error.to_string())
+        }
+        .boxed()
+        .shared();
         Self::with_handler(move |control| {
             let host = host.clone();
+            let generation = generation.clone();
+            let active = active.clone();
             async move {
+                let generation = generation.await?;
+                if !active.load(Ordering::Acquire) {
+                    return Err("Account changed".into());
+                }
                 let Some(state) = host.try_state::<AppState>() else {
                     return Err("Application closed".into());
                 };
-                if state.db.account_generation().ok() != generation {
+                if state
+                    .db
+                    .account_generation()
+                    .map_err(|error| error.to_string())?
+                    != generation
+                {
                     return Err("Account changed".into());
                 }
                 state

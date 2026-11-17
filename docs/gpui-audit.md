@@ -1,5 +1,78 @@
 # GPUI migration audit — 2026-11-14
 
+## Shared drawer backdrop — 2026-11-18
+
+The drawer now slides over the same dimmed backdrop on every platform. Its
+opaque panel and shadow separate it from the library without sampling the
+scene. Fullscreen uses the existing prepared artwork layers on macOS as well
+as other platforms. The Apple renderer override and its Metal-only fixture
+metrics are gone; the frame callback probe remains. The previous renderer
+measurements below apply to the earlier build.
+
+The macOS build, 403 app tests, 5 xtask tests, and account-free drawer and
+fullscreen fixtures passed. Android arm64 produced a signed debug APK; the
+three JVM tests passed. Windows, Linux and Android device rendering were not
+exercised.
+
+## Rust dependency upgrade — 2026-11-18
+
+Updated the workspace manifests and lockfile, including GPUI Kit 0.10.0,
+GPUI 0.3.12, ferogram 0.6.7, Tokio 1.54.1, Rusqlite 0.43.0, and JNI 0.22.4.
+At that point the Android host and Apple renderer still had local overrides.
+The [dependency notes](dependencies.md) explain the current graph, including
+why legacy `block` still appears in the lockfile.
+
+The upgrade also uses Kit's tab focus handling and replaces the old private
+macOS cursor selector with AppKit's public API. An account-free macOS preview
+exercised scrolling, the navigation drawer, and fullscreen. The scrolling
+fixture sustained 120 frame callbacks per second on the tested display.
+The fullscreen fixture completed after the cursor fix and recorded Metal
+presentation timestamps.
+
+The credential-free workspace run passed 403 application tests and 5 xtask
+tests, with one existing ignored test. Cargo reported zero future
+incompatibility warnings. The 24 upstream Ferogram sender tests also passed.
+The macOS build, desktop and Android arm64 Clippy, and Android debug APK
+build passed. All three Android JVM tests passed. Windows and Linux app runs,
+Android device behavior, and live Telegram sessions remain to be exercised.
+
+## Architecture and DX follow-up — 2026-11-17
+
+This follow-up starts from `5136e94` on `t3/gpui-migration-audit`. The current
+layout and ownership rules are documented in [architecture.md](architecture.md).
+Earlier verification counts below remain historical evidence.
+
+| Finding | Implemented correction |
+|---|---|
+| UI composition, state and feature behavior concentrated in large module files | Split account, library, player, settings, panels and fullscreen behavior into feature modules. Library/playback are observable entities; retained sign-in and settings entities own their native form state. |
+| Cached views subscribed to every shell update | Observe feature models and pass explicit shared presentation inputs, including panel identity, selection, artwork and progress. Playback ticks update the seek control without redrawing unrelated track rows. |
+| Startup and preference/log persistence could block GPUI | Run storage initialization and preference import on a blocking worker. A dedicated settings worker coalesces values per key over a bounded 150 ms interval and flushes on orderly shutdown. |
+| Render methods initiated asynchronous and native transition work | Prepare artwork, loading timers and fullscreen transitions from intent/result effects. Account reset schedules those effects immediately. |
+| Notifications relied on string names and payload downcasts | Use an exhaustive typed event enum throughout producers and consumers. |
+| Moving generation reads off the UI could reorder or admit obsolete intent | Retain the serialized player command port and mutation guard, with an additional account-lifetime token alongside epoch and database-generation checks. |
+| Optional hydration failures could hide useful library state | Preserve loaded tracks and last-known playlists/cache/statistics, expose recoverable errors, and retain positional selection only for identical ordered membership. |
+| Custom controls duplicated available Kit behavior | Use Kit's sidebar resize handle, Accordion compound parts and RadioGroup semantics. Retain application-owned tab keyboard navigation because Kit 0.8.1 does not provide the complete behavior. |
+| Theme literals and dependency maintenance were scattered | Centralize semantic colors, pin Rust 1.98.1, add a dependency-policy check to CI, and document patch provenance and removal criteria. Patch the legacy Metal `block` dependency's foreign type/ABI warning and exercise its capture lifetime on macOS. |
+| Debug checks required account credentials | Permit credential-free debug checks/tests/preview; normal launches still validate credentials and release builds retain their credential requirement. |
+
+Verification of this follow-up on Apple Silicon macOS:
+
+- `cargo test --workspace --locked --offline --quiet` with Telegram and Last.fm
+  credential variables explicitly empty: **404 application tests and 5 xtask
+  tests passed**, with one pre-existing ignored application test. Coverage includes
+  hydration/duplicate selection, settings flush under SQLite contention, sidebar
+  dragging, account reset/fullscreen, progress rendering and legacy block lifetime.
+- Workspace Clippy with all targets and warnings denied, formatting, dependency
+  policy, version synchronization, and `git diff --check` passed.
+- `cargo build --locked --offline` passed for the macOS debug application.
+- Android arm64 `cargo check` with `--no-default-features --features mobile
+  --locked --offline` passed with NDK 29.0.13846066.
+
+This follow-up did not launch an app against a live account, inspect a rendered
+window, build an APK, or run Android device/Windows/Linux/Intel macOS acceptance.
+Those platform and account checks remain outstanding. See
+[dependencies.md](dependencies.md) for the framework upgrade procedure.
+
 ## Result and baseline
 
 The migrated app implements the original application's major desktop flows in Rust, GPUI Kit 0.8.1 and GPUI 0.3.10. This audit fixes specific missing behavior; it does **not** certify pixel-identical rendering, live Telegram account acceptance or every target platform.

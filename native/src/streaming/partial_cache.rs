@@ -215,10 +215,9 @@ impl TrackStream {
         let tracks = self.participant_tracks().await;
         let state = self.state.lock().await;
         for track in tracks {
-            let _ = self.app.emit(
-                "download:progress",
+            let _ = self.app.emit(crate::runtime::Event::DownloadProgress(
                 progress_from_state(track.id, self.total, &state),
-            );
+            ));
         }
     }
 }

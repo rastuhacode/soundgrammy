@@ -179,14 +179,11 @@ pub async fn schedule_embedded_artwork(
                     return;
                 }
                 if artwork_account_current(&state, &track) {
-                    let _ = app.emit(
-                        "artwork:changed",
-                        ArtworkChanged {
-                            track_id,
-                            tg_user_id: track.tg_user_id,
-                            path: embed.to_string_lossy().into_owned(),
-                        },
-                    );
+                    let _ = app.emit(crate::runtime::Event::ArtworkChanged(ArtworkChanged {
+                        track_id,
+                        tg_user_id: track.tg_user_id,
+                        path: embed.to_string_lossy().into_owned(),
+                    }));
                 }
             }
             Ok(None) => {

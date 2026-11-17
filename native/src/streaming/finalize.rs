@@ -109,14 +109,13 @@ impl TrackStream {
             let _ = state.db.mark_audio_cache_automatic(track.id);
         }
         self.emit_progress().await;
-        let _ = self.app.emit(
-            "cache:changed",
+        let _ = self.app.emit(crate::runtime::Event::CacheChanged(
             crate::cache::CacheChanged {
                 track_ids: tracks.iter().map(|track| track.id).collect(),
                 cached: true,
                 cleared: false,
             },
-        );
+        ));
         self.completion.notify_waiters();
         let app = self.app.clone();
         crate::runtime::spawn(async move {

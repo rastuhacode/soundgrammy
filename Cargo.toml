@@ -4,14 +4,8 @@ default-members = ["native"]
 resolver = "2"
 
 [patch.crates-io]
-# Remove once ferogram ships cancellation-safe, per-connection DC readiness.
-ferogram-mtsender = { path = "native/vendor/ferogram-mtsender" }
-
-# Window-paced ProMotion and demand-driven idle frames; see vendor README.
-gpui-pre-macos = { path = "native/vendor/gpui-pre-macos" }
-
-# GPU compositing and actual Metal presentation diagnostics.
-gpui-pre-apple = { path = "native/vendor/gpui-pre-apple" }
+# Upstream Android host is still pinned to GPUI 0.3.10.
+gpui-pre-mobile = { path = "native/vendor/gpui-pre-mobile" }
 
 # GUI layout/painting and image kernels run every interaction. Keep application
 # code fully debuggable while optimizing these dependencies in `cargo run`.

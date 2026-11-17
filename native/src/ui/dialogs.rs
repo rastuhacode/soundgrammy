@@ -88,10 +88,9 @@ impl PlayerApp {
             .left_0()
             .right_0()
             .bottom_0()
-            .bg(rgba(0x00000066))
+            .bg(rgba(if docked { 0x00000080 } else { 0x00000066 }))
             .opacity(progress)
-            // Dimming/blur only paints pixels. Occlusion excludes underlying
-            // hitboxes from hover, pointer and scroll targeting as well.
+            // Exclude underlying hitboxes from hover, pointer and scroll targeting.
             .occlude()
             // This hitbox also covers Dialog's outer dismissal listener, so
             // handle outside presses here while retaining its focus handling.
@@ -204,13 +203,7 @@ impl PlayerApp {
                     .overflow_y_scroll()
                     .p_4()
                     .when_some(self.error.clone(), |el, error| {
-                        el.child(
-                            div()
-                                .mb_3()
-                                .text_sm()
-                                .text_color(rgb(0xff656a))
-                                .child(error),
-                        )
+                        el.child(div().mb_3().text_sm().text_color(rgb(ERROR)).child(error))
                     })
                     .child(body),
             )
@@ -264,113 +257,122 @@ impl PlayerApp {
         } else {
             "Choose a new name for this playlist."
         };
-        let body = div()
-            .flex()
-            .flex_col()
-            .gap_4()
-            .when(creating, |el| {
-                el.child(
-                    gpui_kit::base::Tabs::new("playlist-tabs")
-                        .key_context("PlaylistTabs")
-                        .p(px(3.))
-                        .h(px(32.))
-                        .w_full()
-                        .rounded(px(12.))
-                        .bg(rgb(0x272727))
-                        .flex()
-                        .children([(false, "New"), (true, "Import")].into_iter().map(
-                            |(tab, label)| {
-                                gpui_kit::base::Tab::new(label)
-                                    .accessibility_label(label)
-                                    .selected(importing == tab)
-                                    .track_focus(&self.playlist_tab_focus[usize::from(tab)])
-                                    .set_position(usize::from(tab) + 1, 2)
-                                    .on_key_down(cx.listener(
-                                        move |app, event: &KeyDownEvent, window, cx| {
-                                            let next = match event.keystroke.key.as_str() {
-                                                "left" | "right" => !tab,
-                                                "home" => false,
-                                                "end" => true,
-                                                _ => return,
-                                            };
-                                            app.new_playlist_import = next;
-                                            app.playlist_tab_focus[usize::from(next)]
-                                                .focus(window, cx);
-                                            cx.stop_propagation();
+        let body =
+            div()
+                .flex()
+                .flex_col()
+                .gap_4()
+                .when(creating, |el| {
+                    el.child(
+                        gpui_kit::base::Tabs::new("playlist-tabs")
+                            .key_context("PlaylistTabs")
+                            .p(px(3.))
+                            .h(px(32.))
+                            .w_full()
+                            .rounded(px(12.))
+                            .bg(rgb(SECONDARY))
+                            .flex()
+                            .children([(false, "New"), (true, "Import")].into_iter().map(
+                                |(tab, label)| {
+                                    gpui_kit::base::Tab::new(label)
+                                        .accessibility_label(label)
+                                        .selected(importing == tab)
+                                        .set_position(usize::from(tab) + 1, 2)
+                                        // Kit moves focus. The playlist dialog also selects the
+                                        // tab on navigation so its content follows the keyboard.
+                                        .on_key_down(cx.listener(
+                                            move |app, event: &KeyDownEvent, _, cx| {
+                                                if event.keystroke.modifiers.modified() {
+                                                    return;
+                                                }
+                                                let next = match event.keystroke.key.as_str() {
+                                                    "left" | "right" => !tab,
+                                                    "home" => false,
+                                                    "end" => true,
+                                                    _ => return,
+                                                };
+                                                app.new_playlist_import = next;
+                                                cx.notify();
+                                            },
+                                        ))
+                                        .child(label)
+                                        .flex_1()
+                                        .flex()
+                                        .items_center()
+                                        .justify_center()
+                                        .rounded(px(10.))
+                                        .cursor_pointer()
+                                        .font_weight(FontWeight::SEMIBOLD)
+                                        .text_color(rgb(if importing == tab { FG } else { MUTED }))
+                                        .when(importing == tab, |el| {
+                                            el.bg(rgb(0x2c2c2c))
+                                                .border_1()
+                                                .border_color(rgb(BORDER))
+                                        })
+                                        .on_click(cx.listener(move |app, _, window, cx| {
+                                            app.new_playlist_import = tab;
+                                            if !tab {
+                                                app.inputs
+                                                    .name
+                                                    .update(cx, |s, cx| s.focus(window, cx));
+                                            }
                                             cx.notify();
-                                        },
-                                    ))
-                                    .child(label)
-                                    .flex_1()
+                                        }))
+                                },
+                            )),
+                    )
+                })
+                .when(!importing, |el| {
+                    el.child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap_2()
+                            .child(
+                                div()
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .line_height(px(20.))
+                                    .child("Name"),
+                            )
+                            .child(Input::new(&self.inputs.name).aria_label("Name")),
+                    )
+                })
+                .when(matches!(panel, Panel::SaveQueue), |el| {
+                    el.child(
+                        div()
+                            .flex()
+                            .flex_col()
+                            .gap_2()
+                            .child(div().font_weight(FontWeight::MEDIUM).child("Include"))
+                            .child(
+                                gpui_kit::base::RadioGroup::new("queue-save-options")
+                                    .aria_label("Include tracks")
                                     .flex()
-                                    .items_center()
-                                    .justify_center()
-                                    .rounded(px(10.))
-                                    .cursor_pointer()
-                                    .font_weight(FontWeight::SEMIBOLD)
-                                    .text_color(rgb(if importing == tab {
-                                        0xf2f2f2
-                                    } else {
-                                        MUTED
-                                    }))
-                                    .when(importing == tab, |el| {
-                                        el.bg(rgb(0x2c2c2c)).border_1().border_color(rgb(BORDER))
-                                    })
-                                    .on_click(cx.listener(move |app, _, window, cx| {
-                                        app.new_playlist_import = tab;
-                                        if !tab {
-                                            app.inputs.name.update(cx, |s, cx| s.focus(window, cx));
-                                        }
-                                        cx.notify();
-                                    }))
-                            },
-                        )),
-                )
-            })
-            .when(!importing, |el| {
-                el.child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap_2()
-                        .child(
-                            div()
-                                .font_weight(FontWeight::MEDIUM)
-                                .line_height(px(20.))
-                                .child("Name"),
-                        )
-                        .child(Input::new(&self.inputs.name).aria_label("Name")),
-                )
-            })
-            .when(matches!(panel, Panel::SaveQueue), |el| {
-                el.child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap_2()
-                        .child(div().font_weight(FontWeight::MEDIUM).child("Include"))
-                        .children(
-                            [
-                                (
-                                    QueueSaveScope::Full,
-                                    "Full queue",
-                                    "History, now playing, and up next",
-                                ),
-                                (
-                                    QueueSaveScope::FromHere,
-                                    "From here",
-                                    "Now playing and everything after",
-                                ),
-                                (
-                                    QueueSaveScope::UpNext,
-                                    "Up next only",
-                                    "Only tracks after the current one",
-                                ),
-                            ]
-                            .into_iter()
-                            .map(|(scope, label, description)| {
-                                let selected = self.queue_save_scope == scope;
-                                gpui_kit::base::Radio::new(label)
+                                    .flex_col()
+                                    .gap_2()
+                                    .children(
+                                        [
+                                            (
+                                                QueueSaveScope::Full,
+                                                "Full queue",
+                                                "History, now playing, and up next",
+                                            ),
+                                            (
+                                                QueueSaveScope::FromHere,
+                                                "From here",
+                                                "Now playing and everything after",
+                                            ),
+                                            (
+                                                QueueSaveScope::UpNext,
+                                                "Up next only",
+                                                "Only tracks after the current one",
+                                            ),
+                                        ]
+                                        .into_iter()
+                                        .map(
+                                            |(scope, label, description)| {
+                                                let selected = self.queue_save_scope == scope;
+                                                gpui_kit::base::Radio::new(label)
                                     .checked(selected)
                                     .accessibility_label(label)
                                     .track_focus(&self.queue_scope_focus[scope as usize])
@@ -415,7 +417,7 @@ impl PlayerApp {
                                     .items_start()
                                     .gap_3()
                                     .cursor_pointer()
-                                    .when(selected, |el| el.bg(rgba(0x2aabee0d)))
+                                    .when(selected, |el| el.bg(tint(PRIMARY, 0x0d)))
                                     .child(
                                         div()
                                             .mt(px(2.))
@@ -457,12 +459,14 @@ impl PlayerApp {
                                             });
                                         move |_, event, window, cx| change(event, window, cx)
                                     })
-                            }),
-                        ),
-                )
-            })
-            .when(importing, |el| {
-                el.child(
+                                            },
+                                        ),
+                                    ),
+                            ),
+                    )
+                })
+                .when(importing, |el| {
+                    el.child(
                     div()
                         .flex()
                         .flex_col()
@@ -488,8 +492,8 @@ impl PlayerApp {
                             .line_height(px(16.)),
                         ),
                 )
-            })
-            .into_any_element();
+                })
+                .into_any_element();
         let footer = div()
             .flex()
             .justify_end()
@@ -532,7 +536,7 @@ impl PlayerApp {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> AnyElement {
-        let track = self.library.tracks.iter().find(|t| t.id == id);
+        let track = self.library.read(cx).tracks.iter().find(|t| t.id == id);
         let body = div()
             .flex()
             .flex_col()
@@ -580,9 +584,10 @@ impl PlayerApp {
             })
             .when_some(
                 self.library
+                    .read(cx)
                     .stats
                     .get(&id)
-                    .filter(|_| self.statistics_enabled),
+                    .filter(|_| self.settings.read(cx).statistics_enabled),
                 |el, s| {
                     el.child(
                         div()
@@ -799,7 +804,7 @@ impl PlayerApp {
             .child(
                 div()
                     .p_4()
-                    .bg(rgba(0x27272733))
+                    .bg(tint(SECONDARY, 0x33))
                     .flex()
                     .flex_col()
                     .gap_3()
@@ -823,7 +828,7 @@ impl PlayerApp {
                                 .rounded(px(12.))
                                 .border_1()
                                 .border_color(rgb(BORDER))
-                                .bg(rgb(0x141414))
+                                .bg(rgb(BG))
                                 .child(
                                     div()
                                         .font_family(mono_font())

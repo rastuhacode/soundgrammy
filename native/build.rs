@@ -23,9 +23,11 @@ fn main() {
             Ok(value) if !value.trim().is_empty() => {
                 println!("cargo:rustc-env={key}={value}");
             }
-            _ => {
-                panic!("{key} is not set. Add native/.env.local or export it (CI secrets).");
+            _ if std::env::var("PROFILE").as_deref() == Ok("debug") => {
+                // Account-free checks and previews need no Telegram application.
+                // A real launch still validates credentials in Config::load.
             }
+            _ => panic!("{key} is not set. Add native/.env.local or export it (CI secrets)."),
         }
     }
 

@@ -194,7 +194,7 @@ impl MusicSource for TelegramSource<'_> {
 
 pub async fn sync(state: &AppState, app: &AppHost, mode: SyncMode) -> AppResult<SyncResult> {
     let _guard = state.sync_lock.lock().await;
-    let _ = app.emit("sync:start", ());
+    let _ = app.emit(crate::runtime::Event::SyncStarted);
     let result = async {
         let uid = state
             .db
@@ -209,7 +209,7 @@ pub async fn sync(state: &AppState, app: &AppHost, mode: SyncMode) -> AppResult<
         };
         if mode == SyncMode::Full {
             let batch = state.db.request_full_reindex(uid)?;
-            let _ = app.emit("library:batch", batch);
+            let _ = app.emit(crate::runtime::Event::LibraryBatch(batch));
         }
         source.check_account()?;
         let user = auth::fetch_self(&state.client().await?).await?;
@@ -226,14 +226,11 @@ pub async fn sync(state: &AppState, app: &AppHost, mode: SyncMode) -> AppResult<
             user.phone.as_deref(),
         )?;
         let publish = |batch: LibraryBatch, done| {
-            let _ = app.emit(
-                "sync:progress",
-                SyncProgress {
-                    done,
-                    total: batch.status.total,
-                },
-            );
-            let _ = app.emit("library:batch", batch);
+            let _ = app.emit(crate::runtime::Event::SyncProgress(SyncProgress {
+                done,
+                total: batch.status.total,
+            }));
+            let _ = app.emit(crate::runtime::Event::LibraryBatch(batch));
         };
         let result = if state.db.library_status(uid)?.blocking {
             index(&state.db, uid, &source, publish).await
@@ -248,15 +245,12 @@ pub async fn sync(state: &AppState, app: &AppHost, mode: SyncMode) -> AppResult<
     .await;
     match &result {
         Ok(_) => {
-            let _ = app.emit("sync:done", ());
+            let _ = app.emit(crate::runtime::Event::SyncFinished);
         }
         Err(error) => {
-            let _ = app.emit(
-                "sync:error",
-                SyncError {
-                    message: error.to_string(),
-                },
-            );
+            let _ = app.emit(crate::runtime::Event::SyncFailed(SyncError {
+                message: error.to_string(),
+            }));
         }
     }
     result

@@ -71,7 +71,7 @@ jobs:
 
       - name: Install Rust stable
         if: ${{ steps.release_pr.outputs.branch != '' }}
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.98.1
 
       - name: Synchronize development version in release pull request
         if: ${{ steps.release_pr.outputs.branch != '' }}

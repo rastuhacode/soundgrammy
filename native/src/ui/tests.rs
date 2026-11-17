@@ -58,16 +58,22 @@ fn desktop_track_rows_fill_the_content_column(cx: &mut TestAppContext) {
 fn large_library_reuses_its_projection_and_mounts_only_viewport_rows(cx: &mut TestAppContext) {
     let (window, view) = fixture(cx, size(px(1200.), px(800.)));
     let initial = view.update(cx, |app, cx| {
-        let example = app.library.tracks[0].clone();
+        let example = app.library.read(cx).tracks[0].clone();
         for id in 10..5003 {
             let mut track = example.clone();
             track.id = id;
-            app.library.tracks.push(track);
+            app.library.clone().update(cx, |library, cx| {
+                library.tracks.push(track);
+                cx.notify();
+            });
             app.thumbs.insert(id, None);
         }
-        app.library.invalidate_track_list();
+        app.library.clone().update(cx, |library, cx| {
+            library.invalidate_track_list();
+            cx.notify();
+        });
         cx.notify();
-        app.library.track_list().entries
+        app.library.read(cx).track_list().entries
     });
     assert_eq!(initial.len(), 5000);
     cx.update_window(window, |_, window, cx| {
@@ -82,7 +88,7 @@ fn large_library_reuses_its_projection_and_mounts_only_viewport_rows(cx: &mut Te
         window.render_frame(cx);
         assert!(window.try_find(("track-row", 0_usize)).is_none());
         assert!((1..=10).contains(&track_rows(window).len()));
-        let after = view.read(cx).library.track_list().entries;
+        let after = view.read(cx).library.read(cx).track_list().entries;
         assert!(std::sync::Arc::ptr_eq(&initial, &after));
     })
     .unwrap();
@@ -111,10 +117,13 @@ fn compact_playlist_header_preserves_text_and_matches_original_action_breakpoint
     for width in [320., 359., 360., 390., 479., 480., 639., 640., 767.] {
         let (window, view) = fixture(cx, size(px(width), px(844.)));
         view.update(cx, |app, cx| {
-            let playlist = &mut app.library.playlists.as_mut().unwrap().custom[0];
-            playlist.name = "A long playlist name that must truncate horizontally".into();
-            playlist.track_ids = vec![1; 478];
-            app.library.select(PlaylistId::Custom(2));
+            app.library.update(cx, |library, cx| {
+                let playlist = &mut library.playlists.as_mut().unwrap().custom[0];
+                playlist.name = "A long playlist name that must truncate horizontally".into();
+                playlist.track_ids = vec![1; 478];
+                library.select(PlaylistId::Custom(2));
+                cx.notify();
+            });
             app.compact_playlist = true;
             cx.notify();
         });
@@ -153,12 +162,15 @@ fn player_artwork_remains_square_when_track_text_competes_with_controls(cx: &mut
     for width in [320., 359., 360., 390., 479., 640., 767., 768., 1200.] {
         let (window, view) = fixture(cx, size(px(width), px(844.)));
         view.update(cx, |app, cx| {
-            let track = &mut std::sync::Arc::make_mut(app.snapshot.player.as_mut().unwrap())
-                .queue
-                .tracks[4];
-            track.title =
-                Some("A very long title that has to truncate next to player controls".into());
-            track.performer = Some("A very long artist name that also has to truncate".into());
+            app.playback.update(cx, |snapshot, cx| {
+                let track = &mut std::sync::Arc::make_mut(snapshot.player.as_mut().unwrap())
+                    .queue
+                    .tracks[4];
+                track.title =
+                    Some("A very long title that has to truncate next to player controls".into());
+                track.performer = Some("A very long artist name that also has to truncate".into());
+                cx.notify();
+            });
             cx.notify();
         });
         cx.update_window(window, |_, window, cx| {
@@ -220,22 +232,35 @@ fn empty_playlists_hide_track_operations_and_show_contextual_guidance(cx: &mut T
             let (window, view) = fixture(cx, size(px(width), px(844.)));
             view.update(cx, |app, cx| {
                 match &playlist {
-                    PlaylistId::All => app.library.tracks.clear(),
-                    PlaylistId::Custom(_) => app.library.playlists.as_mut().unwrap().custom[0]
-                        .track_ids
-                        .clear(),
-                    PlaylistId::Builtin(id) if id == "liked" => app
-                        .library
-                        .playlists
-                        .as_mut()
-                        .unwrap()
-                        .liked
-                        .track_ids
-                        .clear(),
-                    _ => app.library.stats.clear(),
+                    PlaylistId::All => app.library.clone().update(cx, |library, cx| {
+                        library.tracks.clear();
+                        cx.notify();
+                    }),
+                    PlaylistId::Custom(_) => app.library.clone().update(cx, |library, cx| {
+                        library.playlists.as_mut().unwrap().custom[0]
+                            .track_ids
+                            .clear();
+                        cx.notify();
+                    }),
+                    PlaylistId::Builtin(id) if id == "liked" => {
+                        app.library.clone().update(cx, |library, cx| {
+                            library.playlists.as_mut().unwrap().liked.track_ids.clear();
+                            cx.notify();
+                        })
+                    }
+                    _ => app.library.clone().update(cx, |library, cx| {
+                        library.stats.clear();
+                        cx.notify();
+                    }),
                 }
-                app.library.select(playlist.clone());
-                app.library.invalidate_track_list();
+                app.library.clone().update(cx, |library, cx| {
+                    library.select(playlist.clone());
+                    cx.notify();
+                });
+                app.library.clone().update(cx, |library, cx| {
+                    library.invalidate_track_list();
+                    cx.notify();
+                });
                 app.compact_playlist = true;
                 cx.notify();
             });
@@ -270,7 +295,10 @@ fn empty_playlists_hide_track_operations_and_show_contextual_guidance(cx: &mut T
 fn a_filtered_playlist_keeps_its_toolbar_and_table(cx: &mut TestAppContext) {
     let (window, view) = fixture(cx, size(px(1200.), px(844.)));
     view.update(cx, |app, cx| {
-        app.library.search = "No matching title or artist exists here".into();
+        app.library.clone().update(cx, |library, cx| {
+            library.search = "No matching title or artist exists here".into();
+            cx.notify();
+        });
         cx.notify();
     });
     cx.update_window(window, |_, window, cx| {
@@ -337,7 +365,10 @@ fn delayed_titles_reveal_full_playlist_and_track_names(cx: &mut TestAppContext) 
     let (window, view) = fixture(cx, size(px(1200.), px(800.)));
     let playlist_name = "A very long playlist name which overflows the sidebar width";
     view.update(cx, |app, cx| {
-        app.library.playlists.as_mut().unwrap().custom[0].name = playlist_name.into();
+        app.library.clone().update(cx, |library, cx| {
+            library.playlists.as_mut().unwrap().custom[0].name = playlist_name.into();
+            cx.notify();
+        });
         cx.notify();
     });
     for (target, expected) in [
@@ -403,11 +434,11 @@ fn choosing_a_playlist_preserves_duplicate_rows_and_clears_search(cx: &mut TestA
     })
     .unwrap();
     assert_eq!(
-        view.read_with(cx, |v, _| v.library.membership()),
+        view.read_with(cx, |v, cx| v.library.read(cx).membership()),
         vec![1, 2, 1, 4]
     );
     assert_eq!(
-        view.read_with(cx, |v, _| v.library.selected.clone()),
+        view.read_with(cx, |v, cx| v.library.read(cx).selected.clone()),
         PlaylistId::Custom(2)
     );
 }
@@ -433,7 +464,10 @@ fn search_filters_the_rendered_membership_without_reindexing_it(cx: &mut TestApp
     let (window, view) = fixture(cx, size(px(1200.), px(800.)));
     cx.update_window(window, |_, window, cx| {
         view.update(cx, |app, cx| {
-            app.library.search = "space".into();
+            app.library.clone().update(cx, |library, cx| {
+                library.search = "space".into();
+                cx.notify();
+            });
             cx.notify();
         });
         window.render_frame(cx);
@@ -441,8 +475,9 @@ fn search_filters_the_rendered_membership_without_reindexing_it(cx: &mut TestApp
     })
     .unwrap();
     assert_eq!(
-        view.read_with(cx, |v, _| v
+        view.read_with(cx, |v, cx| v
             .library
+            .read(cx)
             .entries()
             .iter()
             .map(|e| e.source_index)
@@ -458,10 +493,14 @@ fn logout_clears_all_account_presentation_and_advances_the_callback_epoch(cx: &m
         view.update(cx, |app, cx| {
             let epoch = app.epoch;
             app.jobs.insert("job".into(), "In progress".into());
-            app.library.selection.insert(0);
-            app.event(crate::runtime::Event::new("auth:revoked", ()), cx);
+            app.library.clone().update(cx, |library, cx| {
+                let result = { library.selection.insert(0) };
+                cx.notify();
+                result
+            });
+            app.event(crate::runtime::Event::AuthRevoked, cx);
             assert_eq!(app.epoch, epoch + 1);
-            assert!(app.library.tracks.is_empty());
+            assert!(app.library.read(cx).tracks.is_empty());
             assert!(app.jobs.is_empty());
             assert!(app.thumbs.is_empty());
             assert!(app.user.is_none());
@@ -475,17 +514,14 @@ fn out_of_order_snapshots_cannot_reverse_current_playback(cx: &mut TestAppContex
     let (window, view) = fixture(cx, size(px(1200.), px(800.)));
     cx.update_window(window, |_, _, cx| {
         view.update(cx, |app, cx| {
-            let mut newest = app.snapshot.clone();
+            let mut newest = app.playback.read(cx).clone();
             newest.revision = 20;
             newest.current_time_seconds = 100.;
-            app.event(
-                crate::runtime::Event::new("audio:state", newest.clone()),
-                cx,
-            );
+            app.event(crate::runtime::Event::AudioState(newest.clone()), cx);
             newest.revision = 19;
             newest.current_time_seconds = 10.;
-            app.event(crate::runtime::Event::new("audio:state", newest), cx);
-            assert_eq!(app.snapshot.current_time_seconds, 100.);
+            app.event(crate::runtime::Event::AudioState(newest), cx);
+            assert_eq!(app.playback.read(cx).current_time_seconds, 100.);
         });
     })
     .unwrap();
@@ -571,7 +607,10 @@ fn compact_search_has_filtered_rows_and_closing_clears_its_query(cx: &mut TestAp
             app.inputs
                 .search
                 .update(cx, |input, cx| input.set_value("rabbit", window, cx));
-            app.library.search = "rabbit".into();
+            app.library.clone().update(cx, |library, cx| {
+                library.search = "rabbit".into();
+                cx.notify();
+            });
             cx.notify();
         });
         window.render_frame(cx);
@@ -587,7 +626,7 @@ fn compact_search_has_filtered_rows_and_closing_clears_its_query(cx: &mut TestAp
         assert_eq!(track_rows(window).len(), 7);
     })
     .unwrap();
-    assert!(view.read_with(cx, |v, _| v.library.search.is_empty()));
+    assert!(view.read_with(cx, |v, cx| v.library.read(cx).search.is_empty()));
 }
 fn record_commands(
     view: &Entity<PlayerApp>,
@@ -609,8 +648,14 @@ fn filtered_duplicate_playback_sends_the_clicked_membership_position(cx: &mut Te
     let receiver = cx.update(|cx| record_commands(&view, cx));
     cx.update_window(window, |_, window, cx| {
         view.update(cx, |app, cx| {
-            app.library.select(PlaylistId::Custom(2));
-            app.library.search = "synthetic".into();
+            app.library.clone().update(cx, |library, cx| {
+                library.select(PlaylistId::Custom(2));
+                cx.notify();
+            });
+            app.library.clone().update(cx, |library, cx| {
+                library.search = "synthetic".into();
+                cx.notify();
+            });
             cx.notify();
         });
         window.click(("track-row", 2usize), cx);
@@ -658,11 +703,11 @@ fn notifications_from_previous_accounts_cannot_restore_a_logged_out_player(
     let (window, view) = fixture(cx, size(px(1200.), px(800.)));
     cx.update_window(window, |_, _, cx| {
         view.update(cx, |app, cx| {
-            let snapshot = app.snapshot.clone();
-            app.reset();
-            app.event(crate::runtime::Event::new("audio:state", snapshot), cx);
-            assert!(app.snapshot.track_id.is_none());
-            assert!(app.library.tracks.is_empty());
+            let snapshot = app.playback.read(cx).clone();
+            app.reset(cx);
+            app.event(crate::runtime::Event::AudioState(snapshot), cx);
+            assert!(app.playback.read(cx).track_id.is_none());
+            assert!(app.library.read(cx).tracks.is_empty());
         });
     })
     .unwrap();
@@ -691,7 +736,7 @@ fn a_full_sync_request_is_not_lost_behind_an_existing_soft_sync(cx: &mut TestApp
             app.syncing = true;
             app.sync(true, cx);
             assert!(app.pending_full_sync);
-            app.reset();
+            app.reset(cx);
             assert!(!app.pending_full_sync);
         });
     })
@@ -703,7 +748,7 @@ fn sync_events_do_not_duplicate_the_command_completion_hydration(cx: &mut TestAp
     cx.update_window(window, |_, _, cx| {
         view.update(cx, |app, cx| {
             let before = app.busy;
-            app.event(crate::runtime::Event::new("sync:done", ()), cx);
+            app.event(crate::runtime::Event::SyncFinished, cx);
             assert_eq!(app.busy, before);
             assert!(!app.syncing);
         });
@@ -739,7 +784,7 @@ fn renaming_another_playlist_preserves_the_current_view(cx: &mut TestAppContext)
     })
     .unwrap();
     assert_eq!(
-        view.read_with(cx, |v, _| v.library.selected.clone()),
+        view.read_with(cx, |v, cx| v.library.read(cx).selected.clone()),
         PlaylistId::All
     );
     assert_eq!(
@@ -755,7 +800,10 @@ fn switching_playlists_clears_the_visible_search_field(cx: &mut TestAppContext) 
             app.inputs
                 .search
                 .update(cx, |s, cx| s.set_value("rabbit", window, cx));
-            app.library.search = "rabbit".into();
+            app.library.clone().update(cx, |library, cx| {
+                library.search = "rabbit".into();
+                cx.notify();
+            });
             app.select_playlist(PlaylistId::Custom(2), cx);
         });
         window.render_frame(cx);
@@ -828,14 +876,14 @@ fn progress_notifications_keep_the_player_description_queue_and_preferences(
     cx: &mut TestAppContext,
 ) {
     let (window, view) = fixture(cx, size(px(1200.), px(800.)));
-    let before = view.read_with(cx, |app, _| app.snapshot.player.clone().unwrap());
+    let before = view.read_with(cx, |app, cx| app.playback.read(cx).player.clone().unwrap());
     cx.update_window(window, |_, window, cx| {
         view.update(cx, |app, cx| {
-            let mut progress = app.snapshot.clone();
+            let mut progress = app.playback.read(cx).clone();
             progress.revision += 1;
             progress.player = None;
             progress.current_time_seconds = 84.;
-            app.event(crate::runtime::Event::new("audio:state", progress), cx);
+            app.event(crate::runtime::Event::AudioState(progress), cx);
         });
         window.render_frame(cx);
         assert!(window.try_find("current-track").is_some());
@@ -845,7 +893,7 @@ fn progress_notifications_keep_the_player_description_queue_and_preferences(
         assert!(window.try_find(("queue-track", 4_usize)).is_some());
     })
     .unwrap();
-    let after = view.read_with(cx, |app, _| app.snapshot.player.clone().unwrap());
+    let after = view.read_with(cx, |app, cx| app.playback.read(cx).player.clone().unwrap());
     assert_eq!(after.queue.tracks.len(), before.queue.tracks.len());
     assert_eq!(after.queue.cursor, before.queue.cursor);
     assert_eq!(
@@ -961,7 +1009,8 @@ fn sign_in_steps_keep_native_text_input_and_five_code_cells(cx: &mut TestAppCont
         view.update(cx, |app, cx| {
             app.phase = super::Phase::Login;
             app.user = None;
-            app.login = super::LoginStep::Qr;
+            app.sign_in
+                .update(cx, |login, cx| login.set_step(super::LoginStep::Qr, cx));
             cx.notify();
         });
         window.render_frame(cx);
@@ -969,7 +1018,8 @@ fn sign_in_steps_keep_native_text_input_and_five_code_cells(cx: &mut TestAppCont
         window.click("use-phone", cx);
         assert!(window.try_find_by_label("Phone number").is_some());
         view.update(cx, |app, cx| {
-            app.login = super::LoginStep::Code;
+            app.sign_in
+                .update(cx, |login, cx| login.set_step(super::LoginStep::Code, cx));
             cx.notify();
         });
         window.render_frame(cx);
@@ -982,7 +1032,12 @@ fn sign_in_steps_keep_native_text_input_and_five_code_cells(cx: &mut TestAppCont
     .unwrap();
     cx.run_until_parked();
     assert_eq!(
-        view.read_with(cx, |app, cx| app.inputs.code.read(cx).value().to_string()),
+        view.read_with(cx, |app, cx| app
+            .login_inputs(cx)
+            .code
+            .read(cx)
+            .value()
+            .to_string()),
         "12"
     );
 }
@@ -1146,7 +1201,10 @@ fn selection_replaces_playback_actions_and_uses_a_mixed_select_all(cx: &mut Test
     cx.update_window(window, |_, window, cx| {
         view.update(cx, |app, cx| {
             app.selection_mode = true;
-            app.library.select_entry(0, false);
+            app.library.clone().update(cx, |library, cx| {
+                library.select_entry(0, false);
+                cx.notify();
+            });
             cx.notify();
         });
         window.render_frame(cx);
@@ -1155,9 +1213,9 @@ fn selection_replaces_playback_actions_and_uses_a_mixed_select_all(cx: &mut Test
         assert!(window.try_find("bulk-actions").is_some());
         assert_eq!(window.find("select-all-tracks").indeterminate(), Some(true));
         window.click("select-all-tracks", cx);
-        assert_eq!(view.read(cx).library.selection.len(), 7);
+        assert_eq!(view.read(cx).library.read(cx).selection.len(), 7);
         window.click("select-all-tracks", cx);
-        assert!(view.read(cx).library.selection.is_empty());
+        assert!(view.read(cx).library.read(cx).selection.is_empty());
         window.click("exit-selection", cx);
         assert!(window.try_find("play-playlist").is_some());
     })
@@ -1171,12 +1229,12 @@ fn empty_snapshot_closes_queue_and_the_compact_player(cx: &mut TestAppContext) {
         window.click("current-track", cx);
         window.click("compact-player-queue", cx);
         view.update(cx, |app, cx| {
-            let mut snapshot = app.snapshot.clone();
+            let mut snapshot = app.playback.read(cx).clone();
             let mut player = (**snapshot.player.as_ref().unwrap()).clone();
             player.queue = Default::default();
             snapshot.player = Some(std::sync::Arc::new(player));
             snapshot.track_id = None;
-            app.accept_snapshot(snapshot);
+            app.accept_snapshot(snapshot, cx);
             cx.notify();
         });
         window.render_frame(cx);
@@ -1253,7 +1311,7 @@ fn sortable_tracks_use_a_row_preview_shift_neighbours_and_cancel_with_escape(
     let (window, view) = fixture(cx, size(px(1200.), px(800.)));
     cx.update_window(window, |_, window, cx| {
         window.click("playlist-2", cx);
-        let before = view.read(cx).library.membership();
+        let before = view.read(cx).library.read(cx).membership();
         let start = window.find(("track-row", 0_usize)).bounds().center();
         let target = window.find(("track-row", 1_usize)).bounds().center();
         window.pointer_down(start, gpui_kit::MouseButton::Left, cx);
@@ -1271,7 +1329,7 @@ fn sortable_tracks_use_a_row_preview_shift_neighbours_and_cancel_with_escape(
         window.press("escape", cx);
         assert!(!cx.has_active_drag());
         assert!(window.try_find("sortable-drag-preview").is_none());
-        assert_eq!(view.read(cx).library.membership(), before);
+        assert_eq!(view.read(cx).library.read(cx).membership(), before);
     })
     .unwrap();
 }
@@ -1302,10 +1360,18 @@ fn playlist_tabs_support_arrow_key_selection(cx: &mut TestAppContext) {
     let (window, view) = fixture(cx, size(px(1200.), px(800.)));
     cx.update_window(window, |_, window, cx| {
         window.click("new-playlist", cx);
-        let focus = view.read(cx).playlist_tab_focus[0].clone();
-        focus.focus(window, cx);
+        // The dialog starts at Name. Use the window's tab order to enter the
+        // Kit tab list, which supplies its own focus handle.
+        for _ in 0..8 {
+            if window.find("New").focused() == Some(true) {
+                break;
+            }
+            window.press("shift-tab", cx);
+        }
+        assert_eq!(window.find("New").focused(), Some(true));
         window.press("right", cx);
         assert!(view.read(cx).new_playlist_import);
+        assert_eq!(window.find("Import").focused(), Some(true));
         assert!(window.try_find("import-playlist").is_some());
         window.press("left", cx);
         assert!(!view.read(cx).new_playlist_import);
@@ -1321,12 +1387,12 @@ fn seek_hover_preview_is_centered_on_the_pointer_and_does_not_seek(cx: &mut Test
     cx.update_window(window, |_, window, cx| {
         let bar = window.find("playback-progress").bounds();
         let target = gpui_kit::point(bar.left() + bar.size.width * 0.25, bar.center().y);
-        let before = view.read(cx).snapshot.current_time_seconds;
+        let before = view.read(cx).playback.read(cx).current_time_seconds;
         window.pointer_move(target, None, cx);
         window.render_frame(cx);
         let tooltip = window.find("seek-tooltip").bounds();
         assert!((f32::from(tooltip.center().x - target.x)).abs() < 2.);
-        assert_eq!(view.read(cx).snapshot.current_time_seconds, before);
+        assert_eq!(view.read(cx).playback.read(cx).current_time_seconds, before);
         let preview = view.read(cx).seek_preview.unwrap();
         assert!((preview.0 - 0.25).abs() < 0.01);
     })
@@ -1340,9 +1406,18 @@ fn seek_rail_is_flush_and_pointer_positions_send_finite_seconds(cx: &mut TestApp
     let (tx, rx) = std::sync::mpsc::channel();
     cx.update_window(window, |_, window, cx| {
         view.update(cx, |app, cx| {
-            app.snapshot.duration_seconds = 200.;
-            app.snapshot.current_time_seconds = 50.;
-            app.snapshot.attempt_id = Some("seek-test".into());
+            app.playback.update(cx, |state, cx| {
+                state.duration_seconds = 200.;
+                cx.notify();
+            });
+            app.playback.update(cx, |state, cx| {
+                state.current_time_seconds = 50.;
+                cx.notify();
+            });
+            app.playback.update(cx, |state, cx| {
+                state.attempt_id = Some("seek-test".into());
+                cx.notify();
+            });
             app.command_port = Some(super::transport::CommandPort::with_handler(
                 move |control| {
                     if let crate::audio::Control::SeekAttempt(seconds, attempt) = control {
@@ -1385,8 +1460,8 @@ fn clicking_volume_rail_changes_percent_without_dismissing(cx: &mut TestAppConte
     use gpui_kit::{point, test::TestEventExt, MouseButton};
     let (window, view) = fixture(cx, size(px(1200.), px(800.)));
     cx.update_window(window, |_, window, cx| {
-        view.update(cx, |app, _| {
-            let snapshot = app.snapshot.clone();
+        view.update(cx, |app, cx| {
+            let snapshot = app.playback.read(cx).clone();
             app.command_port = Some(super::transport::CommandPort::with_handler(move |_| {
                 let snapshot = snapshot.clone();
                 async { Ok(snapshot) }
@@ -1445,7 +1520,7 @@ fn track_search_clear_restores_the_unfiltered_list(cx: &mut TestAppContext) {
         assert!(window.try_find("clean").is_none());
     })
     .unwrap();
-    assert!(view.read_with(cx, |app, _| app.library.search.is_empty()));
+    assert!(view.read_with(cx, |app, cx| app.library.read(cx).search.is_empty()));
 }
 
 #[gpui_kit::test]
@@ -1492,7 +1567,10 @@ fn now_playing_equalizer_animates_and_respects_reduced_motion(cx: &mut TestAppCo
     cx.update(|cx| {
         cx.set_reduce_motion(false);
         view.update(cx, |app, cx| {
-            std::sync::Arc::make_mut(app.snapshot.player.as_mut().unwrap()).is_playing = true;
+            app.playback.update(cx, |state, cx| {
+                std::sync::Arc::make_mut(state.player.as_mut().unwrap()).is_playing = true;
+                cx.notify();
+            });
             cx.notify();
         });
     });
@@ -1521,7 +1599,10 @@ fn equalizer_frames_reuse_inactive_track_rows(cx: &mut TestAppContext) {
     cx.update(|cx| {
         cx.set_reduce_motion(false);
         view.update(cx, |app, cx| {
-            std::sync::Arc::make_mut(app.snapshot.player.as_mut().unwrap()).is_playing = true;
+            app.playback.update(cx, |state, cx| {
+                std::sync::Arc::make_mut(state.player.as_mut().unwrap()).is_playing = true;
+                cx.notify();
+            });
             cx.notify();
         });
     });
@@ -1556,8 +1637,8 @@ fn overlapping_seek_hit_area_does_not_activate_the_track_row(cx: &mut TestAppCon
     let (window, view) = fixture(cx, size(px(1200.), px(680.)));
     let (tx, rx) = std::sync::mpsc::channel();
     cx.update_window(window, |_, window, cx| {
-        view.update(cx, |app, _| {
-            let snapshot = app.snapshot.clone();
+        view.update(cx, |app, cx| {
+            let snapshot = app.playback.read(cx).clone();
             app.command_port = Some(super::transport::CommandPort::with_handler(
                 move |control| {
                     tx.send(control).unwrap();
@@ -1596,8 +1677,8 @@ fn volume_drag_outlives_hover_delay_and_closes_only_after_release_and_exit(
     cx.update_window(window, |_, window, cx| {
         window.activate_window();
         window.render_frame(cx);
-        view.update(cx, |app, _| {
-            let snapshot = app.snapshot.clone();
+        view.update(cx, |app, cx| {
+            let snapshot = app.playback.read(cx).clone();
             app.command_port = Some(super::transport::CommandPort::with_handler(move |_| {
                 let snapshot = snapshot.clone();
                 async { Ok(snapshot) }
@@ -1725,6 +1806,8 @@ fn fullscreen_cursor_remains_visible_for_interactions_and_restores_on_exit(
     cx: &mut TestAppContext,
 ) {
     use std::time::Duration;
+    #[cfg(target_os = "macos")]
+    let original_cursor_mode = cx.update(|cx| cx.cursor_hide_mode());
     let (window, view) = fixture(cx, size(px(1200.), px(800.)));
     cx.update_window(window, |_, window, cx| {
         window.activate_window();
@@ -1781,6 +1864,8 @@ fn fullscreen_cursor_remains_visible_for_interactions_and_restores_on_exit(
         window.render_frame(cx);
         assert!(!view.read(cx).fullscreen_cursor_hidden);
         assert!(window.try_find("player-bar").is_some());
+        #[cfg(target_os = "macos")]
+        assert_eq!(cx.cursor_hide_mode(), original_cursor_mode);
     })
     .unwrap();
 }
@@ -1795,10 +1880,16 @@ fn fullscreen_bounce_tracks_audio_profile_and_releases_when_paused(cx: &mut Test
         view.update(cx, |app, cx| {
             app.fullscreen = true;
             app.show_fullscreen_controls(window, cx);
-            app.snapshot.status = Status::Playing;
-            app.snapshot.current_time_seconds = 0.;
+            app.playback.update(cx, |state, cx| {
+                state.status = Status::Playing;
+                cx.notify();
+            });
+            app.playback.update(cx, |state, cx| {
+                state.current_time_seconds = 0.;
+                cx.notify();
+            });
             app.preferences.bounce.enabled = true;
-            app.bounce_track = app.snapshot.track_id;
+            app.bounce_track = app.playback.read(cx).track_id;
             let bass: Vec<u8> = (0..160)
                 .map(|i| if i >= 40 && i % 8 < 3 { 255 } else { 0 })
                 .collect();
@@ -1828,7 +1919,10 @@ fn fullscreen_bounce_tracks_audio_profile_and_releases_when_paused(cx: &mut Test
     let quiet = cover(cx);
     cx.update(|cx| {
         view.update(cx, |app, cx| {
-            app.snapshot.current_time_seconds = 2.4;
+            app.playback.update(cx, |state, cx| {
+                state.current_time_seconds = 2.4;
+                cx.notify();
+            });
             cx.notify();
         })
     });
@@ -1839,7 +1933,10 @@ fn fullscreen_bounce_tracks_audio_profile_and_releases_when_paused(cx: &mut Test
     assert!(beat.center().y < quiet.center().y);
     cx.update(|cx| {
         view.update(cx, |app, cx| {
-            app.snapshot.status = Status::Paused;
+            app.playback.update(cx, |state, cx| {
+                state.status = Status::Paused;
+                cx.notify();
+            });
             cx.notify();
         })
     });
@@ -1860,10 +1957,25 @@ fn playback_indicators_follow_intent_through_loading_buffering_and_seeking(
     let (window, view) = fixture(cx, size(px(1200.), px(800.)));
     cx.update_window(window, |_, window, cx| {
         view.update(cx, |app, cx| {
-            app.snapshot.status = Status::Loading;
-            app.snapshot.initial_loading = true;
-            std::sync::Arc::make_mut(app.snapshot.player.as_mut().unwrap()).is_playing = true;
+            app.playback.update(cx, |state, cx| {
+                state.status = Status::Loading;
+
+                cx.notify();
+            });
+            app.playback.update(cx, |state, cx| {
+                state.initial_loading = true;
+
+                cx.notify();
+            });
+            app.playback.update(cx, |state, cx| {
+                std::sync::Arc::make_mut(state.player.as_mut().unwrap()).is_playing = true;
+
+                cx.notify();
+            });
+
             cx.notify();
+
+            app.update_effects(window, cx);
         });
         window.render_frame(cx);
         assert!(window.try_find("seek-initial-loading").is_none());
@@ -1887,12 +1999,26 @@ fn playback_indicators_follow_intent_through_loading_buffering_and_seeking(
             (Status::Buffering, false, true, false),
         ] {
             view.update(cx, |app, cx| {
-                app.snapshot.status = status;
-                app.snapshot.initial_loading = initial_loading;
-                app.snapshot.seeking = seeking;
-                std::sync::Arc::make_mut(app.snapshot.player.as_mut().unwrap()).is_playing =
-                    playing;
+                app.playback.update(cx, |state, cx| {
+                    state.status = status;
+                    cx.notify();
+                });
+                app.playback.update(cx, |state, cx| {
+                    state.initial_loading = initial_loading;
+                    cx.notify();
+                });
+                app.playback.update(cx, |state, cx| {
+                    state.seeking = seeking;
+                    cx.notify();
+                });
+                app.playback.update(cx, |state, cx| {
+                    std::sync::Arc::make_mut(state.player.as_mut().unwrap()).is_playing = playing;
+                    cx.notify();
+                });
+
                 cx.notify();
+
+                app.update_effects(window, cx);
             });
             window.render_frame(cx);
             assert_eq!(
@@ -1929,14 +2055,18 @@ fn disabling_statistics_hides_smart_playlists_and_returns_to_all_without_erasing
                 last_played_at_ms: Some(2),
                 likeness: 1.0,
             };
-            app.library.stats.insert(1, history);
+            app.library.clone().update(cx, |library, cx| {
+                let result = { library.stats.insert(1, history) };
+                cx.notify();
+                result
+            });
             app.set_statistics_enabled(false, cx);
         });
         window.render_frame(cx);
         assert!(window.try_find("playlist-popular").is_none());
         assert!(window.try_find("playlist-recent").is_none());
-        assert_eq!(view.read(cx).library.selected, PlaylistId::All);
-        assert_eq!(view.read(cx).library.stats[&1].qualified_plays, 1);
+        assert_eq!(view.read(cx).library.read(cx).selected, PlaylistId::All);
+        assert_eq!(view.read(cx).library.read(cx).stats[&1].qualified_plays, 1);
         view.update(cx, |app, cx| app.set_statistics_enabled(true, cx));
         window.render_frame(cx);
         assert!(window.try_find("playlist-popular").is_some());
@@ -1960,20 +2090,17 @@ fn thumbnail_download_progress_is_visible_and_cleared_by_cache_completion(cx: &m
         );
         view.update(cx, |app, cx| {
             app.event(
-                crate::runtime::Event::new(
-                    "cache:changed",
-                    crate::cache::CacheChanged {
-                        track_ids: vec![1],
-                        cached: true,
-                        cleared: false,
-                    },
-                ),
+                crate::runtime::Event::CacheChanged(crate::cache::CacheChanged {
+                    track_ids: vec![1],
+                    cached: true,
+                    cleared: false,
+                }),
                 cx,
             )
         });
         window.render_frame(cx);
         assert!(window.try_find(("thumbnail-progress", 1_usize)).is_none());
-        assert!(view.read(cx).library.cached.contains(&1));
+        assert!(view.read(cx).library.read(cx).cached.contains(&1));
     })
     .unwrap();
 }
@@ -1982,14 +2109,20 @@ fn thumbnail_download_progress_is_visible_and_cleared_by_cache_completion(cx: &m
 fn compact_search_preserves_player_virtualizes_and_opens_context_menu(cx: &mut TestAppContext) {
     let (window, view) = fixture(cx, size(px(390.), px(844.)));
     view.update(cx, |app, cx| {
-        let example = app.library.tracks[0].clone();
+        let example = app.library.read(cx).tracks[0].clone();
         for id in 10..5003 {
             let mut track = example.clone();
             track.id = id;
-            app.library.tracks.push(track);
+            app.library.clone().update(cx, |library, cx| {
+                library.tracks.push(track);
+                cx.notify();
+            });
             app.thumbs.insert(id, None);
         }
-        app.library.invalidate_track_list();
+        app.library.clone().update(cx, |library, cx| {
+            library.invalidate_track_list();
+            cx.notify();
+        });
         app.panel = Some(Panel::Search);
         cx.notify();
     });
@@ -2028,39 +2161,43 @@ fn embedded_cover_survives_remote_completion(cx: &mut TestAppContext) {
 }
 
 #[gpui_kit::test]
-fn unchanged_audio_heartbeats_preserve_order_without_rerendering_rows(cx: &mut TestAppContext) {
+fn audio_progress_updates_preserve_order_without_rerendering_rows(cx: &mut TestAppContext) {
     cx.disable_accessibility();
     let (window, view) = fixture(cx, size(px(1200.), px(800.)));
     cx.update_window(window, |_, window, cx| {
         window.render_frame(cx);
         view.read(cx).inactive_row_renders.set(0);
         view.update(cx, |app, cx| {
-            let mut heartbeat = app.snapshot.clone();
+            let mut heartbeat = app.playback.read(cx).clone();
             heartbeat.player = None;
             heartbeat.revision = 100;
-            app.event(crate::runtime::Event::new("audio:state", heartbeat), cx);
+            app.event(crate::runtime::Event::AudioState(heartbeat), cx);
         });
     })
     .unwrap();
     cx.run_until_parked();
     cx.update_window(window, |_, window, cx| {
         window.draw(cx).clear(cx);
-        assert_eq!(view.read(cx).snapshot.revision, 100);
+        assert_eq!(view.read(cx).playback.read(cx).revision, 100);
         assert_eq!(view.read(cx).inactive_row_renders.get(), 0);
         view.update(cx, |app, cx| {
-            let mut buffer = app.snapshot.clone();
+            let mut buffer = app.playback.read(cx).clone();
             buffer.player = None;
             buffer.revision = 101;
+            buffer.current_time_seconds = 85.;
             buffer.buffered_ranges.clear();
-            app.event(crate::runtime::Event::new("audio:state", buffer), cx);
+            app.event(crate::runtime::Event::AudioState(buffer), cx);
         });
     })
     .unwrap();
     cx.run_until_parked();
     cx.update_window(window, |_, window, cx| {
         window.draw(cx).clear(cx);
-        assert!(view.read(cx).snapshot.buffered_ranges.is_empty());
-        assert!(view.read(cx).inactive_row_renders.get() > 0);
+        assert!(view.read(cx).playback.read(cx).buffered_ranges.is_empty());
+        assert_eq!(view.read(cx).inactive_row_renders.get(), 0);
+        let snapshot = view.read(cx).playback.read(cx);
+        let expected = (85. / snapshot.duration_seconds * 100.) as f32;
+        assert!((view.read(cx).seek_slider.read(cx).value().start() - expected).abs() < 0.01);
     })
     .unwrap();
 }
@@ -2100,6 +2237,7 @@ fn fullscreen_waits_for_prepared_fallback_then_opens_with_palette_and_cover(
             app.palette = prepared.palette;
             app.fullscreen_cover = Some(prepared.cover.clone());
             app.fullscreen_backdrop = prepared.background.clone();
+            app.update_effects(window, cx);
             cx.notify();
         });
         window.render_frame(cx);
@@ -2109,13 +2247,13 @@ fn fullscreen_waits_for_prepared_fallback_then_opens_with_palette_and_cover(
         assert!(view.read(cx).palette != super::artwork::Palette::default());
         assert!(window.find("fullscreen-bounce-cover").visible());
         // A pending HQ upgrade must preserve the ready fallback and palette.
-        view.update(cx, |app, _| {
+        view.update(cx, |app, cx| {
             app.hq_thumbs.insert(5);
             let high = directory.path().join("hq.embed.jpg");
             app.preparing_artwork_path = Some(high.clone());
             app.playing_artwork_path = Some(high.clone());
             app.thumbs.insert(5, Some(high));
-            assert!(!app.fullscreen_artwork_pending());
+            assert!(!app.fullscreen_artwork_pending(cx));
             assert_eq!(app.palette_path.as_ref(), Some(&path));
             assert!(app.fullscreen_cover.is_some());
         });
@@ -2365,8 +2503,8 @@ fn exact_volume_focus_keeps_popup_open_outside_pointer_and_closes_after_blur(
 ) {
     use gpui_kit::{point, test::TestEventExt, Focusable};
     let (window, view) = fixture(cx, size(px(1200.), px(800.)));
-    view.update(cx, |app, _| {
-        let snapshot = app.snapshot.clone();
+    view.update(cx, |app, cx| {
+        let snapshot = app.playback.read(cx).clone();
         app.command_port = Some(super::transport::CommandPort::with_handler(move |_| {
             let snapshot = snapshot.clone();
             async { Ok(snapshot) }
@@ -2479,6 +2617,50 @@ fn fullscreen_paints_before_native_transition_and_preserves_existing_fullscreen(
         window.render_frame(cx);
         assert!(window.is_fullscreen());
         assert!(view.read(cx).fullscreen);
+    })
+    .unwrap();
+}
+
+#[gpui_kit::test]
+fn sidebar_resize_uses_the_kit_handle_at_the_panel_edge(cx: &mut TestAppContext) {
+    use gpui_kit::{point, test::TestEventExt, MouseButton};
+    let (window, view) = fixture(cx, size(px(1200.), px(800.)));
+    cx.update_window(window, |_, window, cx| {
+        window.render_frame(cx);
+        let panel = window.find("sidebar-panel").bounds();
+        let handle = window.find("sidebar-resize").bounds();
+        assert!((handle.right() - panel.right()).abs() <= px(1.));
+        let start = handle.center();
+        window.pointer_down(start, MouseButton::Left, cx);
+        window.pointer_move(start + point(px(10.), px(0.)), Some(MouseButton::Left), cx);
+        let target = point(px(430.), start.y);
+        window.pointer_move(target, Some(MouseButton::Left), cx);
+        window.pointer_up(target, MouseButton::Left, cx);
+        window.render_frame(cx);
+        assert!((view.read(cx).preferences.sidebar_width - 430.).abs() <= 1.);
+        assert!((window.find("sidebar-panel").bounds().size.width - px(430.)).abs() <= px(1.));
+        assert!(!cx.has_active_drag());
+    })
+    .unwrap();
+}
+
+#[gpui_kit::test]
+fn account_revocation_exits_fullscreen_without_waiting_for_remote_work(cx: &mut TestAppContext) {
+    let (window, view) = fixture(cx, size(px(1200.), px(800.)));
+    cx.update_window(window, |_, window, cx| {
+        view.update(cx, |app, cx| app.toggle_fullscreen(window, cx));
+        assert!(view.read(cx).fullscreen);
+        view.update(cx, |app, cx| {
+            app.event(crate::runtime::Event::AuthRevoked, cx)
+        });
+    })
+    .unwrap();
+    cx.run_until_parked();
+    cx.update_window(window, |_, window, cx| {
+        window.render_frame(cx);
+        assert!(!view.read(cx).fullscreen);
+        assert!(view.read(cx).user.is_none());
+        assert!(window.try_find_by_label("Phone number").is_some());
     })
     .unwrap();
 }

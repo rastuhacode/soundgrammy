@@ -78,11 +78,27 @@ See the [current migration audit](docs/gpui-audit.md) and [measured performance 
 
 ### Prerequisites
 
-- Install [Rust](https://www.rust-lang.org/learn/get-started)
+- Install [Rust through rustup](https://www.rust-lang.org/tools/install); the repository selects Rust 1.98.1 and its Clippy/rustfmt components automatically.
 - macOS: Xcode command-line tools; Windows: Visual Studio C++ build tools and Windows SDK
 - Linux: Clang, pkg-config, Fontconfig, Wayland, XKB/X11, OpenSSL, Zstd, ALSA and Vulkan development/runtime packages
 - Android: JDK 17, SDK platform 36, build-tools 35.0.0 and NDK 29.0.13846066; Rust target `aarch64-linux-android`
 - Telegram requires third-party clients to use their own application API credentials. You can get yours `api_id` and `api_hash` from [my.telegram.org/apps](https://my.telegram.org/apps)
+
+### Account-free checks
+
+Debug checks, tests and the `--preview` fixture do not require Telegram credentials
+or a copied `.env.local` file:
+
+```sh
+cargo check --locked
+cargo test --workspace --locked
+cargo xtask check-dependencies
+cargo run --locked -- --preview
+```
+
+The preview uses temporary storage and does not start Telegram or audio services.
+A normal app launch validates real credentials at runtime; release builds still
+require them at build time. Follow the setup below to sign in to Telegram.
 
 ### Setup
 
@@ -135,6 +151,7 @@ cargo check --locked
 cargo fmt --all
 cargo clippy --workspace --all-targets --locked -- -D warnings
 cargo test --workspace --locked
+cargo xtask check-dependencies
 ```
 
 To regenerate the native application icons from the source SVG:
@@ -154,7 +171,7 @@ cargo xtask package --target x86_64-apple-darwin
 
 Installers are written under `dist/`. Development uses GPUI directly: there is no web server, browser runtime, React or JavaScript in the application. `cargo run -- --preview` launches an account-free fixture in temporary storage for visual checks.
 
-This implementation pins GPUI Kit 0.8.1 and its `gpui-pre` 0.3.10 renderer, plus the matching `longbridge/gpui-mobile` Android host. Their revisions and notices are recorded in [the migration log](docs/gpui-migration.md).
+The app uses GPUI Kit 0.10.0 with GPUI 0.3.12 on desktop and Android. See [dependency maintenance](docs/dependencies.md) for the renderer version and Android host patch.
 
 GPUI describes the UI in Rust using flex layout, components and event handlers. It draws through the GPU instead of putting HTML into a WebView. Existing Telegram, database and audio services remain Rust services; UI calls are ordinary typed function calls. See [architecture](docs/architecture.md) and [migration verification](docs/gpui-migration.md).
 

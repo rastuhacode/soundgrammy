@@ -2,9 +2,12 @@
 use super::*;
 use gpui_kit::InputEvent as _;
 impl PlayerApp {
-    pub(super) fn set_preview(&mut self) {
+    pub(super) fn set_preview(&mut self, cx: &mut Context<Self>) {
         self.phase = Phase::Ready;
-        self.library = Default::default();
+        self.library.clone().update(cx, |library, cx| {
+            *library = Default::default();
+            cx.notify();
+        });
         self.user = Some(AuthUser {
             id: 1,
             first_name: "SoundGrammy".into(),
@@ -12,35 +15,44 @@ impl PlayerApp {
             username: None,
             phone: None,
         });
-        self.library.tracks=[("Synthetic","SpaceYeti",196),("Rabbit Hole","Dr. Ozi",206),("Throw Sum Mo’","YDG & Flozone",198),("Can We Call It Something Besides Brostep?","Killed It!",231),("Godhead Interface","Zardonic",228),("Damage","Figure",215),("KABOOM","Space Laces",198)].into_iter().enumerate().map(|(i,(title,artist,duration))|serde_json::from_value(serde_json::json!({"id":i as i64+1,"title":title,"performer":artist,"duration":duration,"mime_type":"audio/mpeg","file_size":1048576,"created_at":"2026-11-06T00:00:00Z"})).unwrap()).collect();
-        self.library.playlists = Some(crate::db::PlaylistsBundle {
-            liked: crate::db::LikedPlaylist {
-                id: 1,
-                track_ids: vec![1, 3, 5],
-                updated_at: "2026-11-05".into(),
-            },
-            custom: vec![crate::db::CustomPlaylistSummary {
-                id: 2,
-                name: "Presentation".into(),
-                track_ids: vec![1, 2, 1, 4],
-                updated_at: "2026-11-04".into(),
-            }],
+        self.library.clone().update(cx, |library, cx| { library.tracks=[("Synthetic","SpaceYeti",196),("Rabbit Hole","Dr. Ozi",206),("Throw Sum Mo’","YDG & Flozone",198),("Can We Call It Something Besides Brostep?","Killed It!",231),("Godhead Interface","Zardonic",228),("Damage","Figure",215),("KABOOM","Space Laces",198)].into_iter().enumerate().map(|(i,(title,artist,duration))|serde_json::from_value(serde_json::json!({"id":i as i64+1,"title":title,"performer":artist,"duration":duration,"mime_type":"audio/mpeg","file_size":1048576,"created_at":"2026-11-06T00:00:00Z"})).unwrap()).collect(); cx.notify();  });
+        self.library.clone().update(cx, |library, cx| {
+            library.playlists = Some(crate::db::PlaylistsBundle {
+                liked: crate::db::LikedPlaylist {
+                    id: 1,
+                    track_ids: vec![1, 3, 5],
+                    updated_at: "2026-11-05".into(),
+                },
+                custom: vec![crate::db::CustomPlaylistSummary {
+                    id: 2,
+                    name: "Presentation".into(),
+                    track_ids: vec![1, 2, 1, 4],
+                    updated_at: "2026-11-04".into(),
+                }],
+            });
+            cx.notify();
         });
-        for track in &self.library.tracks {
+        for track in &self.library.read(cx).tracks {
             self.thumbs.insert(track.id, None);
             self.hq_thumbs.insert(track.id);
         }
-        self.library.status = Some(crate::db::LibraryStatus {
-            tg_user_id: 1,
-            revision: 1,
-            indexed: 7,
-            total: 7,
-            complete: true,
-            blocking: false,
-            processed: 7,
-            last_sync_at: Some("2026-11-06T00:00:00Z".into()),
+        self.library.clone().update(cx, |library, cx| {
+            library.status = Some(crate::db::LibraryStatus {
+                tg_user_id: 1,
+                revision: 1,
+                indexed: 7,
+                total: 7,
+                complete: true,
+                blocking: false,
+                processed: 7,
+                last_sync_at: Some("2026-11-06T00:00:00Z".into()),
+            });
+            cx.notify();
         });
-        self.library.cached = [1, 2, 3, 4, 5].into_iter().collect();
+        self.library.clone().update(cx, |library, cx| {
+            library.cached = [1, 2, 3, 4, 5].into_iter().collect();
+            cx.notify();
+        });
         self.preferences = Preferences::default();
         let args = std::env::args().collect::<Vec<_>>();
         let mut fixture = None;
@@ -49,14 +61,14 @@ impl PlayerApp {
             .find(|a| a[0] == "--preview-fixture")
             .map(|a| &a[1])
         {
-            match self.load_visual_fixture(path) {
+            match self.load_visual_fixture(path, cx) {
                 Ok(value) => fixture = Some(value),
                 Err(error) => self.error = Some(error.to_string()),
             }
         }
         let mut session = audio::session::Session::default();
         session.queue = Queue {
-            tracks: self.library.tracks.clone(),
+            tracks: self.library.read(cx).tracks.clone(),
             cursor: fixture
                 .as_ref()
                 .and_then(|f| f["player"]["cursor"].as_i64())
@@ -68,7 +80,7 @@ impl PlayerApp {
                     r#type: SourceType::Playlist,
                     playlist_id: serde_json::json!("all"),
                     name: "All tracks".into(),
-                    track_ids: self.library.tracks.iter().map(|t| t.id).collect(),
+                    track_ids: self.library.read(cx).tracks.iter().map(|t| t.id).collect(),
                 }),
             ..Default::default()
         };
@@ -78,35 +90,52 @@ impl PlayerApp {
         {
             session.preferences.repeat = audio::session::Repeat::All;
         }
-        self.snapshot = audio::Snapshot::default();
-        self.snapshot.player = Some(Arc::new(session));
-        self.snapshot.track_id = self
-            .snapshot
-            .player
-            .as_ref()
-            .and_then(|p| p.queue.current())
-            .map(|t| t.id);
-        self.snapshot.duration_seconds = self
-            .snapshot
-            .player
-            .as_ref()
-            .and_then(|p| p.queue.current())
-            .and_then(|t| t.duration)
-            .unwrap_or(228) as f64;
+        self.playback.update(cx, |state, cx| {
+            *state = audio::Snapshot::default();
+            cx.notify();
+        });
+        self.playback.update(cx, |state, cx| {
+            state.player = Some(Arc::new(session));
+            cx.notify();
+        });
+        self.playback.update(cx, |state, cx| {
+            state.track_id = state
+                .player
+                .as_ref()
+                .and_then(|p| p.queue.current())
+                .map(|t| t.id);
+            cx.notify();
+        });
+        self.playback.update(cx, |state, cx| {
+            state.duration_seconds = state
+                .player
+                .as_ref()
+                .and_then(|p| p.queue.current())
+                .and_then(|t| t.duration)
+                .unwrap_or(228) as f64;
+            cx.notify();
+        });
         if self
-            .snapshot
+            .playback
+            .read(cx)
             .track_id
-            .is_some_and(|id| self.library.cached.contains(&id))
+            .is_some_and(|id| self.library.read(cx).cached.contains(&id))
         {
-            self.snapshot.buffered_ranges = vec![audio::Range {
-                start: 0.,
-                end: self.snapshot.duration_seconds,
-            }];
+            self.playback.update(cx, |state, cx| {
+                state.buffered_ranges = vec![audio::Range {
+                    start: 0.,
+                    end: state.duration_seconds,
+                }];
+                cx.notify();
+            });
         }
-        self.snapshot.current_time_seconds = fixture
-            .as_ref()
-            .and_then(|f| f["player"]["seconds"].as_f64())
-            .unwrap_or(83.);
+        self.playback.update(cx, |state, cx| {
+            state.current_time_seconds = fixture
+                .as_ref()
+                .and_then(|f| f["player"]["seconds"].as_f64())
+                .unwrap_or(83.);
+            cx.notify();
+        });
     }
 }
 
@@ -114,14 +143,22 @@ impl PlayerApp {
     fn load_visual_fixture(
         &mut self,
         path: &str,
+        cx: &mut Context<Self>,
     ) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
         use crate::db::{CustomPlaylistSummary, LikedPlaylist, TrackListenStats};
         let value: serde_json::Value = serde_json::from_slice(&std::fs::read(path)?)?;
-        self.library.tracks = serde_json::from_value(value["tracks"].clone())?;
+        let tracks = serde_json::from_value(value["tracks"].clone())?;
+        self.library.clone().update(cx, |library, cx| {
+            library.tracks = tracks;
+            cx.notify();
+        });
         // A fixture is presentation input: never retain document descriptors.
-        for track in &mut self.library.tracks {
-            track.mtproto_document = None;
-        }
+        self.library.clone().update(cx, |library, cx| {
+            for track in &mut library.tracks {
+                track.mtproto_document = None;
+            }
+            cx.notify();
+        });
         let text =
             |v: &serde_json::Value, key: &str| v[key].as_str().unwrap_or_default().to_owned();
         let ids = |v: &serde_json::Value| {
@@ -139,28 +176,31 @@ impl PlayerApp {
         });
         let playlists = value["playlists"].as_array().cloned().unwrap_or_default();
         let liked = playlists.iter().find(|v| v["kind"] == "liked");
-        self.library.playlists = Some(crate::db::PlaylistsBundle {
-            liked: liked
-                .map(|p| LikedPlaylist {
-                    id: p["id"].as_i64().unwrap_or(1),
-                    track_ids: ids(&p["track_ids"]),
-                    updated_at: text(p, "updated_at"),
-                })
-                .unwrap_or(LikedPlaylist {
-                    id: 1,
-                    track_ids: vec![],
-                    updated_at: String::new(),
-                }),
-            custom: playlists
-                .iter()
-                .filter(|v| v["kind"] == "custom")
-                .map(|p| CustomPlaylistSummary {
-                    id: p["id"].as_i64().unwrap_or(2),
-                    name: text(p, "name"),
-                    track_ids: ids(&p["track_ids"]),
-                    updated_at: text(p, "updated_at"),
-                })
-                .collect(),
+        self.library.clone().update(cx, |library, cx| {
+            library.playlists = Some(crate::db::PlaylistsBundle {
+                liked: liked
+                    .map(|p| LikedPlaylist {
+                        id: p["id"].as_i64().unwrap_or(1),
+                        track_ids: ids(&p["track_ids"]),
+                        updated_at: text(p, "updated_at"),
+                    })
+                    .unwrap_or(LikedPlaylist {
+                        id: 1,
+                        track_ids: vec![],
+                        updated_at: String::new(),
+                    }),
+                custom: playlists
+                    .iter()
+                    .filter(|v| v["kind"] == "custom")
+                    .map(|p| CustomPlaylistSummary {
+                        id: p["id"].as_i64().unwrap_or(2),
+                        name: text(p, "name"),
+                        track_ids: ids(&p["track_ids"]),
+                        updated_at: text(p, "updated_at"),
+                    })
+                    .collect(),
+            });
+            cx.notify();
         });
         self.thumbs.clear();
         if let Some(thumbs) = value["thumbnails"].as_object() {
@@ -171,39 +211,51 @@ impl PlayerApp {
             }
         }
         // Missing fixture images stay local instead of triggering remote work.
-        for t in &self.library.tracks {
+        for t in &self.library.read(cx).tracks {
             self.thumbs.entry(t.id).or_insert(None);
             self.hq_thumbs.insert(t.id);
         }
-        self.library.cached = ids(&value["cached"]).into_iter().collect();
+        self.library.clone().update(cx, |library, cx| {
+            library.cached = ids(&value["cached"]).into_iter().collect();
+            cx.notify();
+        });
         self.avatar = value["avatar"].as_str().map(Into::into);
         self.preferences = serde_json::from_value(value["preferences"].clone()).unwrap_or_default();
         if let Some(stats) = value["stats"].as_array() {
             for v in stats {
                 let n = |key: &str| v[key].as_i64().unwrap_or(0);
-                self.library.stats.insert(
-                    n("track_id"),
-                    TrackListenStats {
-                        track_id: n("track_id"),
-                        starts: n("starts"),
-                        qualified_plays: n("qualified_plays"),
-                        completes: n("completes"),
-                        early_skips: n("early_skips"),
-                        total_listened_ms: n("total_listened_ms"),
-                        first_played_at_ms: v["first_played_at_ms"].as_i64(),
-                        last_played_at_ms: v["last_played_at_ms"].as_i64(),
-                        likeness: v["likeness"].as_f64().unwrap_or(0.),
-                    },
-                );
+                self.library.clone().update(cx, |library, cx| {
+                    let result = {
+                        library.stats.insert(
+                            n("track_id"),
+                            TrackListenStats {
+                                track_id: n("track_id"),
+                                starts: n("starts"),
+                                qualified_plays: n("qualified_plays"),
+                                completes: n("completes"),
+                                early_skips: n("early_skips"),
+                                total_listened_ms: n("total_listened_ms"),
+                                first_played_at_ms: v["first_played_at_ms"].as_i64(),
+                                last_played_at_ms: v["last_played_at_ms"].as_i64(),
+                                likeness: v["likeness"].as_f64().unwrap_or(0.),
+                            },
+                        )
+                    };
+                    cx.notify();
+                    result
+                });
             }
         }
         self.online = true;
-        if let Some(status) = &mut self.library.status {
-            status.tg_user_id = self.user.as_ref().map(|u| u.id).unwrap_or(1);
-            status.indexed = self.library.tracks.len() as i64;
-            status.total = status.indexed;
-            status.processed = status.indexed;
-        }
+        self.library.update(cx, |library, cx| {
+            if let Some(status) = &mut library.status {
+                status.tg_user_id = self.user.as_ref().map(|u| u.id).unwrap_or(1);
+                status.indexed = library.tracks.len() as i64;
+                status.total = status.indexed;
+                status.processed = status.indexed;
+            }
+            cx.notify();
+        });
         Ok(value)
     }
 }
@@ -298,8 +350,6 @@ fn preview_perf_frame(
         if probe.frame == 1 {
             probe.open_ms = probe.open_started.map(|start| start.elapsed().as_secs_f64() * 1000.);
         }
-        #[cfg(target_os = "macos")]
-        if probe.frame == 30 { let _ = gpui_apple::effects::take_measurements(); }
         if probe.frame > 30 {
             if let Some(last) = probe.last { probe.intervals.push(now.duration_since(last).as_secs_f64() * 1000.); }
         }
@@ -312,7 +362,7 @@ fn preview_perf_frame(
             let result = serde_json::json!({
                 "accessibility_active":window.is_a11y_active(),
                 "window_active":window.is_window_active(),
-                "mode": probe.mode, "tracks": view.read(cx).library.tracks.len(),
+                "mode": probe.mode, "tracks": view.read(cx).library.read(cx).tracks.len(),
                 "window": [f32::from(window.viewport_size().width), f32::from(window.viewport_size().height)],
                 "opening_next_frame_ms": probe.open_ms, "mean_frame_ms": mean,
                 "fps": 1000. / mean, "p50_frame_ms": percentile(0.5),
@@ -320,23 +370,6 @@ fn preview_perf_frame(
                 "intervals_ms": probe.intervals,
                 "method": "display-paced callbacks with one synthetic scroll input per callback; excludes first 30 frames; not input-to-photon latency"
             });
-            #[cfg(target_os = "macos")]
-            let mut result = result;
-            #[cfg(target_os = "macos")]
-            {
-                let metrics = gpui_apple::effects::take_measurements();
-                let mut pairs:Vec<_> = metrics.presented_seconds.into_iter().zip(metrics.scene_signatures).collect();
-                pairs.sort_by(|a,b|a.0.total_cmp(&b.0));
-                let mut changed=Vec::new(); let mut previous=None;
-                for (time,signature) in &pairs { if previous!=Some(*signature) {changed.push(*time);previous=Some(*signature);} }
-                let changed_intervals:Vec<_>=changed.windows(2).map(|p|(p[1]-p[0])*1000.).collect();
-                result["scene_signature_method"]=serde_json::json!("order-independent hash of glyph vertical positions; scroll-position proxy, not image/video frame difference");
-                result["changed_scene_intervals_ms"]=serde_json::json!(changed_intervals);
-                let times:Vec<_>=pairs.into_iter().map(|p|p.0).collect();
-                let intervals: Vec<f64> = times.windows(2).map(|p| (p[1]-p[0])*1000.).collect();
-                result["presented_intervals_ms"] = serde_json::json!(intervals);
-                result["cpu_draw_ms"] = serde_json::json!(metrics.cpu_draw_ms);
-            }
             let _ = std::fs::write(&probe.output, serde_json::to_vec_pretty(&result).unwrap());
             cx.quit();
             return;
@@ -387,7 +420,7 @@ impl PlayerApp {
         window.on_next_frame(move |window, _| {
             window.on_next_frame(move |window, cx| {
                 let startup = serde_json::json!({"library_ready_ms":start.elapsed().as_secs_f64()*1000.,
-                    "tracks":view.read(cx).library.tracks.len(),"window":[f32::from(window.viewport_size().width),f32::from(window.viewport_size().height)]});
+                    "tracks":view.read(cx).library.read(cx).tracks.len(),"window":[f32::from(window.viewport_size().width),f32::from(window.viewport_size().height)]});
                 let _=std::fs::write(output.with_extension("startup.json"),startup.to_string());
                 let view = view.clone();
                 cx.spawn(async move |cx| {
@@ -403,8 +436,8 @@ impl PlayerApp {
                                 "fullscreen"|"fullscreen-playing" => {
                                     app.toggle_fullscreen(window,cx);
                                     if scenario=="fullscreen-playing" {
-                                        app.snapshot.status=audio::Status::Playing;
-                                        app.bounce_track=app.snapshot.track_id;
+                                        app.playback.update(cx, |state, cx| { state.status=audio::Status::Playing; cx.notify(); });
+                                        app.bounce_track=app.playback.read(cx).track_id;
                                         let lane=|period:usize| (0..8000).map(|i|if i%period<period/3 {220}else{30}).collect::<Vec<u8>>();
                                         app.bounce_profile=artwork::BounceProfile::new(25,lane(20),lane(20),[lane(20),lane(13),lane(7)]).map(Arc::new);
                                         app.bounce_ready_at=Some(cx.background_executor().now());
@@ -415,8 +448,8 @@ impl PlayerApp {
                             }
                             if scenario=="search-filter" {
                                 app.inputs.search.update(cx,|input,cx|input.set_value("005",window,cx));
-                                app.library.search="005".into();
-                                app.library.invalidate_track_list();
+                                app.library.clone().update(cx, |library, cx| { library.search="005".into(); cx.notify();  });
+                                app.library.clone().update(cx, |library, cx| { library.invalidate_track_list(); cx.notify();  });
                             }
                             cx.notify();
                         });
@@ -430,22 +463,12 @@ impl PlayerApp {
                             cx.background_executor().timer(Duration::from_secs(2)).await;
                             let _=handle.update(cx, |_,window,cx| {
                                 let app=resource_view.read(cx);
-                                let ready=serde_json::json!({"scenario":scenario_ready,"tracks":app.library.tracks.len(),
+                                let ready=serde_json::json!({"scenario":scenario_ready,"tracks":app.library.read(cx).tracks.len(),
                                     "fullscreen":app.fullscreen,"native_fullscreen":window.is_fullscreen(),
-                                    "palette_ready":app.fullscreen_cover.is_some(),"playing":app.snapshot.status==audio::Status::Playing,
+                                    "palette_ready":app.fullscreen_cover.is_some(),"playing":app.playback.read(cx).status==audio::Status::Playing,
                                     "window":[f32::from(window.viewport_size().width),f32::from(window.viewport_size().height)],
                                     "opening_callback_ms":opening.get(),"accessibility_active":window.is_a11y_active()});
                                 let _=std::fs::write(&output_ready,ready.to_string());
-                                #[cfg(target_os="macos")]
-                                {
-                                    let _=gpui_apple::effects::take_measurements();
-                                    cx.spawn(async move |cx| {
-                                        cx.background_executor().timer(Duration::from_millis(8500)).await;
-                                        let metrics=gpui_apple::effects::take_measurements();
-                                        let result=serde_json::json!({"presented_seconds":metrics.presented_seconds,"scene_signatures":metrics.scene_signatures,"cpu_draw_ms":metrics.cpu_draw_ms});
-                                        let _=std::fs::write(output_ready.with_extension("frames.json"),result.to_string());
-                                    }).detach();
-                                }
                             });
                         }).detach();
                         if scenario=="scroll"||scenario=="artwork-scroll"||scenario=="search" {

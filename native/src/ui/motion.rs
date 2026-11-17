@@ -14,6 +14,7 @@ pub(super) struct Layer {
     player: WeakEntity<PlayerApp>,
     render: Box<RenderLayer>,
     _player_updates: Option<Subscription>,
+    model_updates: Option<(EntityId, Subscription)>,
     scroll: Option<ScrollMotion>,
 }
 
@@ -29,17 +30,35 @@ impl Layer {
         layer
     }
 
-    pub(super) fn cached(
+    pub(super) fn cached<M: 'static, K: PartialEq + Clone + 'static>(
         id: impl Into<ElementId>,
         style: StyleRefinement,
+        model: &Entity<M>,
+        inputs: K,
         window: &mut Window,
         cx: &mut Context<PlayerApp>,
         render: impl Fn(&mut PlayerApp, &mut Window, &mut Context<PlayerApp>) -> AnyElement + 'static,
     ) -> impl IntoElement {
         // An active screen reader needs a complete accessibility tree each frame.
         let cache = !window.is_a11y_active();
-        let layer = Self::for_element(id, window, cx, true);
-        layer.update(cx, |layer, _| layer.render = Box::new(render));
+        let id = id.into();
+        let remembered =
+            window.use_keyed_state((id.clone(), "render-inputs"), cx, |_, _| None::<K>);
+        let changed = remembered.read(cx).as_ref() != Some(&inputs);
+        remembered.update(cx, |value, _| *value = Some(inputs));
+        // Model notifications invalidate this feature. Shell-only changes use
+        // explicit presentation inputs rather than observing the entire app.
+        let layer = Self::for_element(id, window, cx, false);
+        layer.update(cx, |layer, cx| {
+            if layer.model_updates.as_ref().map(|(id, _)| *id) != Some(model.entity_id()) {
+                layer.model_updates =
+                    Some((model.entity_id(), cx.observe(model, |_, _, cx| cx.notify())));
+            }
+            layer.render = Box::new(render);
+            if changed {
+                cx.notify();
+            }
+        });
         if cache {
             layer.cached(style).into_any_element()
         } else {
@@ -101,6 +120,7 @@ impl Layer {
                 player: player.downgrade(),
                 render: Box::new(|_, _, _| Empty.into_any_element()),
                 _player_updates: cached.then(|| cx.observe(&player, |_, _, cx| cx.notify())),
+                model_updates: None,
                 scroll: None,
             })
         });
@@ -142,10 +162,10 @@ impl Render for Layer {
                         .width(px(6.))
                         .inset(px(1.))
                         .radius(px(4.))
-                        .bg(rgba(0xa5a5a599))
+                        .bg(tint(MUTED, 0x99))
                 })
-                .thumb_hover(|thumb| thumb.width(px(8.)).bg(rgba(0xa5a5a5cc)))
-                .thumb_active(|thumb| thumb.width(px(8.)).bg(rgb(0xa5a5a5)))
+                .thumb_hover(|thumb| thumb.width(px(8.)).bg(tint(MUTED, 0xcc)))
+                .thumb_active(|thumb| thumb.width(px(8.)).bg(rgb(MUTED)))
         });
         div()
             .relative()

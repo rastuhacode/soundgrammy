@@ -123,7 +123,7 @@ impl Activity {
                                     return Ok(());
                                 }
                                 let result = db.record_attempt_end(track, ms, duration, reason)?;
-                                let _ = app.emit("listen:stats", result.stats);
+                                let _ = app.emit(crate::runtime::Event::ListenStats(result.stats));
                                 Ok(())
                             })
                             .await
