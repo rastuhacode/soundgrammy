@@ -1,8 +1,0 @@
-{
-  "pid": 45483,
-  "seconds": 20.04721495800186,
-  "cpu_percent_one_core": 1.047527052710024,
-  "state": "minimize requested; minimized state not independently confirmed",
-  "valid_comparison": false,
-  "note": "Excluded from benchmark comparisons; one diagnostic observation, not an accepted visibility test."
-}
