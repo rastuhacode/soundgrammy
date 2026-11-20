@@ -55,7 +55,28 @@ impl CommandPort {
             }
         })
     }
-    pub(super) fn with_handler<F, Fut>(mut handler: F) -> Self
+    fn with_handler<F, Fut>(handler: F) -> Self
+    where
+        F: FnMut(Control) -> Fut + Send + 'static,
+        Fut: std::future::Future<Output = Result<Snapshot, String>> + Send + 'static,
+    {
+        let (port, worker) = Self::worker(handler);
+        crate::runtime::spawn(worker);
+        port
+    }
+
+    #[cfg(test)]
+    pub(super) fn with_test_handler<F, Fut>(cx: &gpui_kit::App, handler: F) -> Self
+    where
+        F: FnMut(Control) -> Fut + Send + 'static,
+        Fut: std::future::Future<Output = Result<Snapshot, String>> + Send + 'static,
+    {
+        let (port, worker) = Self::worker(handler);
+        cx.background_executor().spawn(worker).detach();
+        port
+    }
+
+    fn worker<F, Fut>(mut handler: F) -> (Self, impl std::future::Future<Output = ()> + Send)
     where
         F: FnMut(Control) -> Fut + Send + 'static,
         Fut: std::future::Future<Output = Result<Snapshot, String>> + Send + 'static,
@@ -63,7 +84,7 @@ impl CommandPort {
         let (sender, mut receiver) = mpsc::unbounded_channel::<(Control, Reply)>();
         let active = Arc::new(AtomicBool::new(true));
         let current = active.clone();
-        crate::runtime::spawn(async move {
+        let worker = async move {
             while let Some((control, reply)) = receiver.recv().await {
                 let result = if !current.load(Ordering::Acquire) {
                     Err("Playback view closed".into())
@@ -72,8 +93,8 @@ impl CommandPort {
                 };
                 let _ = reply.send(result);
             }
-        });
-        Self { sender, active }
+        };
+        (Self { sender, active }, worker)
     }
     pub fn send(&self, control: Control) -> oneshot::Receiver<Result<Snapshot, String>> {
         let (send, receive) = oneshot::channel();

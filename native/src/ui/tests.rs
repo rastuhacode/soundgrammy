@@ -633,7 +633,7 @@ fn record_commands(
     cx: &mut gpui_kit::App,
 ) -> std::sync::mpsc::Receiver<crate::audio::session::Command> {
     let (sender, receiver) = std::sync::mpsc::channel();
-    let port = super::transport::CommandPort::with_handler(move |control| {
+    let port = super::transport::CommandPort::with_test_handler(cx, move |control| {
         if let crate::audio::Control::Player(command) = control {
             sender.send(*command).unwrap();
         }
@@ -661,9 +661,8 @@ fn filtered_duplicate_playback_sends_the_clicked_membership_position(cx: &mut Te
         window.click(("track-row", 2usize), cx);
     })
     .unwrap();
-    let command = receiver
-        .recv_timeout(std::time::Duration::from_secs(2))
-        .unwrap();
+    cx.run_until_parked();
+    let command = receiver.try_recv().unwrap();
     let crate::audio::session::Command::PlayPlaylist { queue, .. } = command else {
         panic!("expected playlist playback")
     };
@@ -683,16 +682,16 @@ fn keyboard_shortcuts_yield_to_search_inputs(cx: &mut TestAppContext) {
         window.press("space", cx);
     })
     .unwrap();
+    cx.run_until_parked();
     assert!(receiver.try_recv().is_err());
     cx.update_window(window, |_, window, cx| {
         view.update(cx, |app, cx| app.focus.focus(window, cx));
         window.press("space", cx);
     })
     .unwrap();
+    cx.run_until_parked();
     assert!(matches!(
-        receiver
-            .recv_timeout(std::time::Duration::from_secs(2))
-            .unwrap(),
+        receiver.try_recv().unwrap(),
         crate::audio::session::Command::Toggle
     ));
 }
@@ -1418,7 +1417,8 @@ fn seek_rail_is_flush_and_pointer_positions_send_finite_seconds(cx: &mut TestApp
                 state.attempt_id = Some("seek-test".into());
                 cx.notify();
             });
-            app.command_port = Some(super::transport::CommandPort::with_handler(
+            app.command_port = Some(super::transport::CommandPort::with_test_handler(
+                cx,
                 move |control| {
                     if let crate::audio::Control::SeekAttempt(seconds, attempt) = control {
                         tx.send((seconds, attempt)).unwrap();
@@ -1448,8 +1448,9 @@ fn seek_rail_is_flush_and_pointer_positions_send_finite_seconds(cx: &mut TestApp
         assert!(view.read(cx).scrubbing.is_none());
     })
     .unwrap();
+    cx.run_until_parked();
     for expected in [66., 150.] {
-        let (seconds, attempt) = rx.recv_timeout(std::time::Duration::from_secs(2)).unwrap();
+        let (seconds, attempt) = rx.try_recv().unwrap();
         assert!((seconds - expected).abs() < 0.1, "seek target {seconds}");
         assert_eq!(attempt.as_deref(), Some("seek-test"));
     }
@@ -1462,10 +1463,13 @@ fn clicking_volume_rail_changes_percent_without_dismissing(cx: &mut TestAppConte
     cx.update_window(window, |_, window, cx| {
         view.update(cx, |app, cx| {
             let snapshot = app.playback.read(cx).clone();
-            app.command_port = Some(super::transport::CommandPort::with_handler(move |_| {
-                let snapshot = snapshot.clone();
-                async { Ok(snapshot) }
-            }));
+            app.command_port = Some(super::transport::CommandPort::with_test_handler(
+                cx,
+                move |_| {
+                    let snapshot = snapshot.clone();
+                    async { Ok(snapshot) }
+                },
+            ));
         });
         window.hover("volume", cx);
     })
@@ -1639,7 +1643,8 @@ fn overlapping_seek_hit_area_does_not_activate_the_track_row(cx: &mut TestAppCon
     cx.update_window(window, |_, window, cx| {
         view.update(cx, |app, cx| {
             let snapshot = app.playback.read(cx).clone();
-            app.command_port = Some(super::transport::CommandPort::with_handler(
+            app.command_port = Some(super::transport::CommandPort::with_test_handler(
+                cx,
                 move |control| {
                     tx.send(control).unwrap();
                     let snapshot = snapshot.clone();
@@ -1659,13 +1664,10 @@ fn overlapping_seek_hit_area_does_not_activate_the_track_row(cx: &mut TestAppCon
         window.pointer_up(target, MouseButton::Left, cx);
     })
     .unwrap();
-    let command = rx.recv_timeout(std::time::Duration::from_secs(2)).unwrap();
+    cx.run_until_parked();
+    let command = rx.try_recv().unwrap();
     assert!(matches!(command, crate::audio::Control::SeekAttempt(..)));
-    assert!(
-        rx.recv_timeout(std::time::Duration::from_millis(100))
-            .is_err(),
-        "row also handled the click"
-    );
+    assert!(rx.try_recv().is_err(), "row also handled the click");
 }
 
 #[gpui_kit::test]
@@ -1679,10 +1681,13 @@ fn volume_drag_outlives_hover_delay_and_closes_only_after_release_and_exit(
         window.render_frame(cx);
         view.update(cx, |app, cx| {
             let snapshot = app.playback.read(cx).clone();
-            app.command_port = Some(super::transport::CommandPort::with_handler(move |_| {
-                let snapshot = snapshot.clone();
-                async { Ok(snapshot) }
-            }));
+            app.command_port = Some(super::transport::CommandPort::with_test_handler(
+                cx,
+                move |_| {
+                    let snapshot = snapshot.clone();
+                    async { Ok(snapshot) }
+                },
+            ));
         });
         window.hover("volume", cx);
     })
@@ -2505,10 +2510,13 @@ fn exact_volume_focus_keeps_popup_open_outside_pointer_and_closes_after_blur(
     let (window, view) = fixture(cx, size(px(1200.), px(800.)));
     view.update(cx, |app, cx| {
         let snapshot = app.playback.read(cx).clone();
-        app.command_port = Some(super::transport::CommandPort::with_handler(move |_| {
-            let snapshot = snapshot.clone();
-            async { Ok(snapshot) }
-        }));
+        app.command_port = Some(super::transport::CommandPort::with_test_handler(
+            cx,
+            move |_| {
+                let snapshot = snapshot.clone();
+                async { Ok(snapshot) }
+            },
+        ));
     });
     cx.update_window(window, |_, window, cx| window.hover("volume", cx))
         .unwrap();
@@ -2537,7 +2545,7 @@ fn exact_volume_focus_keeps_popup_open_outside_pointer_and_closes_after_blur(
         assert!(window
             .try_find_by_label("Exact volume percentage")
             .is_some());
-        window.press("cmd-a", cx);
+        window.press("secondary-a", cx);
         window.input("100", cx);
         assert_eq!(
             view.read(cx).inputs.exact_volume.read(cx).value().as_ref(),

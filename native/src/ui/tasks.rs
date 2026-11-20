@@ -1,5 +1,7 @@
 use super::*;
 use crate::error::{AppError, AppResult};
+#[cfg(test)]
+use futures_util::{future::Either, FutureExt};
 
 impl PlayerApp {
     pub(super) fn task<T, F, E>(
@@ -44,7 +46,15 @@ impl PlayerApp {
             self.busy += 1;
             self.error = None;
         }
-        let job = crate::runtime::spawn(async move { future.await.map_err(|e| e.to_string()) });
+        let work = async move { future.await.map_err(|error| error.to_string()) };
+        #[cfg(test)]
+        let job = if self.preview {
+            Either::Left(cx.background_executor().spawn(work).map(Ok))
+        } else {
+            Either::Right(crate::runtime::spawn(work))
+        };
+        #[cfg(not(test))]
+        let job = crate::runtime::spawn(work);
         let window = self.window;
         cx.spawn(async move |view, cx| {
             let result = job

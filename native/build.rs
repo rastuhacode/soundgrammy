@@ -58,13 +58,5 @@ fn main() {
             .set("FileDescription", "SoundGrammy")
             .compile_for("soundgrammy")
             .expect("compile SoundGrammy executable resources");
-
-        let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("windows-app.manifest");
-        println!("cargo:rerun-if-changed={}", manifest.display());
-        println!("cargo:rustc-link-arg-bin=soundgrammy=/MANIFEST:EMBED");
-        println!(
-            "cargo:rustc-link-arg-bin=soundgrammy=/MANIFESTINPUT:{}",
-            manifest.display()
-        );
     }
 }

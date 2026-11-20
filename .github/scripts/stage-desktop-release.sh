@@ -24,7 +24,7 @@ case "$target" in
     if [[ $arch == aarch64 ]]; then mac_arch=arm64; else mac_arch=x86_64; fi
     app="$source/SoundGrammy.app"
     codesign --verify --deep --strict "$app"
-    lipo -verify_arch "$mac_arch" "$app/Contents/MacOS/soundgrammy"
+    lipo "$app/Contents/MacOS/soundgrammy" -verify_arch "$mac_arch"
     dmg="SoundGrammy_${version}_${arch}.dmg"
     stage "$dmg" "$source"/*.dmg
     hdiutil verify "$output/$dmg"
