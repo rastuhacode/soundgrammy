@@ -244,10 +244,13 @@ impl PlayerApp {
                                 .child(div().font_weight(FontWeight::MEDIUM).child("SoundGrammy"))
                                 .child(
                                     gpui_kit::base::Link::new("nav-source")
-                                        .accessibility_label("Version: 3.5.0")
+                                        .accessibility_label(concat!(
+                                            "Version: ",
+                                            env!("CARGO_PKG_VERSION")
+                                        ))
                                         .href("https://github.com/rastuhacode/soundgrammy/releases")
                                         .cursor_pointer()
-                                        .child(format!("Version: {}", env!("CARGO_PKG_VERSION"))),
+                                        .child(concat!("Version: ", env!("CARGO_PKG_VERSION"))),
                                 ),
                         ),
                 )

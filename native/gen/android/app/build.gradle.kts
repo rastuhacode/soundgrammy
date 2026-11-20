@@ -3,8 +3,8 @@ plugins {
     id("org.jetbrains.kotlin.android")
 }
 
-val appVersion = providers.gradleProperty("appVersion").getOrElse("3.5.0")
-val appVersionCode = providers.gradleProperty("appVersionCode").getOrElse("3050000").toInt()
+val appVersion = providers.gradleProperty("appVersion").getOrElse("3.6.0")
+val appVersionCode = providers.gradleProperty("appVersionCode").getOrElse("3060000").toInt()
 val releaseKeystore = System.getenv("ANDROID_KEYSTORE_PATH")
 
 android {

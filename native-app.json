@@ -1,6 +1,6 @@
 {
   "productName": "SoundGrammy",
-  "version": "3.5.0",
+  "version": "3.6.0",
   "identifier": "com.soundgrammy.app",
   "window": { "width": 1200, "height": 800, "minWidth": 320, "minHeight": 480 }
 }
