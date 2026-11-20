@@ -45,6 +45,10 @@ fn option(args: &[String], key: &str) -> Result<Option<String>> {
 fn config(debug: bool) -> Result<Value> {
     let mut app: Value = serde_json::from_slice(&fs::read(root().join("native-app.json"))?)?;
     if debug {
+        let version = app["version"]
+            .as_str()
+            .ok_or("Missing application version")?;
+        let development_version = format!("{version}-develop");
         let development: Value =
             serde_json::from_slice(&fs::read(root().join("native-app.dev.json"))?)?;
         for (key, value) in development
@@ -53,6 +57,7 @@ fn config(debug: bool) -> Result<Value> {
         {
             app[key] = value.clone();
         }
+        app["version"] = json!(development_version);
     }
     Ok(app)
 }
@@ -88,18 +93,18 @@ fn execute() -> Result {
     let target = option(&args, "--target")?;
     match args.first().map(String::as_str).unwrap_or("help") {
         "check-dependencies" => check_dependencies(),
-        "check-versions" => check_versions(args.iter().any(|v| v == "--fix")),
+        "check-versions" => check_versions(),
         "package" => package(&args, debug, target.as_deref()),
         "android" => android(&args, debug, target.as_deref()),
         "icons" => icons::generate(args.iter().any(|v| v == "--check")),
         "help" | "--help" | "-h" => {
-            println!("Daily: cargo run | cargo check | cargo test | cargo fmt | cargo clippy\n\ncargo xtask check-versions [--fix]\ncargo xtask check-dependencies\ncargo xtask package [--debug] [--target TRIPLE] [--no-build] [--formats app,dmg]\ncargo xtask android [--debug] [--target TRIPLE] [--offline]\ncargo xtask icons [--check]\n\nRelease testing: SOUNDGRAMMY_DATA_DIR=/absolute/sandbox cargo run --release\nAccount-free UI: cargo run --release -- --preview");
+            println!("Daily: cargo run | cargo check | cargo test | cargo fmt | cargo clippy\n\ncargo xtask check-versions\ncargo xtask check-dependencies\ncargo xtask package [--debug] [--target TRIPLE] [--no-build] [--formats app,dmg]\ncargo xtask android [--debug] [--target TRIPLE] [--offline]\ncargo xtask icons [--check]\n\nRelease testing: SOUNDGRAMMY_DATA_DIR=/absolute/sandbox cargo run --release\nAccount-free UI: cargo run --release -- --preview");
             Ok(())
         }
         other => Err(format!("Unknown task: {other}; use cargo xtask help").into()),
     }
 }
-fn check_versions(fix: bool) -> Result {
+fn check_versions() -> Result {
     let app = config(false)?;
     let version = app["version"]
         .as_str()
@@ -118,26 +123,19 @@ fn check_versions(fix: bool) -> Result {
         })
         .ok_or("Missing Cargo package version")?;
     let lock = fs::read_to_string(root().join("Cargo.lock"))?;
+    let release_manifest: Value =
+        serde_json::from_slice(&fs::read(root().join(".release-please-manifest.json"))?)?;
+    let lock_version = format!("version = \"{version}\"");
     if cargo_version != version
+        || release_manifest["."] != version
         || fs::read_to_string(root().join("version.txt"))?.trim() != version
-        || !lock.contains(&format!("name = \"soundgrammy\"\nversion = \"{version}\""))
+        || !locked_package(&lock, "soundgrammy")?
+            .lines()
+            .any(|line| line == lock_version)
     {
-        return Err("Cargo manifest/lock and native-app.json versions differ".into());
+        return Err("Cargo manifest/lock, version.txt and Release Please versions must match native-app.json".into());
     }
-    let path = root().join("native-app.dev.json");
-    let mut development: Value = serde_json::from_slice(&fs::read(&path)?)?;
-    let expected = format!("{version}-develop");
-    if development["version"] != expected {
-        if !fix {
-            return Err("Development version differs; run cargo xtask check-versions --fix".into());
-        }
-        development["version"] = json!(expected);
-        fs::write(
-            path,
-            format!("{}\n", serde_json::to_string_pretty(&development)?),
-        )?;
-    }
-    println!("Application versions synchronized at {version} ({expected}).");
+    println!("Application versions synchronized at {version} ({version}-develop).");
     Ok(())
 }
 // A tested Kit/renderer pair plus the local fixes that must not silently
@@ -408,6 +406,13 @@ mod tests {
         assert_eq!(
             config(true).unwrap()["identifier"],
             "com.soundgrammy.app.dev"
+        );
+        assert_eq!(
+            config(true).unwrap()["version"],
+            format!(
+                "{}-develop",
+                config(false).unwrap()["version"].as_str().unwrap()
+            )
         );
         assert_ne!(
             config(false).unwrap()["productName"],

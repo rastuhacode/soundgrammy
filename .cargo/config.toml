@@ -1,5 +1,5 @@
 [alias]
-xtask = "run --package xtask --"
+xtask = "run --locked --package xtask --"
 
 # End-user Windows installs must not require Visual Studio's VC runtime DLLs.
 [target.x86_64-pc-windows-msvc]

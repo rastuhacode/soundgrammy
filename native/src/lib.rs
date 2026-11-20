@@ -52,5 +52,10 @@ mod build_flavor_tests {
         assert_eq!(development["identifier"], "com.soundgrammy.app.dev");
         assert_ne!(release["identifier"], development["identifier"]);
         assert_eq!(development["productName"], "SoundGrammy Dev");
+        #[cfg(debug_assertions)]
+        assert_eq!(
+            crate::runtime::application_config()["version"],
+            format!("{}-develop", release["version"].as_str().unwrap())
+        );
     }
 }

@@ -334,9 +334,12 @@ pub(crate) fn application_config() -> serde_json::Value {
         let development: serde_json::Value =
             serde_json::from_str(include_str!("../../native-app.dev.json"))
                 .expect("development configuration");
+        let version = configuration["version"].as_str().expect("release version");
+        let development_version = format!("{version}-develop");
         for (key, value) in development.as_object().unwrap() {
             configuration[key] = value.clone();
         }
+        configuration["version"] = development_version.into();
     }
     configuration
 }

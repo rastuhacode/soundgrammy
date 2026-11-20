@@ -17,7 +17,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+          - os: macos-15
+            target: aarch64-apple-darwin
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v7
@@ -45,12 +52,29 @@ jobs:
       - name: Install native packaging tool
         if: runner.os != 'Linux'
         run: cargo install cargo-packager --version 0.11.2 --locked
-      - name: Verify native installer generation
-        if: runner.os == 'macOS'
-        run: cargo xtask package --debug --no-build --formats app
-      - name: Verify Windows EXE/MSI installers
+      - name: Build and verify release installers
+        if: runner.os != 'Linux'
+        shell: bash
+        run: |
+          cargo xtask package --target "${{ matrix.target }}"
+          bash .github/scripts/stage-desktop-release.sh "${{ matrix.target }}" release-assets
+      - name: Verify Windows executable metadata
         if: runner.os == 'Windows'
-        run: cargo xtask package
+        shell: pwsh
+        run: |
+          $binary = Resolve-Path 'target/x86_64-pc-windows-msvc/release/soundgrammy.exe'
+          $metadata = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($binary.Path)
+          $version = (Get-Content version.txt -Raw).Trim()
+          if ($metadata.ProductName -cne 'SoundGrammy' -or $metadata.ProductVersion -cne $version) {
+            throw "Windows executable metadata does not match SoundGrammy $version"
+          }
+      - name: Save installers for platform acceptance
+        if: runner.os != 'Linux'
+        uses: actions/upload-artifact@v6
+        with:
+          name: candidate-${{ matrix.target }}
+          path: release-assets/*
+          if-no-files-found: error
   android:
     name: Android arm64 APK and JVM tests
     runs-on: ubuntu-latest
@@ -72,7 +96,18 @@ jobs:
       - run: cargo xtask check-versions
       - run: cargo xtask check-dependencies
       - run: cargo xtask android --debug
+      - name: Verify debug APK
+        run: |
+          apk=native/gen/android/app/build/outputs/apk/debug/app-debug.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify "$apk"
+          "$ANDROID_HOME/build-tools/35.0.0/zipalign" -c -P 16 4 "$apk"
+      - name: Build and verify minified Android APK and run release JVM tests
+        run: |
+          cargo xtask android
+          apk=native/gen/android/app/build/outputs/apk/release/app-release-unsigned.apk
+          "$ANDROID_HOME/build-tools/35.0.0/zipalign" -c -P 16 4 "$apk"
       - uses: actions/upload-artifact@v6
         with:
           name: SoundGrammy-Android-dev
           path: native/gen/android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error

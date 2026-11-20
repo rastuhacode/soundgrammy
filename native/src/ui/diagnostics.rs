@@ -28,21 +28,23 @@ impl LogBook {
         self.enabled = enabled;
     }
     pub fn push(&mut self, value: String) {
+        self.extend(std::iter::once(value));
+    }
+    pub fn extend(&mut self, values: impl IntoIterator<Item = String>) {
         if !self.enabled {
             return;
         }
-        self.entries.push(format!(
-            "[{}] {}",
-            crate::time::now_ms(),
-            value.chars().take(8000).collect::<String>()
-        ));
+        let mut values = values.into_iter().peekable();
+        if values.peek().is_none() {
+            return;
+        }
+        let time = crate::time::now_ms();
+        self.entries.extend(
+            values
+                .map(|value| format!("[{time}] {}", value.chars().take(8000).collect::<String>())),
+        );
         self.trim();
         self.persist();
-    }
-    pub fn extend(&mut self, values: impl IntoIterator<Item = String>) {
-        for value in values {
-            self.push(value);
-        }
     }
     pub fn clear(&mut self) {
         self.entries.clear();
@@ -75,9 +77,7 @@ mod tests {
         book.push("private".into());
         assert!(book.join("").is_empty());
         book.set_enabled(true);
-        for n in 0..310 {
-            book.push(n.to_string());
-        }
+        book.extend((0..310).map(|n| n.to_string()));
         assert_eq!(book.entries.len(), 300);
         assert!(book.entries[0].ends_with(" 10"));
         book.clear();

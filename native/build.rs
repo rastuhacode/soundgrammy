@@ -51,9 +51,20 @@ fn main() {
     if std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows")
         && std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc")
     {
+        println!("cargo:rerun-if-changed=icons/icon.ico");
+        winresource::WindowsResource::new()
+            .set_icon("icons/icon.ico")
+            .set("ProductName", "SoundGrammy")
+            .set("FileDescription", "SoundGrammy")
+            .compile_for("soundgrammy")
+            .expect("compile SoundGrammy executable resources");
+
         let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("windows-app.manifest");
         println!("cargo:rerun-if-changed={}", manifest.display());
-        println!("cargo:rustc-link-arg=/MANIFEST:EMBED");
-        println!("cargo:rustc-link-arg=/MANIFESTINPUT:{}", manifest.display());
+        println!("cargo:rustc-link-arg-bin=soundgrammy=/MANIFEST:EMBED");
+        println!(
+            "cargo:rustc-link-arg-bin=soundgrammy=/MANIFESTINPUT:{}",
+            manifest.display()
+        );
     }
 }
