@@ -1,9 +1,11 @@
+> Current app host: GPUI. Historical validation counts below describe earlier audio work; see [the migration log](gpui-migration.md) for current verification.
+
 # Native audio
 
 ## Run
 
 ```sh
-bun tauri:dev
+cargo run
 ```
 
 Rust is the only desktop playback engine in development and release builds.
@@ -14,7 +16,7 @@ is lazy; a missing device does not prevent startup. Mobile foreground playback
 still requires device verification; enabling compilation does not establish parity.
 
 Rust owns queue progression, repeat/shuffle, playback intent, listening statistics,
-and Last.fm attempt qualification. React mirrors native snapshots and handles in-app
+and Last.fm attempt qualification. GPUI mirrors native snapshots and handles in-app
 keyboard shortcuts. OS metadata and remote actions use the [native media bridge](native-media-bridge.md),
 without browser Media Session handlers.
 
@@ -108,7 +110,7 @@ Upstream documentation: [CPAL](https://docs.rs/cpal/0.18.2/cpal/),
 [ringbuf](https://docs.rs/ringbuf/0.5.2/ringbuf/),
 [Rubato](https://docs.rs/rubato/0.16.2/rubato/).
 Linux needs ALSA development headers (`libasound2-dev` on Ubuntu), in addition to
-the existing Tauri packages. CI now checks macOS, Windows, and Linux headlessly.
+the native application packages. CI now checks macOS, Windows, and Linux headlessly.
 
 ## Verification record
 
@@ -149,13 +151,9 @@ packet-boundary continuity, gain/sanitization, silent underrun, presentation
 latency/tail accounting, range-cache reuse, seek prioritization, start before
 complete download, cancellation during a missing-range wait, corrupt input,
 proxy contract, stale events, command failure, and native teardown ownership.
-Fixtures and provenance are in `src-tauri/tests/fixtures/audio/`.
+Fixtures and provenance are in `native/tests/fixtures/audio/`.
 
-Run validation with `bun lint`, `bun typecheck`, and **`bun run test`** (the
-package script runs Vitest and Cargo). Bare `bun test` invokes Bun's own test
-runner and does not provide the Vitest/jsdom test environment. Also run
-`cargo fmt --manifest-path src-tauri/Cargo.toml --check` and `cargo check
---manifest-path src-tauri/Cargo.toml`.
+Run validation with `cargo test --workspace --locked`, `cargo fmt --all --check`, and `cargo clippy --workspace --all-targets --locked -- -D warnings`.
 
 ### Release gates still requiring device verification
 
@@ -195,7 +193,7 @@ Real-device CPU and network playback still require a follow-up run.
 
 Removed desktop-only audio gates, including command registration, streaming
 observation, active-cache protection, and logout cleanup. Shared dependency
-versions are unchanged. Android minimum SDK is 26 in both Tauri configuration
+versions are unchanged. Android minimum SDK is 26 in the native configuration
 and the generated Gradle project. CPAL’s Android context is initialized lazily
 using a process-lifetime Application global reference before any output access.
 

@@ -1,113 +1,27 @@
 # Mobile background playback
 
-The Rust control worker owns decoding, output, streaming, queue progression, user
-intent, and listen attempts. React subscribes to snapshots and aggregates; WebView
-suspension, navigation, and component cleanup do not stop the player. Mobile
-window-driven exit requests are prevented; explicit application exit is honored.
+The Android GPUI Activity hosts rendering and composing-text input. The Rust runtime owns playback, queue intent and listening attempts; a view subscribes to display snapshots. `MainActivity` initializes the process JNI context before the keyring/session store can be used, then inherits `GpuiActivity` → `GpuiInputActivity` → `NativeActivity`.
 
-## Android lifetime
+`native/gen/android/app/src/main/java/dev/gpui/mobile` contains the pinned upstream host and package helpers, with Apache license and revision notices. The inheritance adjustment retains the InputConnection needed for Android soft keyboards and multistage IMEs.
 
-`PlaybackService` is a non-exported `mediaPlayback` foreground service. It reuses
-the process-owned `NativeMediaSession` and sends JNI commands directly to the
-existing Rust worker. No second decoder, queue, or Activity reference is created.
-The first UI audio command initializes the application context/JNI bridge. Later
-native controls need neither an Activity nor JavaScript.
+## Lifetime
 
-Before enabling PCM, Rust waits for foreground promotion and a granted audio-focus
-request. Restricted/failed service starts, denied focus, and initialization timeout
-fail playback safely. Transient loss (including duck requests) pauses output;
-matching focus gain removes the interruption gate without changing user intent.
-Permanent loss and becoming-noisy clear playback intent. Old focus-request callbacks
-are discarded. The notification shares the MediaSession token and has previous,
-play/pause, next, and stop actions; seek is exposed through MediaSession.
+The existing `PlaybackService` remains a foreground media-playback service and owns a partial wake lock while background playback needs it. `NativeMediaSession` publishes notifications and lock-screen controls. JNI commands go directly to the Rust audio owner, including while no GPUI view is present. Android media publication attaches to the Java VM directly rather than depending on an active view/main-thread notification receiver.
 
-Swiping the task away from Android Recents stops the foreground service and ends
-the process, so playback stops and the next launch starts with a fresh WebView.
-Moving the app to the background still permits playback, and ordinary Activity
-recreation reattaches through native snapshots. User pause releases focus and the
-wake lock, demotes the service, and retains a dismissible notification with Play.
-On Android, a prepared track retains its decoder and bounded PCM buffer while the
-output stream is paused. Resume reuses that stream after reacquiring focus;
-unprepared tracks, stopped playback, and invalidated outputs are rebuilt.
-Swiping that notification or pressing Stop hides the media session until playback
-starts again. Final completion/stop/logout stop the service; destruction releases its
-receiver and wake lock.
-Unexpected service destruction sends native Stop. Temporary interruptions retain
-the service but release its CPU wake lock. Active playback/buffering holds a partial
-wake lock for Rust decoding/network work; it never keeps the display awake.
+A process-level Rust resource owner survives Activity recreation. Reattached views adopt authoritative snapshots. Home/backgrounding keeps playback active; task removal is an explicit close and stops/kills through `TaskRemoval`. The service remains non-sticky: process death/force-stop requires an explicit user launch and play. No durable queue recovery or automatic process resurrection is added.
 
-The service is `START_NOT_STICKY`. Process death and force-stop do not resume audio.
-Optional persisted queue/cursor/position restoration is deliberately not enabled:
-only repeat/shuffle preferences persist. A fresh process starts idle and requires
-an explicit user playback action.
+Back first goes through GPUI key routing so an active menu may dismiss before its parent. The app then closes a dialog, fullscreen player, selection mode or compact playlist in order. At the root it backgrounds the Activity. Nested dialogs retain their parent. Android 13+ predictive Back and older Back callbacks share the same route; the system IME retains priority for hiding its keyboard.
 
-## iOS lifetime and CPAL ownership
+## Storage and platform integration
 
-`Info.ios.plist`, referenced by Tauri's `bundle.iOS.infoPlist`, enables the `audio`
-background mode. The shared Apple adapter now supplies Now Playing metadata,
-artwork, and remote commands on iOS as well as macOS. Rust activates the playback
-AVAudioSession before opening CPAL, and deactivates it when output is released on
-pause, stop, final completion, or failure.
+Release and debug package IDs retain their previous values. Database/session/cache paths stay compatible with the old app. The app loads Android Keystore-backed credentials before repairing any restored unreadable session. Backup rules continue excluding credential/session material. User downloads retain the existing Android Downloads bridge; recipe file pickers copy SAF documents into controlled temporary storage before Rust reads or writes them.
 
-CPAL 0.18.2's `host/coreaudio/ios/session_event_manager.rs` was inspected: CPAL
-already stops/resumes its AudioUnit on interruption and reactivates the session
-when `ShouldResume` is present. Our notification observer only gates Rust intent;
-it never starts an AudioUnit or activates the session on interruption end. CPAL
-also reports headphone/route removal, media-service loss/reset, and invalidation
-through the output error callback. These fail safely; explicit Play rebuilds the
-output at the retained position. Automatic reset recovery is intentionally avoided.
+The existing audio-focus, noisy-route and interruption policy remains in the service and native audio lifecycle modules. Minimum SDK remains 26 for AAudio. SDK 36 and NDK 29 are configured in the host/build tooling.
 
-## Accounting and networking
+## Verification
 
-Native PCM frame counts exclude seeks, buffering silence, and paused time. A single
-ordered Last.fm task preserves start → qualification → end order; existing SQLite
-queue deduplication/delivery remain in use. Changing Last.fm configuration invalidates
-pending qualification work. Local statistics clear/enable changes are serialized
-with playback transitions. UI reattachment refreshes aggregates without recording
-another attempt. See [listen-statistics.md](listen-statistics.md).
+`cargo xtask android --debug` cross-compiles arm64 Rust, stages the library, builds a debug APK and runs JVM tests. Host tests check composing-input inheritance; existing task-removal and instrumented media tests remain.
 
-Streaming lazily initializes the Telegram client in Rust. Ferogram 0.6.5 owns home
-and media-DC connection recovery in its native async tasks. Playback file requests
-retry transient IO/dropped/server errors at the same verified chunk offset, with
-bounded backoff and cancellation polling. Auth, malformed-response, and file-reference
-errors are not indiscriminately retried. The existing file-reference refresh path
-is retained. No playback-critical retry requires browser `online` events.
+Physical-device checks are deferred to the user. Test login/QR/2FA, keyboard composition, cached and streamed playback, seeks, Home/lock screen, notification controls, interruptions/headset disconnect, Back, Activity recreation, task removal and restart. APK/JVM build success does not establish those real-device behaviors.
 
-## Validation record (2026-09-19)
-
-Compilation/unit tests and device acceptance are separate:
-
-- 159 host Rust tests and Clippy pass; 260 frontend tests, TypeScript, and ESLint pass.
-- Android Kotlin compilation and `cargo check --target aarch64-linux-android` pass.
-- iOS generation/compilation is **blocked** on this host: full Xcode, XcodeGen,
-  Apple Rust targets, and signing setup are unavailable. `tauri ios init --ci`
-  failed installing the target; `--skip-targets-install` failed obtaining XcodeGen.
-  No generated Apple project or successful iOS build is claimed. On a configured
-  Mac, run `bun tauri ios init`, set the development team, then build and verify the
-  generated app's Info.plist includes `UIBackgroundModes = [audio]`.
-- No real-device background, network-transition, battery, or CPU result is claimed.
-
-## Required real-device acceptance
-
-Run the following on physical iOS and Android devices, recording device/OS/build,
-track format/cache state, observed result, logs, and resource measurements. All
-rows remain **not run** for this change.
-
-| Scenario | Expected evidence |
-|---|---|
-| Cached and streamed tracks, lock for 30+ minutes | Audible output and queue advancement without a mounted/active WebView |
-| Repeat-one/all, shuffle, duplicate tracks | Correct native membership progression and one attempt per play |
-| Lock-screen seek/previous/next/play/pause | Direct native actions; no restart on UI reattachment |
-| Calls/focus competition; pause during interruption | Resume only if still intended; no stale resume after user pause |
-| Wired headphones/Bluetooth removal and route changes | Safe pause/failure, explicit recovery; no unexpected speaker output |
-| Wi-Fi ↔ cellular, offline then online | Verified chunks retained; native recovery or bounded recoverable error |
-| Activity recreation without task removal | Same process session and position; no extra decoder/queue/accounting task |
-| Swipe task from Recents, then reopen | Audio and notification stop; fresh process shows the UI and starts idle |
-| Logout, notification stop, service destruction | Output, foreground status, focus, and wake resources released |
-| Seek repeatedly; buffer; pause; clear/disable statistics | No time inflation or pre-clear history reappearance; Last.fm at most once per attempt |
-| Force-stop/process death | No automatic playback; fresh process idle |
-| Extended cached/streamed runs | Record battery delta, CPU, worker counts, wake-lock duration, and memory; check for growth |
-
-Platform references: [Android background playback](https://developer.android.com/media/media3/session/background-playback),
-[Android audio focus](https://developer.android.com/media/optimize/audio-focus),
-[Apple audio lifecycle](https://developer.apple.com/library/archive/documentation/AudioVideo/Conceptual/MediaPlaybackGuide/Contents/Resources/en.lproj/RefiningTheUserExperience/RefiningTheUserExperience.html).
+The Rust iOS audio/lifecycle adapter and `Info.ios.plist` are retained, but an iOS GPUI application host and signing pipeline are not configured. iOS was not an officially supported application target before this migration.

@@ -1,0 +1,117 @@
+[package]
+name = "soundgrammy"
+version = "3.6.0"
+description = "SoundGrammy — a native desktop player for your Telegram profile music"
+license = "GPL-3.0-only"
+authors = ["SoundGrammy"]
+edition = "2021"
+rust-version = "1.97"
+
+[lib]
+name = "soundgrammy_lib"
+crate-type = ["rlib"]
+
+[[bin]]
+name = "soundgrammy"
+path = "src/main.rs"
+required-features = ["desktop"]
+
+[features]
+default = ["desktop"]
+ui = ["dep:gpui-kit", "dep:raw-window-handle"]
+desktop = ["ui", "dep:rfd"]
+mobile = ["ui", "dep:gpui-mobile", "dep:android-activity"]
+
+[build-dependencies]
+dotenvy = "0.15.7"
+winresource = { version = "0.1.34", default-features = false }
+
+[dependencies]
+gpui-kit = { version = "=0.10.0", optional = true }
+raw-window-handle = { version = "0.6.2", optional = true }
+image = {version = "0.25.10",default-features = false,features=["png","jpeg","webp"]}
+qrcode = { version = "0.14.1", default-features = false }
+dirs = "7.0.0"
+rusty-leveldb = "4.0.2"
+tempfile = "3.27.0"
+open = "5.4.5"
+
+# Async runtime
+tokio = { version = "1.54.1", features = ["full"] }
+futures-util = "0.3.34"
+async-trait = "0.1.92"
+
+# Telegram MTProto
+ferogram = { version = "=0.6.7", default-features = false, features = ["parsers"] }
+
+# Storage
+rusqlite = { version = "0.43.0", features = ["bundled"] }
+
+# Serialization
+serde = { version = "1.0.229", features = ["derive", "rc"] }
+serde_json = "1.0.154"
+reqwest = { version = "0.13.5", default-features = false, features = ["form", "json", "rustls"] }
+
+# Crypto / secure session at rest
+aes-gcm = "0.11.1"
+keyring = "4.2.0"
+
+# Utilities
+thiserror = "2.0.21"
+anyhow = "1.0.104"
+base64 = "0.23.1"
+hex = "0.4.3"
+md5 = "0.8.1"
+url = "2.5.8"
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+lofty = "0.25.5"
+dotenvy = "0.15.7"
+rustfft = "6.4.1"
+ruopus = "0.1.2"
+rand = "0.10.4"
+chrono = { version = "0.4.45", default-features = false, features = ["std"] }
+symphonia = { version = "0.6.1", default-features = false, features = ["aac", "alac", "flac", "id3v2", "isomp4", "mkv", "ogg", "pcm", "vorbis", "wav", "mpa"] }
+
+# Shared desktop and mobile audio output, PCM buffering, and resampling.
+cpal = { version = "0.18.2", default-features = false }
+ringbuf = "0.6.0"
+rubato = "5.1.0"
+
+[target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
+rfd = { version = "0.18.0", optional = true }
+keepawake = "=0.6.1"
+
+[target.'cfg(target_os = "android")'.dependencies]
+gpui-mobile = { package = "gpui-pre-mobile", version = "=0.1.0", default-features = false, features = ["path_provider", "url_launcher", "file_selector", "clipboard"], optional = true }
+android-activity = { version = "0.6.1", features = ["native-activity"], optional = true }
+jni = "0.22.4"
+ndk-context = "0.1.1"
+keyring-core = "1.0.1"
+android-native-keyring-store = "=1.0.0"
+
+
+[dev-dependencies]
+gpui-kit = { version = "=0.10.0", features = ["test-support"] }
+tokio = { version = "1.54.1", features = ["test-util"] }
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6.5"
+objc2-foundation = "0.3.2"
+objc2-app-kit = "0.3.2"
+objc2-media-player = "0.3.2"
+block2 = "0.6.2"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+zbus = "6.3.0"
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.62.2", features = ["Foundation", "Media", "Storage_Streams", "Win32_System_WinRT", "Win32_Foundation"] }
+
+[target.'cfg(target_os = "ios")'.dependencies]
+objc2 = "0.6.5"
+objc2-foundation = "0.3.2"
+objc2-ui-kit = "0.3.2"
+objc2-avf-audio = "0.3.2"
+objc2-media-player = "0.3.2"
+block2 = "0.6.2"

@@ -1,166 +1,113 @@
 name: CI
-
 on:
   pull_request:
-    branches:
-      - main
-
+    branches: [main, develop]
 permissions:
   contents: read
-
 concurrency:
   group: ci-${{ github.event.pull_request.number }}
   cancel-in-progress: true
-
 env:
-  # Builds require credentials to be present, but CI never connects to Telegram.
   TELEGRAM_API_ID: "1"
   TELEGRAM_API_HASH: ci-placeholder
-
+  CARGO_PROFILE_DEV_DEBUG: "0"
 jobs:
-  checks:
-    name: Test, lint, typecheck, and Rust quality
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Install Tauri system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libasound2-dev \
-            build-essential \
-            curl \
-            wget \
-            file \
-            libxdo-dev \
-            libssl-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy, rustfmt
-
-      - name: Rust cache
-        uses: swatinem/rust-cache@v2
-        with:
-          workspaces: "./src-tauri -> target"
-
-      - name: Install frontend dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Verify application versions
-        run: bun run check:versions
-
-      - name: Lint frontend
-        run: bun run lint:frontend
-
-      - name: Typecheck
-        run: bun run typecheck
-
-      - name: Check Rust formatting
-        run: cargo fmt --manifest-path src-tauri/Cargo.toml --all -- --check
-
-      - name: Lint Rust backend
-        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets --locked -- -D warnings
-
-      - name: Test frontend
-        run: bun run test:frontend
-
-      - name: Test Rust backend
-        run: cargo test --manifest-path src-tauri/Cargo.toml --locked
-
   desktop:
-    name: Build desktop (${{ matrix.os }})
+    name: Native checks (${{ matrix.os }})
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+          - os: macos-15
+            target: aarch64-apple-darwin
+          - os: macos-15-intel
+            target: x86_64-apple-darwin
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
     runs-on: ${{ matrix.os }}
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Install Tauri system dependencies
+      - uses: actions/checkout@v7
+      - uses: dtolnay/rust-toolchain@1.98.1
+        with:
+          components: clippy, rustfmt
+      - name: Install Linux native dependencies
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            libwebkit2gtk-4.1-dev \
-            libasound2-dev \
-            build-essential \
-            curl \
-            wget \
-            file \
-            libxdo-dev \
-            libssl-dev \
-            libayatana-appindicator3-dev \
-            librsvg2-dev
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: Rust cache
-        uses: swatinem/rust-cache@v2
+          sudo apt-get install -y build-essential clang pkg-config libfontconfig-dev libwayland-dev libxkbcommon-x11-dev libx11-xcb-dev libssl-dev libzstd-dev libasound2-dev libvulkan1 mesa-vulkan-drivers
+      - uses: swatinem/rust-cache@v2
         with:
-          workspaces: "./src-tauri -> target"
-
-      - name: Install frontend dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Build desktop app
-        # Compile and link the app without release packaging or signing overhead.
-        run: bun run tauri build --debug --no-bundle --ci -- --locked
-
+          workspaces: . -> target
+      - run: cargo xtask check-versions
+      - run: cargo xtask check-dependencies
+      - run: cargo check --workspace --locked
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - run: cargo test -p xtask --locked
+      - name: Test native services and GPUI interactions
+        run: cargo test --manifest-path native/Cargo.toml --locked
+      - name: Build native desktop binary
+        run: cargo build --locked
+      - name: Install native packaging tool
+        if: runner.os != 'Linux'
+        run: cargo install cargo-packager --version 0.11.2 --locked
+      - name: Build and verify release installers
+        if: runner.os != 'Linux'
+        shell: bash
+        run: |
+          cargo xtask package --target "${{ matrix.target }}"
+          bash .github/scripts/stage-desktop-release.sh "${{ matrix.target }}" release-assets
+      - name: Verify Windows executable metadata
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $binary = Resolve-Path 'target/x86_64-pc-windows-msvc/release/soundgrammy.exe'
+          $metadata = [System.Diagnostics.FileVersionInfo]::GetVersionInfo($binary.Path)
+          $version = (Get-Content version.txt -Raw).Trim()
+          if ($metadata.ProductName -cne 'SoundGrammy' -or $metadata.ProductVersion -cne $version) {
+            throw "Windows executable metadata does not match SoundGrammy $version"
+          }
+      - name: Save installers for platform acceptance
+        if: runner.os != 'Linux'
+        uses: actions/upload-artifact@v6
+        with:
+          name: candidate-${{ matrix.target }}
+          path: release-assets/*
+          if-no-files-found: error
   android:
-    name: Build Android arm64 APK
+    name: Android arm64 APK and JVM tests
     runs-on: ubuntu-latest
-
     steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-
-      - name: Install Java 17
-        uses: actions/setup-java@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: "17"
-
-      - name: Setup Android SDK
-        uses: android-actions/setup-android@v4
-
+      - uses: android-actions/setup-android@v4
       - name: Install Android build dependencies
-        run: |
-          sdkmanager "platforms;android-36" "build-tools;35.0.0" "ndk;29.0.13846066"
-          echo "NDK_HOME=$ANDROID_HOME/ndk/29.0.13846066" >> "$GITHUB_ENV"
-
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
+        run: sdkmanager "platforms;android-36" "build-tools;35.0.0" "ndk;29.0.13846066"
+      - uses: dtolnay/rust-toolchain@1.98.1
         with:
           targets: aarch64-linux-android
-
-      - name: Rust cache
-        uses: swatinem/rust-cache@v2
+      - uses: swatinem/rust-cache@v2
         with:
-          workspaces: "./src-tauri -> target"
-
-      - name: Install frontend dependencies
-        run: bun install --frozen-lockfile
-
-      - name: Build Android APK
-        run: bun run tauri android build --debug --apk --target aarch64 --ci
+          workspaces: . -> target
+      - run: cargo xtask check-versions
+      - run: cargo xtask check-dependencies
+      - run: cargo xtask android --debug
+      - name: Verify debug APK
+        run: |
+          apk=native/gen/android/app/build/outputs/apk/debug/app-debug.apk
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify "$apk"
+          "$ANDROID_HOME/build-tools/35.0.0/zipalign" -c -P 16 4 "$apk"
+      - name: Build and verify minified Android APK and run release JVM tests
+        run: |
+          cargo xtask android
+          apk=native/gen/android/app/build/outputs/apk/release/app-release-unsigned.apk
+          "$ANDROID_HOME/build-tools/35.0.0/zipalign" -c -P 16 4 "$apk"
+      - uses: actions/upload-artifact@v6
+        with:
+          name: SoundGrammy-Android-dev
+          path: native/gen/android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error

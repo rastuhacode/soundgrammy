@@ -18,7 +18,7 @@ out/
 build
 dist
 
-# Rust / Tauri
+# Rust / GPUI
 target/
 
 
@@ -31,3 +31,8 @@ npm-debug.log*
 
 # Local stuff
 __local
+# Native packaging configuration and intermediates
+.build/
+
+# Optional benchmark tooling
+__pycache__/

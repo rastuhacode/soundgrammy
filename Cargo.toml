@@ -1,0 +1,19 @@
+[workspace]
+members = ["native", "xtask"]
+default-members = ["native"]
+resolver = "2"
+
+[patch.crates-io]
+# Upstream Android host is still pinned to GPUI 0.3.10.
+gpui-pre-mobile = { path = "native/vendor/gpui-pre-mobile" }
+
+# GUI layout/painting and image kernels run every interaction. Keep application
+# code fully debuggable while optimizing these dependencies in `cargo run`.
+[profile.dev.package.gpui-pre]
+opt-level = 2
+[profile.dev.package.gpui-base]
+opt-level = 2
+[profile.dev.package.gpui-component]
+opt-level = 2
+[profile.dev.package.image]
+opt-level = 2

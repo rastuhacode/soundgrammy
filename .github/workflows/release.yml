@@ -4,11 +4,11 @@ on:
   workflow_call:
     inputs:
       tag:
-        description: Existing or new release tag, for example v0.2.0
+        description: Existing release tag, for example v3.6.0
         required: true
         type: string
       sha:
-        description: Exact release commit; defaults to the tag for manual runs
+        description: Expected full commit SHA for the release tag
         required: false
         type: string
       repair_cargo_lock:
@@ -34,11 +34,11 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing or new release tag, for example v0.2.0
+        description: Existing release tag, for example v3.6.0
         required: true
         type: string
       sha:
-        description: Exact release commit; leave empty to build the tag
+        description: Expected full commit SHA for the release tag
         required: false
         type: string
       repair_cargo_lock:
@@ -48,24 +48,55 @@ on:
         type: boolean
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release-build-${{ inputs.tag }}
   cancel-in-progress: false
 
 jobs:
-  publish:
+  prepare:
+    name: Resolve release tag
+    runs-on: ubuntu-latest
+    outputs:
+      commit: ${{ steps.resolve.outputs.commit }}
+    steps:
+      - name: Checkout release tag
+        uses: actions/checkout@v7
+        with:
+          ref: refs/tags/${{ inputs.tag }}
+          persist-credentials: false
+
+      - name: Verify release commit
+        id: resolve
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+          EXPECTED_COMMIT: ${{ inputs.sha }}
+        run: |
+          if [[ ! "$RELEASE_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?(\+[0-9A-Za-z.-]+)?$ ]]; then
+            echo "Expected a v-prefixed release version" >&2
+            exit 1
+          fi
+          commit=$(git rev-parse HEAD)
+          if [[ -n "$EXPECTED_COMMIT" && "$EXPECTED_COMMIT" != "$commit" ]]; then
+            echo "$RELEASE_TAG points to $commit, expected $EXPECTED_COMMIT" >&2
+            exit 1
+          fi
+          echo "commit=$commit" >> "$GITHUB_OUTPUT"
+
+  desktop:
+    name: Build desktop installer (${{ matrix.target }})
+    needs: prepare
     strategy:
       fail-fast: false
       matrix:
         include:
-          - platform: macos-latest
-            args: "--target aarch64-apple-darwin"
-          - platform: macos-latest
-            args: "--target x86_64-apple-darwin"
+          - platform: macos-15
+            target: aarch64-apple-darwin
+          - platform: macos-15-intel
+            target: x86_64-apple-darwin
           - platform: windows-latest
-            args: ""
+            target: x86_64-pc-windows-msvc
 
     runs-on: ${{ matrix.platform }}
 
@@ -73,30 +104,28 @@ jobs:
       - name: Checkout release commit
         uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.sha || inputs.tag }}
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+          ref: ${{ needs.prepare.outputs.commit }}
+          persist-credentials: false
 
       - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.98.1
         with:
-          targets: ${{ matrix.platform == 'macos-latest' && 'aarch64-apple-darwin,x86_64-apple-darwin' || '' }}
+          targets: ${{ matrix.target }}
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
-          workspaces: "./src-tauri -> target"
+          workspaces: ". -> target"
 
       - name: Repair Cargo lockfile version
         if: ${{ inputs.repair_cargo_lock }}
-        run: cargo update --manifest-path src-tauri/Cargo.toml --package soundgrammy
+        run: cargo update --manifest-path native/Cargo.toml --package soundgrammy
 
-      - name: Install frontend dependencies
-        run: bun install --frozen-lockfile
+      - name: Install native packaging tool
+        run: cargo install cargo-packager --version 0.11.2 --locked
 
       - name: Verify release versions
-        run: bun run check:versions
+        run: cargo xtask check-versions
         env:
           EXPECTED_VERSION: ${{ inputs.tag }}
 
@@ -109,35 +138,46 @@ jobs:
           test -n "$LASTFM_API_KEY" || { echo "LASTFM_API_KEY is required"; exit 1; }
           test -n "$LASTFM_API_SECRET" || { echo "LASTFM_API_SECRET is required"; exit 1; }
 
-      - name: Build Tauri app and upload artifacts
-        uses: tauri-apps/tauri-action@v1
+      - name: Build native app and installers
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TELEGRAM_API_ID: ${{ secrets.TELEGRAM_API_ID }}
           TELEGRAM_API_HASH: ${{ secrets.TELEGRAM_API_HASH }}
           LASTFM_API_KEY: ${{ secrets.LASTFM_API_KEY }}
           LASTFM_API_SECRET: ${{ secrets.LASTFM_API_SECRET }}
+        run: cargo xtask package --target ${{ matrix.target }}
+
+      - name: Checkout release workflow scripts
+        uses: actions/checkout@v7
         with:
-          projectPath: "."
-          tauriScript: bun run tauri
-          tagName: ${{ inputs.tag }}
-          releaseName: SoundGrammy ${{ inputs.tag }}
-          releaseDraft: true
-          prerelease: false
-          args: ${{ matrix.args }}
+          ref: ${{ github.workflow_sha }}
+          path: workflow-tools
+          sparse-checkout: .github/scripts
+          persist-credentials: false
+
+      - name: Verify and stage desktop installers
+        shell: bash
+        run: bash workflow-tools/.github/scripts/stage-desktop-release.sh "${{ matrix.target }}" release-assets
+
+      - name: Save desktop installers
+        uses: actions/upload-artifact@v6
+        with:
+          name: release-${{ matrix.target }}
+          path: release-assets/*
+          if-no-files-found: error
+          overwrite: true
+          compression-level: 0
 
   android:
-    name: Build and upload Android arm64 APK
+    name: Build signed Android arm64 APK
+    needs: prepare
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout release commit
         uses: actions/checkout@v7
         with:
-          ref: ${{ inputs.sha || inputs.tag }}
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+          ref: ${{ needs.prepare.outputs.commit }}
+          persist-credentials: false
 
       - name: Install Java 17
         uses: actions/setup-java@v6
@@ -154,24 +194,21 @@ jobs:
           echo "NDK_HOME=$ANDROID_HOME/ndk/29.0.13846066" >> "$GITHUB_ENV"
 
       - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.98.1
         with:
           targets: aarch64-linux-android
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
         with:
-          workspaces: "./src-tauri -> target"
+          workspaces: ". -> target"
 
       - name: Repair Cargo lockfile version
         if: ${{ inputs.repair_cargo_lock }}
-        run: cargo update --manifest-path src-tauri/Cargo.toml --package soundgrammy
-
-      - name: Install frontend dependencies
-        run: bun install --frozen-lockfile
+        run: cargo update --manifest-path native/Cargo.toml --package soundgrammy
 
       - name: Verify release versions
-        run: bun run check:versions
+        run: cargo xtask check-versions
         env:
           EXPECTED_VERSION: ${{ inputs.tag }}
 
@@ -205,17 +242,46 @@ jobs:
           LASTFM_API_SECRET: ${{ secrets.LASTFM_API_SECRET }}
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
-        run: bun run tauri android build --apk --target aarch64 --ci
+        run: cargo xtask android
 
-      - name: Upload Android APK to draft release
+      - name: Verify and stage Android APK
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}
+        run: |
+          apk="native/gen/android/app/build/outputs/apk/release/app-release.apk"
+          test -s "$apk" || { echo "Android release APK is missing: $apk"; exit 1; }
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify "$apk"
+          "$ANDROID_HOME/build-tools/35.0.0/zipalign" -c -P 16 4 "$apk"
+          mkdir -p release-assets
+          cp "$apk" "release-assets/SoundGrammy_${RELEASE_TAG#v}_aarch64.apk"
+
+      - name: Save Android APK
+        uses: actions/upload-artifact@v6
+        with:
+          name: release-android
+          path: release-assets/*.apk
+          if-no-files-found: error
+          overwrite: true
+          compression-level: 0
+
+  upload:
+    name: Attach complete artifact set to draft
+    needs: [prepare, desktop, android]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.workflow_sha }}
+      - uses: actions/download-artifact@v7
+        with:
+          pattern: release-*
+          path: release-assets
+          merge-multiple: true
+      - name: Upload verified artifacts
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RELEASE_TAG: ${{ inputs.tag }}
-        run: |
-          apk="src-tauri/gen/android/app/build/outputs/apk/universal/release/app-universal-release.apk"
-          test -f "$apk" || { echo "Android release APK is missing: $apk"; exit 1; }
-          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify "$apk"
-          version="${RELEASE_TAG#v}"
-          asset="$RUNNER_TEMP/SoundGrammy_${version}_aarch64.apk"
-          cp "$apk" "$asset"
-          gh release upload "$RELEASE_TAG" "$asset" --clobber
+          RELEASE_COMMIT: ${{ needs.prepare.outputs.commit }}
+        run: bash .github/scripts/upload-release.sh release-assets
