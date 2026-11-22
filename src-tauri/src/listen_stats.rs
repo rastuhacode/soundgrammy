@@ -1,6 +1,6 @@
 //! Listen statistics: qualification, early-skip, aggregates, and likeness.
 //!
-//! Business rules live in `docs/listen-statistics.md` and `__local/listen-statistics.md`.
+//! See `docs/listen-statistics.md` for the accounting and storage overview.
 
 use serde::{Deserialize, Serialize};
 

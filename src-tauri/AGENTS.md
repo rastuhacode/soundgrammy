@@ -8,18 +8,17 @@ Rust Tauri 2 app: Telegram via ferogram, library in SQLite, media cache + stream
 |--------|------|
 | `src/commands.rs` | Tauri IPC handlers |
 | `src/audio/` | Native queue policy, shuffle, playback transport, and UI reattachment snapshots |
-| `src/lib.rs` | App setup, command registration, `stream` protocol |
+| `src/lib.rs` | App setup and command registration |
 | `src/db.rs` | SQLite (`library.db`) |
 | `src/telegram/` | Client, auth, saved music sync, download |
 | `src/session.rs` | Encrypted ferogram `SessionBackend` + platform credential store |
 | `src/android_keyring.rs` | Android Keystore-backed credential store initialization |
 | `src/config.rs` | `TELEGRAM_API_ID` / `TELEGRAM_API_HASH` (runtime resolve) |
 | `build.rs` | Embeds API credentials from env or `.env.local` |
-| `src/streaming.rs` | Range streaming for uncached tracks |
+| `src/streaming.rs` | Verified range downloads for uncached tracks |
 | `src/cache.rs` | On-disk media/thumbnail paths, size limit, TTL, eviction |
-| `src/export.rs` | Copy tracks into system Downloads |
+| `src/export.rs` | Export tracks and playlists to Downloads, with M3U8 for playlists |
 | `src/proxy_settings.rs` | MTProto proxy persistence + link parse |
-| `src/export.rs` | Copy tracks / playlists into system Downloads (`download_playlist` + M3U) |
 | `src/playlist_recipe.rs` | JSON playlist recipe export/import (same-account sync) |
 | `src/listen_stats.rs` | Listen qualification, aggregates, likeness |
 | `src/state.rs` | Shared `AppState` (swappable ferogram client) |

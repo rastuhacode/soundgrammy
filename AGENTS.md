@@ -1,6 +1,6 @@
 # SoundGrammy — agent notes
 
-Desktop music player (Tauri 2) over Telegram MTProto (ferogram). Local-first: library and playlists live in SQLite; Telegram saved music is the remote source of truth.
+Local-first Tauri 2 music player for desktop and Android. SQLite stores the library and playlists. Telegram profile music is the remote source of truth, accessed through ferogram.
 
 Human-facing setup: see [README.md](README.md).
 
@@ -19,7 +19,7 @@ bun i
 bun tauri:dev
 bun lint
 bun typecheck
-bun test
+bun run test
 cd src-tauri && cargo check
 ```
 
@@ -38,7 +38,8 @@ cd src-tauri && cargo check
 
 ## Docs
 
-- [docs/architecture.md](docs/architecture.md) — data flow, sync, media
+- [docs/architecture.md](docs/architecture.md) — data ownership, sync, and code entry points
+- [docs/native-audio.md](docs/native-audio.md) — native queue, UI reattachment, and decoder contracts
 - [docs/streaming.md](docs/streaming.md) — native playback over verified download ranges
 - [docs/listen-statistics.md](docs/listen-statistics.md) — listen events, aggregates, likeness
 - [docs/security.md](docs/security.md) — credentials, session, high-risk areas

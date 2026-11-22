@@ -4,7 +4,7 @@
 
 <h1 align="center">SoundGrammy</h1>
 
-<p align="center"><strong>A local-first desktop player for the music saved to your Telegram profile.</strong></p>
+<p align="center"><strong>A local-first desktop and Android player for the music saved to your Telegram profile.</strong></p>
 
 <p align="center">
   <a href="https://github.com/rastuhacode/soundgrammy/releases"><img src="https://img.shields.io/github/v/release/rastuhacode/soundgrammy?display_name=tag&amp;sort=semver" alt="Latest release"></a>
@@ -51,7 +51,7 @@ You can read more about philosophy around SoundGrammy in [Why I don’t use musi
 | :--- | :--- |
 | **macOS** | Apple Silicon (`arm64`) and Intel (`x86_64`) |
 | **Windows** | 64-bit (`x86_64`) |
-| **Android** | (`apk`) |
+| **Android** | ARM64 (`aarch64` APK) |
 
 Linux and iOS are not officially supported although Tauri can build those. Contributions that complete platform support are welcome.
 
@@ -146,6 +146,10 @@ bun generate-icons
 bun tauri:build
 ```
 
+### Developer documentation
+
+Start with the [architecture overview](docs/architecture.md) for sync, data ownership, and code entry points. The [native audio guide](docs/native-audio.md) covers playback and UI reattachment, and the [platform playback guide](docs/platform-playback.md) covers OS controls and device checks. Maintainers can use the [release guide](docs/releasing.md) to build and publish artifacts.
+
 ## Contributing and support
 
 Use [GitHub Issues](https://github.com/rastuhacode/soundgrammy/issues) for reproducible, non-sensitive bug reports and feature requests. Contributions are welcome, especially for additional platform support.
@@ -167,11 +171,3 @@ Use of the Telegram API is governed by Telegram's [API Terms of Service](https:/
 Optional scrobbling uses the [Last.fm API](https://www.last.fm/api) and is governed by its [API Terms of Service](https://www.last.fm/api/tos). Release maintainers must review those terms before distribution and contact Last.fm before commercial use.
 
 The SoundGrammy name, artwork, and source code are independent of Telegram. The Telegram name and logo remain the property of their respective owner. References to Telegram describe compatibility and the remote service used by the app; they do not imply an official relationship.
-
-### Native audio playback
-
-Desktop playback uses the Rust audio engine in development and release builds.
-Run `bun tauri:dev`; no playback environment variable is required. See [native audio](docs/native-audio.md)
-for architecture, codec coverage, Linux dependencies, and verification gates.
-The [architecture overview](docs/architecture.md) explains native playback ownership,
-UI reattachment, and what persists across application restarts.

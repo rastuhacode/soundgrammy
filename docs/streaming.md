@@ -60,41 +60,4 @@ High-quality thumbnail requests return the available Telegram or cached embedded
 
 Extracted front-cover artwork is cached independently of audio and published through `artwork:changed`. Visible high-quality consumers preload the image before replacing the fallback, ignore stale track/account responses, and also revalidate on audio cache completion. Successful probes without leading ID3 artwork are remembered; network, parse, and size-limit failures remain retryable. Other container/tag layouts use whole-file extraction when audio finishes caching.
 
-See [native audio](native-audio.md) for implementation details, supported fixtures, and device verification limitations.
-
-## Fullscreen dynamics
-
-The fullscreen background always drifts slowly through colors derived from the
-artwork. **Enable dynamic visuals** in Settings adds artwork pulses and overlapping
-color responses: bass at the bottom (20–250 Hz), midrange in the center
-(250–2,500 Hz), and treble at the top (2,500–16,000 Hz, limited by the source sample
-rate). Colored tones pulse in saturation at their ambient lightness. Dark
-tints can use more of their available saturation to make their hue visible.
-When grays dominate the palette, repeated accents from the cover can color the
-hits. A grayscale cover has a gentle brightness pulse capped at an 18% lift.
-Short positive changes within each band drive the response. The fields spread
-and linger so simultaneous bands can mix, with a longer afterglow for bass than
-for treble. The palette's relative loudness gain ranges from 0.82 to 1 so quiet
-hits keep most of their strength. Loud, sustained mids and highs get extra
-contrast on small attacks. Artwork gain falls with the fourth power below
-its full-strength threshold, normally 94% of the track peak. The threshold can
-come down when the peak is unusually high relative to the rest of the track.
-Bass moves the cover quickly; mids and highs contribute smaller, slower motion.
-When bass attacks pause, upper attacks gradually gain weight until the next
-bass hit. Sustained bass alone does not prevent the handoff.
-The player layout and controls do not react to the music.
-
-Rust analyzes a complete cached audio file into 25 ms loudness, onset, and band
-energy lanes. Both stereo channels contribute power independently, preserving
-hard-panned and anti-phase signals. Track-relative normalization, a slow local
-reference, silence gates, and onset-density compression adapt the visuals to
-different mastering levels and rhythmic density without manual sliders. This
-changes visual intensity only; it does not compress playback audio.
-
-Profiles are versioned and cached in SQLite. Older analysis regenerates on demand.
-An uncached track must finish its shared download and analysis before reactive
-motion begins; playback is independent and the ambient background continues in
-the meantime. The frontend interpolates the lanes against playback time, clears
-old energy on seeks and track changes, and releases it on pause or completion.
-Reduced-motion preferences disable artwork movement, palette drift, and reactive
-color changes.
+See [native audio](native-audio.md) for the playback and decoder contracts, and [fullscreen visuals](architecture.md#fullscreen-visuals) for cached-track analysis.
