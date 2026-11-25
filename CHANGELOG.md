@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.7.0](https://github.com/rastuhacode/soundgrammy/compare/v3.6.0...v3.7.0) (2026-11-25)
+
+
+### Features
+
+* improve artwork palettes and bounce animations ([66d2b81](https://github.com/rastuhacode/soundgrammy/commit/66d2b81062c55260939f10bda84979b90885094a))
+
 ## [3.6.0](https://github.com/rastuhacode/soundgrammy/compare/v3.5.0...v3.6.0) (2026-11-05)
 
 
