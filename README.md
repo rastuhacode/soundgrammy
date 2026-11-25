@@ -146,10 +146,6 @@ bun generate-icons
 bun tauri:build
 ```
 
-### Developer documentation
-
-Start with the [architecture overview](docs/architecture.md) for sync, data ownership, and code entry points. The [native audio guide](docs/native-audio.md) covers playback and UI reattachment, and the [platform playback guide](docs/platform-playback.md) covers OS controls and device checks. Maintainers can use the [release guide](docs/releasing.md) to build and publish artifacts.
-
 ## Contributing and support
 
 Use [GitHub Issues](https://github.com/rastuhacode/soundgrammy/issues) for reproducible, non-sensitive bug reports and feature requests. Contributions are welcome, especially for additional platform support.
