@@ -31,7 +31,7 @@ futures-util = "0.3.34"
 async-trait = "0.1.92"
 
 # Telegram MTProto
-ferogram = { version = "=0.6.5", default-features = false, features = ["parsers"] }
+ferogram = { version = "=0.6.7", default-features = false, features = ["parsers"] }
 
 # Storage
 rusqlite = { version = "0.40.2", features = ["bundled"] }
@@ -100,7 +100,3 @@ objc2-ui-kit = "0.3.2"
 objc2-avf-audio = "0.3.2"
 objc2-media-player = "0.3.2"
 block2 = "0.6.2"
-
-[patch.crates-io]
-# Remove once ferogram ships cancellation-safe, per-connection DC readiness.
-ferogram-mtsender = { path = "vendor/ferogram-mtsender" }
