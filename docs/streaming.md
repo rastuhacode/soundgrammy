@@ -60,4 +60,4 @@ High-quality thumbnail requests return the available Telegram or cached embedded
 
 Extracted front-cover artwork is cached independently of audio and published through `artwork:changed`. Visible high-quality consumers preload the image before replacing the fallback, ignore stale track/account responses, and also revalidate on audio cache completion. Successful probes without leading ID3 artwork are remembered; network, parse, and size-limit failures remain retryable. Other container/tag layouts use whole-file extraction when audio finishes caching.
 
-See [native audio](native-audio.md) for implementation details, supported fixtures, and device verification limitations.
+See [native audio](native-audio.md) for the playback and decoder contracts, and [fullscreen visuals](architecture.md#fullscreen-visuals) for cached-track analysis.

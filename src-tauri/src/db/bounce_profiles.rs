@@ -10,7 +10,7 @@ impl Db {
     ) -> AppResult<Option<TrackBounceProfileRecord>> {
         let conn = self.conn.lock().unwrap();
         conn.query_row(
-            "SELECT track_id, algorithm_version, frame_ms, duration_ms, file_size, loudness, onset
+            "SELECT track_id, algorithm_version, frame_ms, duration_ms, file_size, loudness, onset, bass, mid, treble
              FROM track_bounce_profiles WHERE track_id = ?1",
             params![track_id],
             |row| {
@@ -22,6 +22,9 @@ impl Db {
                     file_size: row.get(4)?,
                     loudness: row.get(5)?,
                     onset: row.get(6)?,
+                    bass: row.get(7)?,
+                    mid: row.get(8)?,
+                    treble: row.get(9)?,
                 })
             },
         )
@@ -33,8 +36,8 @@ impl Db {
         let conn = self.conn.lock().unwrap();
         conn.execute(
             "INSERT INTO track_bounce_profiles
-               (track_id, algorithm_version, frame_ms, duration_ms, file_size, loudness, onset)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+               (track_id, algorithm_version, frame_ms, duration_ms, file_size, loudness, onset, bass, mid, treble)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
              ON CONFLICT(track_id) DO UPDATE SET
                algorithm_version = excluded.algorithm_version,
                frame_ms = excluded.frame_ms,
@@ -42,6 +45,9 @@ impl Db {
                file_size = excluded.file_size,
                loudness = excluded.loudness,
                onset = excluded.onset,
+               bass = excluded.bass,
+               mid = excluded.mid,
+               treble = excluded.treble,
                created_at = datetime('now')",
             params![
                 profile.track_id,
@@ -51,6 +57,9 @@ impl Db {
                 profile.file_size,
                 profile.loudness,
                 profile.onset,
+                profile.bass,
+                profile.mid,
+                profile.treble,
             ],
         )?;
         Ok(())

@@ -187,6 +187,9 @@ export type BounceProfileResponse
     durationMs: number
     loudnessData: string
     onsetData: string
+    bassData: string
+    midData: string
+    trebleData: string
   }
   | { status: 'unavailable' }
 

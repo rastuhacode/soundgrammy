@@ -96,12 +96,18 @@ fn bounce_profile_round_trips_and_cascades_with_track() -> AppResult<()> {
         file_size: Some(1234),
         loudness: vec![1, 2, 3],
         onset: vec![4, 5, 6],
+        bass: vec![7, 8, 9],
+        mid: vec![10, 11, 12],
+        treble: vec![13, 14, 15],
     };
     db.save_track_bounce_profile(&expected)?;
     let loaded = db.track_bounce_profile(7)?.expect("profile");
     assert_eq!(loaded.algorithm_version, expected.algorithm_version);
     assert_eq!(loaded.loudness, expected.loudness);
     assert_eq!(loaded.onset, expected.onset);
+    assert_eq!(loaded.bass, expected.bass);
+    assert_eq!(loaded.mid, expected.mid);
+    assert_eq!(loaded.treble, expected.treble);
 
     db.conn
         .lock()
@@ -629,7 +635,7 @@ fn interrupted_migration_rolls_back_and_can_be_retried() -> AppResult<()> {
     schema::apply(&conn)?;
     assert_eq!(
         conn.pragma_query_value(None, "user_version", |r| r.get::<_, i64>(0))?,
-        2
+        3
     );
     Ok(())
 }
@@ -681,5 +687,35 @@ fn legacy_ambiguous_profiles_require_login_and_foreign_memberships_are_repaired(
     assert!(db.load_profile()?.is_none());
     assert!(db.track_by_id(owned, 1)?.is_some() && db.track_by_id(foreign, 2)?.is_some());
     assert_eq!(db.playlists_bundle(1)?.custom[0].track_ids, vec![owned]);
+    Ok(())
+}
+
+#[test]
+fn visual_band_migration_preserves_legacy_profiles_and_is_idempotent() -> AppResult<()> {
+    let db = test_db()?;
+    let conn = db.conn.lock().unwrap();
+    conn.execute_batch("ALTER TABLE track_bounce_profiles DROP COLUMN bass;
+        ALTER TABLE track_bounce_profiles DROP COLUMN mid;
+        ALTER TABLE track_bounce_profiles DROP COLUMN treble;
+        INSERT INTO tracks(id,tg_user_id,file_id,file_unique_id) VALUES(7,42,'7','7');
+        INSERT INTO track_bounce_profiles(track_id,algorithm_version,frame_ms,duration_ms,loudness,onset)
+        VALUES(7,1,50,100,X'0102',X'0304');")?;
+    conn.pragma_update(None, "user_version", 2)?;
+    schema::apply(&conn)?;
+    schema::apply(&conn)?;
+    drop(conn);
+    let profile = db.track_bounce_profile(7)?.unwrap();
+    assert_eq!(profile.algorithm_version, 1);
+    assert_eq!(profile.loudness, vec![1, 2]);
+    assert!(profile.bass.is_empty());
+    assert!(profile.mid.is_empty());
+    assert!(profile.treble.is_empty());
+    assert_eq!(
+        db.conn
+            .lock()
+            .unwrap()
+            .pragma_query_value(None, "user_version", |row| row.get::<_, i64>(0))?,
+        3
+    );
     Ok(())
 }

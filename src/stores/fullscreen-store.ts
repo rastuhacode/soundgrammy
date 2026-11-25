@@ -1,7 +1,6 @@
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { create } from 'zustand'
 import {
-  DEFAULT_BOUNCE_SETTINGS,
   loadBounceSettings,
   saveBounceSettings,
   type BounceSettings,
@@ -26,8 +25,7 @@ interface FullscreenState {
   keepDisplayAwake: boolean
   bounce: BounceSettings
   setKeepDisplayAwake: (enabled: boolean) => void
-  setBounceSettings: (patch: Partial<BounceSettings>) => void
-  resetBounceSettings: () => void
+  setBounceEnabled: (enabled: boolean) => void
   enterFullscreen: () => Promise<boolean>
   exitFullscreen: () => Promise<boolean>
   toggleFullscreen: () => Promise<boolean>
@@ -45,19 +43,8 @@ export const useFullscreenStore = create<FullscreenState>((set, get) => ({
     set({ keepDisplayAwake: enabled })
   },
 
-  setBounceSettings: (patch) => {
-    set((state) => {
-      const bounce = {
-        ...state.bounce,
-        ...patch,
-      }
-      saveBounceSettings(bounce)
-      return { bounce }
-    })
-  },
-
-  resetBounceSettings: () => {
-    const bounce = { ...DEFAULT_BOUNCE_SETTINGS }
+  setBounceEnabled: (enabled) => {
+    const bounce = { enabled }
     saveBounceSettings(bounce)
     set({ bounce })
   },

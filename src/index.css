@@ -458,12 +458,54 @@
   initial-value: #272727;
 }
 
+@property --fullscreen-top-active {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #202020;
+}
+
+@property --fullscreen-top-peak {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #404040;
+}
+
+@property --fullscreen-center-active {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #202020;
+}
+
+@property --fullscreen-center-peak {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #404040;
+}
+
+@property --fullscreen-bottom-active {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #202020;
+}
+
+@property --fullscreen-bottom-peak {
+  syntax: "<color>";
+  inherits: true;
+  initial-value: #404040;
+}
+
 .fullscreen-player {
   isolation: isolate;
   transition:
     --fullscreen-color-one 1.2s ease,
     --fullscreen-color-two 1.2s ease,
-    --fullscreen-color-three 1.2s ease;
+    --fullscreen-color-three 1.2s ease,
+    --fullscreen-top-active 1.2s ease,
+    --fullscreen-top-peak 1.2s ease,
+    --fullscreen-center-active 1.2s ease,
+    --fullscreen-center-peak 1.2s ease,
+    --fullscreen-bottom-active 1.2s ease,
+    --fullscreen-bottom-peak 1.2s ease;
 }
 
 .fullscreen-artwork-backdrop {
@@ -475,14 +517,85 @@
 }
 
 .fullscreen-palette {
+  --fullscreen-bass-energy: 0;
+  --fullscreen-mid-energy: 0;
+  --fullscreen-treble-energy: 0;
+  --fullscreen-bass-spread: 0;
+  --fullscreen-mid-spread: 0;
+  --fullscreen-treble-spread: 0;
+}
+
+.fullscreen-palette::before {
+  content: "";
+  position: absolute;
+  inset: 0;
   background:
-    radial-gradient(circle at 22% 28%, var(--fullscreen-color-one), transparent 38%),
-    radial-gradient(circle at 78% 24%, var(--fullscreen-color-two), transparent 42%),
-    radial-gradient(circle at 55% 78%, var(--fullscreen-color-three), transparent 45%);
+    radial-gradient(ellipse at 22% 8%, var(--fullscreen-color-one), transparent 72%),
+    radial-gradient(ellipse at 78% 48%, var(--fullscreen-color-two), transparent 72%),
+    radial-gradient(ellipse at 45% 100%, var(--fullscreen-color-three), transparent 75%);
   background-position: 0% 0%;
+  background-repeat: no-repeat;
   background-size: 125% 125%;
-  opacity: 0.62;
-  animation: fullscreen-palette-drift 18s ease-in-out infinite alternate;
+  opacity: 0.9;
+  animation: fullscreen-palette-drift 28s ease-in-out infinite alternate;
+}
+
+.fullscreen-palette[data-monochrome]::before {
+  --monochrome-energy: max(var(--fullscreen-bass-energy), var(--fullscreen-mid-energy), var(--fullscreen-treble-energy));
+  filter: brightness(calc(1 + var(--monochrome-energy) * 0.18));
+}
+
+/* Blend with the opaque player backdrop so the pulse preserves its luminosity.
+   Only the ambient gradient has its own opacity group. */
+.fullscreen-palette-band {
+  position: absolute;
+  /* Cover maximum 12vh travel plus drift, even at an edge transform origin. */
+  inset: -30%;
+  background: radial-gradient(ellipse 85% 60% at var(--band-origin), var(--band-active), transparent 85%);
+  opacity: calc((0.14 + var(--band-energy) * 0.72) * 0.9);
+  mix-blend-mode: color;
+  transform: translate3d(0, calc(var(--band-spread) * var(--band-direction)), 0) scale(calc(1 + var(--band-spread) * 0.65));
+  animation: fullscreen-color-drift 32s ease-in-out infinite alternate;
+}
+
+.fullscreen-palette-band::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(ellipse 85% 60% at var(--band-origin), var(--band-peak), transparent 85%);
+  opacity: calc(var(--band-energy) * 0.86);
+}
+
+.fullscreen-palette-bottom {
+  --band-energy: var(--fullscreen-bass-energy);
+  --band-spread: var(--fullscreen-bass-spread);
+  --band-active: var(--fullscreen-bottom-active);
+  --band-peak: var(--fullscreen-bottom-peak);
+  --band-origin: 42% 100%;
+  --band-direction: -12vh;
+  transform-origin: 42% 100%;
+}
+
+.fullscreen-palette-center {
+  --band-energy: var(--fullscreen-mid-energy);
+  --band-spread: var(--fullscreen-mid-spread);
+  --band-active: var(--fullscreen-center-active);
+  --band-peak: var(--fullscreen-center-peak);
+  --band-origin: 72% 50%;
+  --band-direction: -2vh;
+  transform-origin: 72% 50%;
+  animation-delay: -11s;
+}
+
+.fullscreen-palette-top {
+  --band-energy: var(--fullscreen-treble-energy);
+  --band-spread: var(--fullscreen-treble-spread);
+  --band-active: var(--fullscreen-top-active);
+  --band-peak: var(--fullscreen-top-peak);
+  --band-origin: 30% 0%;
+  --band-direction: 12vh;
+  transform-origin: 30% 0%;
+  animation-delay: -21s;
 }
 
 .fullscreen-art-enter {
@@ -495,6 +608,11 @@
   100% { background-position: 30% 100%; }
 }
 
+@keyframes fullscreen-color-drift {
+  from { translate: -3% 0; }
+  to { translate: 3% 2%; }
+}
+
 @keyframes fullscreen-art-enter {
   from { opacity: 0; transform: scale(0.965) translateY(10px); }
   to { opacity: 1; transform: scale(1) translateY(0); }
@@ -504,7 +622,8 @@
   .animate-fade-up,
   .animate-glow-pulse,
   .fullscreen-art-enter,
-  .fullscreen-palette,
+  .fullscreen-palette::before,
+  .fullscreen-palette-band,
   .equalizer span,
   .barbershop-buffer {
     animation: none;
